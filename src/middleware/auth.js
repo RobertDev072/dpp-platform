@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { getPool, sql } = require("../config/db");
 const { HttpError } = require("./errorHandler");
+const { getPermissionsForRole, hasPermission } = require("../auth/permissions");
 
 const SESSION_COOKIE_NAME = "dpp_session";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
@@ -25,7 +26,8 @@ async function createSession(userId) {
     .input("tokenHash", sql.Char(64), tokenHash)
     .input("expiresAt", sql.DateTime2, expiresAt)
     .query(
-      "INSERT INTO dbo.Sessions (user_id, token_hash, expires_at) VALUES (@userId, @tokenHash, @expiresAt)"
+      `INSERT INTO dbo.Sessions (user_id, token_hash, expires_at) VALUES (@userId, @tokenHash, @expiresAt);
+       UPDATE dbo.Users SET last_login_at = SYSUTCDATETIME() WHERE id = @userId;`
     );
 
   return { token, expiresAt };
@@ -39,6 +41,13 @@ async function destroySession(token) {
     .query("DELETE FROM dbo.Sessions WHERE token_hash = @tokenHash");
 }
 
+// Trekt alle sessies van een gebruiker in. Aanroepen bij deactiveren/blokkeren, een
+// rolwijziging of een wachtwoord-reset, zodat oude sessies niet doorwerken met oude rechten.
+async function revokeUserSessions(userId) {
+  const pool = await getPool();
+  await pool.request().input("userId", sql.Int, userId).query("DELETE FROM dbo.Sessions WHERE user_id = @userId");
+}
+
 async function getUserForToken(token) {
   const pool = await getPool();
 
@@ -46,9 +55,11 @@ async function getUserForToken(token) {
     .request()
     .input("tokenHash", sql.Char(64), hashToken(token))
     .query(`
-      SELECT u.id, u.company_id, u.email, u.role, u.status, s.expires_at
+      SELECT u.id, u.company_id, u.email, u.first_name, u.last_name, u.role, u.status, s.expires_at,
+             c.name AS company_name, c.status AS company_status
       FROM dbo.Sessions s
       JOIN dbo.Users u ON u.id = s.user_id
+      LEFT JOIN dbo.Companies c ON c.id = u.company_id
       WHERE s.token_hash = @tokenHash
     `);
 
@@ -57,7 +68,22 @@ async function getUserForToken(token) {
     return null;
   }
 
-  return { id: row.id, companyId: row.company_id, email: row.email, role: row.role };
+  // Een gedeactiveerde (suspended/archived) company blokkeert direct al haar gebruikers,
+  // ook met een nog geldige sessie. Alleen de system_owner hoort bij geen company.
+  if (row.role !== "system_owner" && (row.company_id == null || row.company_status !== "active")) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    companyName: row.company_name || null,
+    email: row.email,
+    firstName: row.first_name || null,
+    lastName: row.last_name || null,
+    role: row.role,
+    permissions: getPermissionsForRole(row.role)
+  };
 }
 
 function setSessionCookie(res, token, expiresAt) {
@@ -108,12 +134,26 @@ function requireRole(...roles) {
   };
 }
 
+// Eén permissie vereist. Gebruik dit in plaats van requireRole voor nieuwe routes; de
+// rol -> permissie-mapping staat in src/auth/permissions.js.
+function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!hasPermission(req.user, permission)) {
+      next(new HttpError(403, "Geen toegang"));
+      return;
+    }
+    next();
+  };
+}
+
 module.exports = {
   SESSION_COOKIE_NAME,
   createSession,
   destroySession,
+  revokeUserSessions,
   setSessionCookie,
   clearSessionCookie,
   requireAuth,
-  requireRole
+  requireRole,
+  requirePermission
 };

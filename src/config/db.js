@@ -9,7 +9,9 @@ const config = {
 
   options: {
     encrypt: true,
-    trustServerCertificate: false
+    // Alleen voor een lokale SQL Server-container (self-signed cert) bij het draaien van
+    // de testsuite. Staat standaard uit en hoort NOOIT aan op Azure SQL.
+    trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === "true"
   },
 
   // Serverless Azure SQL kan gepauzeerd zijn en heeft tijd nodig om te ontwaken.

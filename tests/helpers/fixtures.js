@@ -57,28 +57,47 @@ async function createTestProduct({ companyId, name = "Test Product" }) {
   return result.recordset[0].id;
 }
 
+// Verwijdert in FK-volgorde. Ids worden naar Number geforceerd, dus de string-interpolatie
+// hieronder bevat alleen getallen (testhelper, nooit met gebruikersinvoer aangeroepen).
 async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] }) {
   const pool = await getPool();
-  const companies = companyIds.map(Number);
-  const users = userIds.map(Number);
-  const products = productIds.map(Number);
+  const companies = companyIds.map(Number).filter(Number.isInteger);
+  const users = userIds.map(Number).filter(Number.isInteger);
+  const products = productIds.map(Number).filter(Number.isInteger);
+  const run = (query) => pool.request().query(query);
 
-  if (users.length) {
-    await pool.request().query(`DELETE FROM dbo.Sessions WHERE user_id IN (${users.join(",")})`);
-    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE user_id IN (${users.join(",")})`);
+  if (companies.length) {
+    // Alle users van deze companies meenemen, ook die tijdens een test via de API zijn aangemaakt.
+    const extra = await run(`SELECT id FROM dbo.Users WHERE company_id IN (${companies.join(",")})`);
+    for (const row of extra.recordset) if (!users.includes(row.id)) users.push(row.id);
+    const extraProducts = await run(`SELECT id FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
+    for (const row of extraProducts.recordset) if (!products.includes(row.id)) products.push(row.id);
+  }
+
+  if (products.length) {
+    await run(`DELETE FROM dbo.ScanEvents WHERE product_id IN (${products.join(",")})`);
+    await run(`DELETE FROM dbo.Documents WHERE product_id IN (${products.join(",")})`);
   }
   if (companies.length) {
-    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${companies.join(",")})`);
-    await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
+    await run(`DELETE FROM dbo.Documents WHERE company_id IN (${companies.join(",")})`);
+    await run(`DELETE FROM dbo.CompanyInvitations WHERE company_id IN (${companies.join(",")})`);
+    await run(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${companies.join(",")})`);
+  }
+  if (users.length) {
+    await run(`DELETE FROM dbo.CompanyInvitations WHERE created_by IN (${users.join(",")}) OR accepted_user_id IN (${users.join(",")})`);
+    await run(`DELETE FROM dbo.Documents WHERE created_by IN (${users.join(",")})`);
+    await run(`DELETE FROM dbo.Sessions WHERE user_id IN (${users.join(",")})`);
+    await run(`DELETE FROM dbo.AuditLogs WHERE user_id IN (${users.join(",")})`);
+    await run(`UPDATE dbo.Products SET created_by = NULL, updated_by = NULL WHERE created_by IN (${users.join(",")}) OR updated_by IN (${users.join(",")})`);
   }
   if (products.length) {
-    await pool.request().query(`DELETE FROM dbo.Products WHERE id IN (${products.join(",")})`);
+    await run(`DELETE FROM dbo.Products WHERE id IN (${products.join(",")})`);
   }
   if (users.length) {
-    await pool.request().query(`DELETE FROM dbo.Users WHERE id IN (${users.join(",")})`);
+    await run(`DELETE FROM dbo.Users WHERE id IN (${users.join(",")})`);
   }
   if (companies.length) {
-    await pool.request().query(`DELETE FROM dbo.Companies WHERE id IN (${companies.join(",")})`);
+    await run(`DELETE FROM dbo.Companies WHERE id IN (${companies.join(",")})`);
   }
 }
 

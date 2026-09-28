@@ -36,7 +36,9 @@ async function graphRequest(method, path, body) {
 // Maakt een lokaal (email+wachtwoord) account aan in de Entra External ID-tenant.
 // Vereist Graph application permission: User.Create (+ User-PasswordProfile.ReadWrite.All
 // voor het zetten van passwordProfile bij aanmaak — te verifiëren in een dev-tenant).
-async function createEntraUser({ email, displayName, tempPassword }) {
+// forceChangePasswordNextSignIn: true voor een door een admin gegenereerd tijdelijk
+// wachtwoord; false wanneer de gebruiker het wachtwoord zelf net heeft gekozen (activatie).
+async function createEntraUser({ email, displayName, tempPassword, forceChangePasswordNextSignIn = true }) {
   const entra = getEntraConfig();
 
   const user = await graphRequest("POST", "/users", {
@@ -51,7 +53,7 @@ async function createEntraUser({ email, displayName, tempPassword }) {
     ],
     passwordProfile: {
       password: tempPassword,
-      forceChangePasswordNextSignIn: true
+      forceChangePasswordNextSignIn
     },
     passwordPolicies: "DisablePasswordExpiration"
   });

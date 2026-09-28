@@ -13,6 +13,11 @@ function notFoundHandler(req, res, next) {
 
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
+  // body-parser-fouten (ongeldige JSON, te grote body) zijn clientfouten, geen 500.
+  if (!(err instanceof HttpError) && err.type && (err.status === 400 || err.status === 413)) {
+    err = new HttpError(err.status, err.status === 413 ? "Verzoek is te groot" : "Ongeldige invoer");
+  }
+
   const isKnownError = err instanceof HttpError;
   const statusCode = isKnownError ? err.statusCode : 500;
 
