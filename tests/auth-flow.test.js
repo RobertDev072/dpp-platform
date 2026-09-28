@@ -324,6 +324,26 @@ test("auth flow: config, redirectTo, company-status, rate limits, Entra-foutredi
       return callback({ stateCookie, form: { code: "fake-code", state: authRequest.state } });
     }
 
+    // Publieke callback met een OIDC-fout: alleen een geldige foutcode belandt in de log,
+    // nooit door de aanvaller gekozen tekst met regeleinden (log forging).
+    {
+      const logged = [];
+      const originalError = console.error;
+      console.error = (...parts) => logged.push(parts.join(" "));
+      try {
+        const forged = await callback({ form: { error: "access_denied\nFORGED audit line" } });
+        assert.equal(forged.status, 302);
+        assert.equal(forged.location, "/login.html?error=login_failed");
+        const plain = await callback({ form: { error: "access_denied" } });
+        assert.equal(plain.location, "/login.html?error=login_failed");
+      } finally {
+        console.error = originalError;
+      }
+      assert.ok(!logged.some((line) => line.includes("FORGED")), "geïnjecteerde tekst komt niet in de log");
+      assert.ok(logged.some((line) => line.endsWith("(ongeldige foutcode)")));
+      assert.ok(logged.some((line) => line.endsWith(": access_denied")));
+    }
+
     // login_hint: genormaliseerd e-mailadres uit de form-post; ongeldig -> geen hint.
     const withHint = await startFlow({ email: `  ${viewer.email.toUpperCase()} ` });
     assert.equal(withHint.authRequest.loginHint, viewer.email);

@@ -22,6 +22,8 @@ const { logAudit } = require("../utils/auditLog");
 
 const router = express.Router();
 const ENTRA_SCOPES = ["openid", "profile", "email"];
+// RFC 6749 §5.2: foutcodes zijn korte ASCII-woorden met underscores.
+const OAUTH_ERROR_CODE_PATTERN = /^[a-z_]{1,64}$/;
 
 // Alleen deze codes komen ooit in de URL; /login.html vertaalt ze naar een Nederlandse
 // melding. Nooit de ruwe foutmelding van Entra/MSAL: die hoort niet in de adresbalk,
@@ -105,7 +107,10 @@ router.post("/redirect", async (req, res) => {
 
     if (oidcError) {
       // Alleen de (korte, gestandaardiseerde) OIDC-foutcode loggen, niet de beschrijving.
-      console.error("Entra-login geweigerd door identity provider:", oidcError);
+      // Dit endpoint is publiek: alles wat niet op de OAuth-foutcodegrammatica lijkt (bijv.
+      // met CR/LF om nep-logregels te injecteren) wordt vervangen door een vaste tekst.
+      const safeCode = OAUTH_ERROR_CODE_PATTERN.test(oidcError) ? oidcError : "(ongeldige foutcode)";
+      console.error("Entra-login geweigerd door identity provider:", safeCode);
       redirectToLoginError(res, "login_failed");
       return;
     }
