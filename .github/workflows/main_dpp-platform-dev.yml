@@ -12,6 +12,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read #This is required for actions/checkout
 
@@ -23,11 +24,14 @@ jobs:
         with:
           node-version: '22.x'
 
-      - name: npm install, build, and test
+      # De testsuite (tests/) heeft een live Azure SQL-verbinding nodig en draait bewust
+      # niet hier: die DB-secrets staan niet in GitHub Actions. Tests draaien lokaal
+      # (npm test) vóór elke push. Zonder timeout-minutes hierboven zou een verbindings-
+      # poging zonder DB-credentials tot 6 uur kunnen blijven hangen i.p.v. snel falen.
+      - name: npm install and build
         run: |
           npm install
           npm run build --if-present
-          npm run test --if-present
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -37,6 +41,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: build
     permissions:
       id-token: write #This is required for requesting the JWT
