@@ -1,0 +1,28 @@
+const { z } = require("zod");
+
+const createProductSchema = z.object({
+  name: z.string().min(1).max(200),
+  brand: z.string().max(150).optional(),
+  model: z.string().max(150).optional(),
+  sku: z.string().max(100).optional(),
+  gtin: z.string().max(50).optional(),
+  description: z.string().optional(),
+  manufacturer: z.string().max(200).optional(),
+  countryOfOrigin: z.string().max(100).optional()
+});
+
+const updateProductSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    brand: z.string().max(150).optional(),
+    model: z.string().max(150).optional(),
+    sku: z.string().max(100).optional(),
+    gtin: z.string().max(50).optional(),
+    description: z.string().optional(),
+    manufacturer: z.string().max(200).optional(),
+    countryOfOrigin: z.string().max(100).optional(),
+    status: z.enum(["draft", "archived"]).optional()
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
+
+module.exports = { createProductSchema, updateProductSchema };

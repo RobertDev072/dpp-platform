@@ -1,8 +1,9 @@
 class HttpError extends Error {
-  constructor(statusCode, message, details) {
+  constructor(statusCode, message, details, code) {
     super(message);
     this.statusCode = statusCode;
     this.details = details;
+    this.code = code;
   }
 }
 
@@ -22,7 +23,8 @@ function errorHandler(err, req, res, next) {
   res.status(statusCode).json({
     error: {
       message: isKnownError ? err.message : "Er is een interne fout opgetreden",
-      details: isKnownError ? err.details : undefined
+      details: isKnownError ? err.details : undefined,
+      code: isKnownError ? err.code : undefined
     }
   });
 }

@@ -1,0 +1,85 @@
+const crypto = require("crypto");
+const { getPool, sql } = require("../../src/config/db");
+const { hashPassword } = require("../../src/utils/password");
+
+function uniqueSuffix() {
+  return crypto.randomBytes(4).toString("hex");
+}
+
+async function createTestCompany(name = "Test Company") {
+  const pool = await getPool();
+  const suffix = uniqueSuffix();
+  const result = await pool
+    .request()
+    .input("name", sql.NVarChar(200), `${name} ${suffix}`)
+    .input("slug", sql.NVarChar(100), `test-${suffix}`)
+    .query(`
+      INSERT INTO dbo.Companies (name, slug)
+      OUTPUT INSERTED.id
+      VALUES (@name, @slug)
+    `);
+  return result.recordset[0].id;
+}
+
+async function createTestUser({ companyId = null, role, password = "TestPassword123!" }) {
+  const pool = await getPool();
+  const suffix = uniqueSuffix();
+  const email = `test-${suffix}@example.com`;
+  const passwordHash = await hashPassword(password);
+
+  const result = await pool
+    .request()
+    .input("companyId", sql.Int, companyId)
+    .input("email", sql.NVarChar(256), email)
+    .input("passwordHash", sql.NVarChar(255), passwordHash)
+    .input("role", sql.NVarChar(30), role)
+    .query(`
+      INSERT INTO dbo.Users (company_id, email, password_hash, role, status)
+      OUTPUT INSERTED.id
+      VALUES (@companyId, @email, @passwordHash, @role, 'active')
+    `);
+
+  return { id: result.recordset[0].id, email, password, companyId, role };
+}
+
+async function createTestProduct({ companyId, name = "Test Product" }) {
+  const pool = await getPool();
+  const suffix = uniqueSuffix();
+  const result = await pool
+    .request()
+    .input("companyId", sql.Int, companyId)
+    .input("name", sql.NVarChar(200), `${name} ${suffix}`)
+    .query(`
+      INSERT INTO dbo.Products (company_id, name, status)
+      OUTPUT INSERTED.id
+      VALUES (@companyId, @name, 'draft')
+    `);
+  return result.recordset[0].id;
+}
+
+async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] }) {
+  const pool = await getPool();
+  const companies = companyIds.map(Number);
+  const users = userIds.map(Number);
+  const products = productIds.map(Number);
+
+  if (users.length) {
+    await pool.request().query(`DELETE FROM dbo.Sessions WHERE user_id IN (${users.join(",")})`);
+    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE user_id IN (${users.join(",")})`);
+  }
+  if (companies.length) {
+    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${companies.join(",")})`);
+    await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
+  }
+  if (products.length) {
+    await pool.request().query(`DELETE FROM dbo.Products WHERE id IN (${products.join(",")})`);
+  }
+  if (users.length) {
+    await pool.request().query(`DELETE FROM dbo.Users WHERE id IN (${users.join(",")})`);
+  }
+  if (companies.length) {
+    await pool.request().query(`DELETE FROM dbo.Companies WHERE id IN (${companies.join(",")})`);
+  }
+}
+
+module.exports = { createTestCompany, createTestUser, createTestProduct, cleanupTestData };
