@@ -2,7 +2,7 @@
 <html lang="nl">
   <head>
     <meta charset="UTF-8" />
-    <title>Gebruikers — DPP Platform</title>
+    <title>Producten — DPP Platform</title>
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
@@ -14,23 +14,15 @@
       </div>
     </header>
     <main>
-      <h1>Gebruikers</h1>
+      <h1>Producten</h1>
       <p class="error hidden" id="error"></p>
 
       <form class="card" id="create-form">
-        <h2>Nieuwe gebruiker</h2>
-        <label id="company-field">
-          Bedrijf
-          <select id="companyId"></select>
-        </label>
-        <label>E-mail <input type="email" id="email" required /></label>
-        <label>Wachtwoord (min. 12 tekens) <input type="password" id="password" minlength="12" required /></label>
-        <label>Voornaam <input id="firstName" /></label>
-        <label>Achternaam <input id="lastName" /></label>
-        <label>
-          Rol
-          <select id="role"></select>
-        </label>
+        <h2>Nieuw product</h2>
+        <label>Naam <input id="name" required /></label>
+        <label>Merk <input id="brand" /></label>
+        <label>Model <input id="model" /></label>
+        <label>SKU <input id="sku" /></label>
         <button type="submit">Aanmaken</button>
       </form>
 
@@ -38,10 +30,11 @@
         <thead>
           <tr>
             <th>ID</th>
-            <th>E-mail</th>
-            <th>Bedrijf</th>
-            <th>Rol</th>
+            <th>Naam</th>
+            <th>Merk</th>
+            <th>Model</th>
             <th>Status</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -50,8 +43,8 @@
     <script src="/js/api.js"></script>
     <script src="/js/nav.js"></script>
     <script>
-      const NAV_MENU = ADMIN_MENU;
+      const NAV_MENU = COMPANY_MENU;
     </script>
-    <script src="/js/users.js"></script>
+    <script src="/js/products.js"></script>
   </body>
 </html>

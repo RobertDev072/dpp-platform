@@ -7,12 +7,7 @@
   </head>
   <body>
     <header>
-      <nav>
-        <a href="/admin/index.html">Dashboard</a>
-        <a href="/admin/companies.html">Bedrijven</a>
-        <a href="/admin/users.html">Gebruikers</a>
-        <a href="/admin/products.html">Producten</a>
-      </nav>
+      <nav id="nav-links"></nav>
       <div>
         <span id="whoami"></span>
         <button id="logout-btn">Uitloggen</button>
@@ -26,6 +21,10 @@
         <h2>Nieuw bedrijf</h2>
         <label>Naam <input id="name" required /></label>
         <label>Slug <input id="slug" placeholder="bijv. acme-manufacturing" required /></label>
+        <label>
+          Plan
+          <select id="planId"><option value="">— geen plan —</option></select>
+        </label>
         <button type="submit">Aanmaken</button>
       </form>
 
@@ -35,14 +34,21 @@
             <th>ID</th>
             <th>Naam</th>
             <th>Slug</th>
+            <th>Plan</th>
             <th>Status</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
+
+      <div id="invites-panel"></div>
     </main>
     <script src="/js/api.js"></script>
     <script src="/js/nav.js"></script>
+    <script>
+      const NAV_MENU = ADMIN_MENU;
+    </script>
     <script src="/js/companies.js"></script>
   </body>
 </html>

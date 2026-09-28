@@ -7,8 +7,8 @@ document.getElementById("login-form").addEventListener("submit", async (event) =
   const password = document.getElementById("password").value;
 
   try {
-    await apiRequest("POST", "/api/auth/login", { email, password });
-    window.location.href = "/admin/index.html";
+    const user = await apiRequest("POST", "/api/auth/login", { email, password });
+    window.location.href = user.role === "system_owner" ? "/admin/index.html" : "/company/index.html";
   } catch (error) {
     errorEl.textContent = error.message;
     errorEl.classList.remove("hidden");

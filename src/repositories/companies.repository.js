@@ -79,4 +79,25 @@ async function updateCompany(id, fields) {
   return result.recordset[0] || null;
 }
 
-module.exports = { listCompanies, getCompanyById, createCompany, updateCompany };
+async function countCompanies() {
+  const pool = await getPool();
+  const result = await pool.request().query(`SELECT COUNT(*) AS total FROM dbo.Companies`);
+  return result.recordset[0].total;
+}
+
+async function countActiveCompanies() {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .query(`SELECT COUNT(*) AS total FROM dbo.Companies WHERE status = 'active'`);
+  return result.recordset[0].total;
+}
+
+module.exports = {
+  listCompanies,
+  getCompanyById,
+  createCompany,
+  updateCompany,
+  countCompanies,
+  countActiveCompanies
+};

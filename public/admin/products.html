@@ -7,12 +7,7 @@
   </head>
   <body>
     <header>
-      <nav>
-        <a href="/admin/index.html">Dashboard</a>
-        <a href="/admin/companies.html">Bedrijven</a>
-        <a href="/admin/users.html">Gebruikers</a>
-        <a href="/admin/products.html">Producten</a>
-      </nav>
+      <nav id="nav-links"></nav>
       <div>
         <span id="whoami"></span>
         <button id="logout-btn">Uitloggen</button>
@@ -47,6 +42,9 @@
     </main>
     <script src="/js/api.js"></script>
     <script src="/js/nav.js"></script>
+    <script>
+      const NAV_MENU = ADMIN_MENU;
+    </script>
     <script src="/js/products.js"></script>
   </body>
 </html>

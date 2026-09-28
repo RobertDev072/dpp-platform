@@ -111,7 +111,7 @@ document.getElementById("create-form").addEventListener("submit", async (event) 
   }
 });
 
-initNav()
+initNav(NAV_MENU)
   .then(async (user) => {
     await setupForm(user);
     await loadUsers();

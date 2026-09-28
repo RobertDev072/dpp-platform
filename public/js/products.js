@@ -57,7 +57,7 @@ document.getElementById("create-form").addEventListener("submit", async (event) 
   }
 });
 
-initNav()
+initNav(NAV_MENU)
   .then((user) => {
     if (!["company_admin", "company_user"].includes(user.role)) {
       document.getElementById("create-form").classList.add("hidden");

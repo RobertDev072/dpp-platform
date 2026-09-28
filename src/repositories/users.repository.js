@@ -98,6 +98,14 @@ async function countActiveUsers(companyId) {
   return result.recordset[0].activeCount;
 }
 
+async function countAllActiveUsers() {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .query(`SELECT COUNT(*) AS activeCount FROM dbo.Users WHERE status = 'active'`);
+  return result.recordset[0].activeCount;
+}
+
 // Telt actieve users binnen een company met UPDLOCK+HOLDLOCK zodat twee gelijktijdige
 // "user aanmaken"-requests niet allebei de limiet-check kunnen passeren voordat een van
 // beide zijn insert heeft gecommit (voorkomt een race over de seat-limiet).
@@ -192,6 +200,7 @@ module.exports = {
   getUnlinkedUserByEmail,
   linkEntraSubjectId,
   countActiveUsers,
+  countAllActiveUsers,
   createUserWithSeatLimit,
   updateUser
 };

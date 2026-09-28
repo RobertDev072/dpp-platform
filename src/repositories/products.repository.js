@@ -127,4 +127,28 @@ async function updateProduct(id, fields) {
   return result.recordset[0] || null;
 }
 
-module.exports = { listProducts, getProductById, createProduct, updateProduct };
+async function countProductsByStatus({ companyId } = {}) {
+  const pool = await getPool();
+  const request = pool.request();
+
+  let where = "";
+  if (companyId !== undefined) {
+    request.input("companyId", sql.Int, companyId);
+    where = "WHERE company_id = @companyId";
+  }
+
+  const result = await request.query(`
+    SELECT status, COUNT(*) AS total
+    FROM dbo.Products
+    ${where}
+    GROUP BY status
+  `);
+
+  const counts = { draft: 0, published: 0, archived: 0 };
+  for (const row of result.recordset) {
+    counts[row.status] = row.total;
+  }
+  return counts;
+}
+
+module.exports = { listProducts, getProductById, createProduct, updateProduct, countProductsByStatus };
