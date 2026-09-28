@@ -5,7 +5,6 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "next build web",
     "test:db": "node scripts/check-db-connection.js",
     "migrate": "node scripts/migrate.js",
     "seed:owner": "node scripts/seed-system-owner.js",
