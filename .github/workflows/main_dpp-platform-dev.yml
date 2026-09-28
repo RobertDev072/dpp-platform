@@ -28,10 +28,25 @@ jobs:
       # niet hier: die DB-secrets staan niet in GitHub Actions. Tests draaien lokaal
       # (npm test) vóór elke push. Zonder timeout-minutes hierboven zou een verbindings-
       # poging zonder DB-credentials tot 6 uur kunnen blijven hangen i.p.v. snel falen.
-      - name: npm install and build
+      #
+      # Dit is bewust alleen een BUILD-VALIDATIE (fail-fast als de Next.js-build breekt),
+      # geen artefact dat naar Azure gaat. Azure App Service (Linux) comprimeert
+      # node_modules bij elke deploy automatisch naar node_modules.tar.gz en genereert
+      # daarbij oryx-manifest.toml (platform-eigen optimalisatie, gedocumenteerd op
+      # https://azure.github.io/AppService/2025/07/09/node-optimization.html) - als wij
+      # zelf een kant-en-klare node_modules/.next meesturen vanuit deze ubuntu-runner,
+      # botst dat met die platform-optimalisatie en verdwijnt .next (vandaar de eerdere
+      # "Could not find a production build in the '.next' directory"-fout op Azure).
+      # In plaats daarvan sturen we alleen broncode; Azure (Oryx, via de
+      # SCM_DO_BUILD_DURING_DEPLOYMENT=true App Setting) bouwt zelf npm install +
+      # npm run build, in exact dezelfde omgeving als waar de app ook draait.
+      - name: npm install and build (validatie, wordt niet gedeployed)
         run: |
           npm install
           npm run build --if-present
+
+      - name: Verwijder build-artefacten vóór upload (Azure bouwt zelf via Oryx)
+        run: rm -rf node_modules web/.next web/node_modules
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
