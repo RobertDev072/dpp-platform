@@ -60,7 +60,14 @@
         "div",
         { className: "sidebar-brand" },
         el("span", { className: "brand-mark", text: "DPP" }),
-        el("span", { className: "brand-text", text: area === "admin" ? "Platformbeheer" : user.companyName || "DPP Platform" })
+        el("span", { className: "brand-text", text: area === "admin" ? "Platformbeheer" : user.companyName || "DPP Platform" }),
+        // Alleen zichtbaar op tablet (styles.css): daar ligt de open sidebar over de ☰-knop.
+        el("button", {
+          className: "sidebar-close",
+          text: "×",
+          attrs: { type: "button", "aria-label": "Menu sluiten" },
+          on: { click: () => setSidebarOpen(false, { restoreFocus: true }) }
+        })
       )
     );
     sidebar.appendChild(
@@ -81,6 +88,71 @@
       )
     );
     sidebar.appendChild(el("div", { className: "sidebar-footer", text: "DPP Platform" }));
+
+    // Klik naast het open menu sluit het (tablet). Eén backdrop per pagina, ook als
+    // renderSidebar opnieuw wordt aangeroepen.
+    if (!document.querySelector(".sidebar-backdrop")) {
+      document.body.appendChild(
+        el("div", {
+          className: "sidebar-backdrop",
+          attrs: { "aria-hidden": "true" },
+          on: { click: () => setSidebarOpen(false, { restoreFocus: true }) }
+        })
+      );
+    }
+  }
+
+  // Op tablet (<= 1024px) is de sidebar een fixed overlay die over de ☰-knop in de topbar
+  // valt: sluiten moet daarom ook via ×, Escape of een klik naast het menu kunnen, anders
+  // zitten muis- en touchgebruikers vast tot ze wegnavigeren (en onopgeslagen invoer kwijt zijn).
+  function setSidebarOpen(open, { restoreFocus = false } = {}) {
+    document.body.classList.toggle("sidebar-open", open);
+    const toggle = document.querySelector(".sidebar-toggle");
+    if (toggle) toggle.setAttribute("aria-expanded", String(open));
+    if (open) {
+      const closeBtn = document.querySelector(".sidebar-close");
+      // Alleen focussen als de knop echt zichtbaar is (tablet); op desktop is hij verborgen.
+      if (closeBtn && closeBtn.offsetParent !== null) closeBtn.focus();
+    } else if (restoreFocus && toggle && toggle.offsetParent !== null) {
+      toggle.focus();
+    }
+  }
+
+  // Eén keer per pagina registreren (layout.js wordt één keer geladen). Een open modal
+  // heeft voorrang: die sluit zelf op Escape en ligt boven de sidebar.
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !document.body.classList.contains("sidebar-open")) return;
+    if (document.querySelector(".modal-overlay")) return;
+    setSidebarOpen(false, { restoreFocus: true });
+  });
+
+  // Uitloggen. Lokaal: POST /api/auth/logout (sessie weg + auditlog) en naar /login.html.
+  // In Entra-modus moet de browser zelf naar GET /auth/logout navigeren: die route beëindigt
+  // de DPP-sessie (incl. auditlog) én stuurt door naar het Entra end-session endpoint. Alleen
+  // de DPP-sessie weggooien laat de SSO-sessie bij <tenant>.ciamlogin.com leven, waarna
+  // "Doorgaan" op een gedeeld apparaat de vorige gebruiker zonder wachtwoord/MFA weer inlogt.
+  // De Entra-URL zelf staat bewust niet in de frontend; de server bepaalt de redirect.
+  async function logout() {
+    let mode = "local";
+    try {
+      const config = await api.get("/api/auth/config");
+      if (config && config.mode === "entra") mode = "entra";
+    } catch {
+      // Config niet bereikbaar: val terug op de lokale logout hieronder.
+    }
+
+    if (mode === "entra") {
+      // Werkt ook als de DPP-sessie al verlopen is: de server ruimt op wat er is en stuurt
+      // altijd door naar het Entra end-session endpoint.
+      window.location.href = "/auth/logout";
+      return;
+    }
+
+    try {
+      await api.post("/api/auth/logout");
+    } finally {
+      window.location.href = "/login.html";
+    }
   }
 
   function renderTopbar(user) {
@@ -91,8 +163,13 @@
     const toggle = el("button", {
       className: "sidebar-toggle",
       text: "☰",
-      attrs: { type: "button", "aria-label": "Menu tonen/verbergen" },
-      on: { click: () => document.body.classList.toggle("sidebar-open") }
+      attrs: {
+        type: "button",
+        "aria-label": "Menu tonen/verbergen",
+        "aria-controls": "sidebar",
+        "aria-expanded": String(document.body.classList.contains("sidebar-open"))
+      },
+      on: { click: () => setSidebarOpen(!document.body.classList.contains("sidebar-open")) }
     });
 
     const logoutBtn = el("button", {
@@ -100,12 +177,10 @@
       text: "Uitloggen",
       attrs: { type: "button" },
       on: {
-        click: async () => {
-          try {
-            await api.post("/api/auth/logout");
-          } finally {
-            window.location.href = "/login.html";
-          }
+        click: () => {
+          // Dubbelklik mag geen tweede logout-request/navigatie starten.
+          logoutBtn.disabled = true;
+          logout();
         }
       }
     });
@@ -140,6 +215,10 @@
         el("a", { className: "btn", text: "Naar dashboard", attrs: { href: homeFor(currentUser) } })
       )
     );
+    // De auth-check is klaar: styles.css verbergt .content-kinderen tot body.ready, dus zonder
+    // deze regel blijft de geen-toegang-melding onzichtbaar (lege pagina zonder uitleg). Hier
+    // en niet alleen in initPage, zodat elke aanroeper van renderNoAccess het goed doet.
+    document.body.classList.add("ready");
   }
 
   // Resolvet met de ingelogde gebruiker, of met null als de gebruiker wordt doorgestuurd /

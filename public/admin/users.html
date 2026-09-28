@@ -2,58 +2,22 @@
 <html lang="nl">
   <head>
     <meta charset="UTF-8" />
-    <title>Gebruikers — DPP Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gebruikers — DPP Platformbeheer</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="stylesheet" href="/css/admin.css" />
   </head>
-  <body>
-    <header>
-      <nav>
-        <a href="/admin/index.html">Dashboard</a>
-        <a href="/admin/companies.html">Bedrijven</a>
-        <a href="/admin/users.html">Gebruikers</a>
-        <a href="/admin/products.html">Producten</a>
-      </nav>
-      <div>
-        <span id="whoami"></span>
-        <button id="logout-btn">Uitloggen</button>
-      </div>
-    </header>
-    <main>
-      <h1>Gebruikers</h1>
-      <p class="error hidden" id="error"></p>
-
-      <form class="card" id="create-form">
-        <h2>Nieuwe gebruiker</h2>
-        <label id="company-field">
-          Bedrijf
-          <select id="companyId"></select>
-        </label>
-        <label>E-mail <input type="email" id="email" required /></label>
-        <label>Wachtwoord (min. 12 tekens) <input type="password" id="password" minlength="12" required /></label>
-        <label>Voornaam <input id="firstName" /></label>
-        <label>Achternaam <input id="lastName" /></label>
-        <label>
-          Rol
-          <select id="role"></select>
-        </label>
-        <button type="submit">Aanmaken</button>
-      </form>
-
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>E-mail</th>
-            <th>Bedrijf</th>
-            <th>Rol</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </main>
+  <body class="app-shell" data-area="admin" data-page="users">
+    <aside id="sidebar" class="sidebar"></aside>
+    <div class="main-col">
+      <header id="topbar" class="topbar"></header>
+      <main id="content" class="content"></main>
+    </div>
     <script src="/js/api.js"></script>
-    <script src="/js/nav.js"></script>
-    <script src="/js/users.js"></script>
+    <script src="/js/dom.js"></script>
+    <script src="/js/layout.js"></script>
+    <script src="/js/admin/common.js"></script>
+    <script src="/js/admin/users.js"></script>
   </body>
 </html>

@@ -2,8 +2,9 @@
 
 Deze stappen kan alleen jij uitvoeren (Azure/Entra-portaltoegang). De code in deze repo
 is al voorbereid: zolang de onderstaande environment variables niet allemaal gezet zijn,
-blijft de bestaande bcrypt/sessie-login gewoon werken (`isEntraConfigured()` schakelt
-automatisch over zodra alles is ingevuld — zie `src/config/entra.js`).
+blijft de bestaande bcrypt/sessie-login gewoon werken. De app schakelt automatisch over
+zodra alles is ingevuld: `isEntraLoginConfigured()` voor inloggen, `isEntraConfigured()`
+(login + Graph) voor het aanmaken van accounts — zie `src/config/entra.js`.
 
 ## 1. Externe tenant aanmaken
 
@@ -17,12 +18,23 @@ checken op de Azure-pricingpagina).
 
 **a) `dpp-platform-web`** — voor de inlog-flow (delegated, gebruiker aanwezig)
 - Platform: **Web**
-- Redirect URI's: `https://<jouw-app-service>.azurewebsites.net/api/auth/entra/callback`
-  en, voor lokaal ontwikkelen, `http://localhost:3000/api/auth/entra/callback`
+- Redirect URI's: `https://<jouw-app-service>.azurewebsites.net/auth/redirect`
+  en, voor lokaal ontwikkelen, `http://localhost:3000/auth/redirect`
+  (het pad moet exact `/auth/redirect` zijn: Entra post de authorization code daarheen
+  met `response_mode=form_post`, zie `docs/architecture-roles.md` §8 — een ander pad
+  eindigt bij elke login in een 404)
+- Voeg ook de `ENTRA_POST_LOGOUT_REDIRECT_URI` (`https://<jouw-app-service>.azurewebsites.net/login.html`,
+  lokaal `http://localhost:3000/login.html`) toe als redirect URI: Entra stuurt na
+  "Uitloggen" (`GET /auth/logout` → end-session endpoint) alleen terug naar een
+  geregistreerde URI
   (`localhost` mag http zijn — de poort wordt genegeerd bij matching, maar Microsoft
   raadt aan dev/prod liever in aparte registraties te houden; voor MVP is één
   registratie met beide URI's acceptabel)
 - Genereer een **client secret** (Certificates & secrets)
+- **Token configuration**: controleer dat het ID-token een `email`-claim bevat (de app vraagt
+  de scopes `openid profile email`); voeg anders de optionele claim `email` (token type ID)
+  toe. DPP gebruikt die claim alleen voor de eenmalige koppeling op e-mailadres (§9); daarna
+  herkent DPP de gebruiker aan de `sub`-claim
 - Noteer: Application (client) ID, Directory (tenant) ID, het secret
 
 **b) `dpp-platform-graph-service`** — voor de backend/daemon (app-only, geen gebruiker)
@@ -92,39 +104,115 @@ zichtbaar), maar dit sluit het "sign up"-pad hard af als extra zekerheid.
 In tegenstelling tot workforce-tenants vereist Conditional Access in een External-tenant
 **geen** Entra ID P1/P2 — alleen de rol **Security Administrator** om het in te stellen.
 
-1. Maak twee security groups aan (Entra ID → Groups): bijv. `DPP-Standard-Users`.
-2. Conditional Access → New policy:
+1. **MFA-methode**: zet onder Authentication methods **Email one-time passcode** aan (gratis;
+   dezelfde methode als voor SSPR in §7). Zet **geen** SMS aan: SMS-verificatie is in
+   External ID een betaalde add-on.
+2. Maak één security group aan (Entra ID → Groups), bijv. `DPP-Standard-Users`.
+3. Conditional Access → New policy:
    - **Include**: All users (dit is momenteel de enige optie in External-tenants)
    - **Exclude**: de groep `DPP-Standard-Users`
    - **Grant**: Require multifactor authentication
-3. **Handmatig beheer voor MVP**: voeg elke nieuwe `company_user`/`viewer` toe aan
-   `DPP-Standard-Users` (zij hebben dan GEEN verplichte MFA); laat `system_owner` en
-   `company_admin`-accounts hier juist buiten (zij krijgen dan WEL verplichte MFA, via de
-   Include-all-behalve-uitzondering).
+4. **Wie hoort in `DPP-Standard-Users`?** Alleen medewerkers zonder beheerrechten, voor wie
+   je bewust geen verplichte MFA wilt: `product_manager`, `compliance_manager`, `company_user`
+   en `viewer`. **Nooit** `system_owner` of `company_admin`: die vallen daardoor automatisch
+   onder de policy (Include all, geen uitzondering) en krijgen verplichte MFA.
 
-   Ik heb dit bewust **niet** geautomatiseerd vanuit de DPP-backend: dat zou een extra
-   Graph-permissie (`GroupMember.ReadWrite.All`, tenant-breed) vereisen puur voor een
-   kleine, laagfrequente actie (alleen bij het aanmaken van company_admins). Voor MVP
-   is dit met een paar accounts per maand een prima handmatige taak voor jou als
-   System Owner. Zie het als een expliciete scope-keuze, niet een gat.
+De groep is een **uitzonderingsgroep**, en de DPP-backend voegt niemand automatisch toe. Dat
+betekent:
 
-   **Let op — tijdelijk risico-venster:** een nieuwe `company_admin` heeft, tussen het
-   moment van aanmaken in DPP en het moment dat jij ze uit `DPP-Standard-Users` haalt
-   (of er nooit in stopt), nog geen verplichte MFA. Voeg daarom bij het aanmaken van een
-   company_admin die groepswijziging het liefst *direct* door, niet als losse periodieke
-   taak.
+- Een nieuwe **Company Admin** (Entra-account aangemaakt bij het activeren van de uitnodiging,
+  `docs/architecture-roles.md` §5) zit nooit in de groep en heeft dus vanaf de eerste login
+  verplichte MFA. Er is geen risicovenster.
+- Een nieuwe **medewerker** heeft ook verplichte MFA totdat jij hem aan `DPP-Standard-Users`
+  toevoegt. Dat is de veilige kant: zonder handmatige actie is er MFA, niet minder.
+- **Rolwijziging naar `company_admin`** (alleen de System Owner kan dat, via
+  Gebruikers → Naam en rol wijzigen): haal het account **direct** uit `DPP-Standard-Users`,
+  anders houdt deze beheerder geen verplichte MFA. De SO-UI toont deze waarschuwing ook.
 
-## 7. Password reset
+Dit is bewust **niet** geautomatiseerd vanuit de DPP-backend: dat zou een extra
+Graph-permissie (`GroupMember.ReadWrite.All`, tenant-breed) vereisen voor een kleine,
+laagfrequente actie. Controleer de groep af en toe (Entra → Groups → Members) tegen de
+Company Admins in DPP (Platformbeheer → Company Admins).
 
-- **Primair (aanbevolen door Microsoft, geen standing privilege nodig)**: schakel
-  Self-Service Password Reset in bij Entra ID → **External Identities** → **Password
-  reset**. Werkt met e-mail-OTP, geen extra kosten.
-- **Fallback in DPP** (`POST /api/users/:id/reset-password`, al gebouwd): smalle
-  Graph-permissie (`User-PasswordProfile.ReadWrite.All`), scoped door DPP's eigen
-  company_id-check — bedoeld voor het geval een medewerker geen toegang meer heeft tot
-  zijn e-mail. Niet de standaardweg.
+## 7. Wachtwoord vergeten: Self-Service Password Reset (SSPR)
 
-## 8. Environment variables (App Service Application Settings + lokale `.env`)
+SSPR is de standaardweg voor "Wachtwoord vergeten?" en kost niets extra. Gebruikers krijgen
+een verificatiecode per e-mail en kiezen zelf een nieuw wachtwoord; niemand bij DPP ziet dat
+wachtwoord.
+
+1. Zet **Email one-time passcode** aan als authenticatiemethode (Entra admin center →
+   Authentication methods → Policies → Email OTP → Enable, doelgroep All users). Dit is
+   dezelfde methode als voor MFA (§6).
+2. Toon de link **"Wachtwoord vergeten?"** op de Entra-inlogpagina: Company branding →
+   Default sign-in → Edit → tab *Sign-in form* → **Show self-service password reset** aanvinken
+   (zie ook §8).
+3. Test het met een testaccount: DPP-loginpagina → e-mailadres → Doorgaan → op de Entra-pagina
+   "Wachtwoord vergeten?" → code uit de mail → nieuw wachtwoord.
+
+De DPP-loginpagina (`/login.html`) legt dit in Entra-modus uit onder "Wachtwoord vergeten?" en
+heeft een knop die direct naar de Entra-pagina gaat, ook zonder ingevuld e-mailadres. De
+precieze menunamen in de portal kunnen wijzigen; zoek zo nodig op "self-service password
+reset" in de documentatie van Microsoft Entra External ID.
+
+**Fallback in DPP** (`POST /api/users/:id/reset-password`): de Company Admin (of de System
+Owner) zet via Graph een tijdelijk wachtwoord (`User-PasswordProfile.ReadWrite.All`, beperkt
+door DPP's eigen company_id-check). Dat is bedoeld voor een medewerker die geen toegang meer
+heeft tot zijn mailbox, niet als standaardweg.
+
+## 8. Company branding: de DPP-huisstijl op de wachtwoordpagina
+
+Na stap 1 op `/login.html` (e-mailadres) toont Entra de wachtwoordstap op
+`<tenant>.ciamlogin.com`. Via **Company branding** (gratis, onderdeel van elke External-tenant)
+lijkt die pagina op de DPP-loginpagina, zodat gebruikers niet schrikken van een andere
+omgeving:
+
+Entra admin center → **Company branding** → **Default sign-in** → **Edit**:
+
+- *Basics*: favicon (DPP-logo), paginakleur `#0f172a` (de donkere DPP-kleur uit
+  `public/css/styles.css`, `--sidebar-bg`) of een achtergrondafbeelding.
+- *Layout*: een template met het formulier in het midden, zoals `/login.html`.
+- *Sign-in form*: banner logo (het DPP-logo, liggend formaat), "Show self-service password
+  reset" aan (§7) en eventueel een korte tekst, bijv. "Log in met je DPP-account".
+- *Footer*: links naar privacyverklaring en voorwaarden, als je die hebt.
+
+De indeling van de tabbladen kan per portalversie iets verschillen; de instellingen zelf
+(logo, kleuren, SSPR-link) zijn in elke External-tenant gratis.
+
+Zet onder **User flows** → je flow → **Languages** Nederlands aan, zodat de Entra-pagina's
+dezelfde taal hebben als DPP. Een volledig eigen wachtwoordformulier binnen DPP kan later via
+Entra's *native authentication* API; dat is een aparte stap en niet nodig voor MVP.
+
+## 9. System Owner en bestaande accounts koppelen (just-in-time op e-mailadres)
+
+Zodra de login-variabelen uit §10 gezet zijn, is Entra de enige manier om in te loggen:
+`POST /api/auth/login` (lokaal wachtwoord) gaat dicht (`404 LOCAL_LOGIN_DISABLED`), ook voor de
+System Owner. Een lokaal wachtwoord zou anders Entra en de MFA-policy omzeilen. Accounts
+die al in DPP bestonden (de System Owner uit `npm run seed:owner`, medewerkers die in lokale
+modus zijn aangemaakt) worden daarom bij hun eerste Entra-login eenmalig gekoppeld:
+
+1. Maak **vóór** het omzetten in de External-tenant een gebruiker aan met **exact hetzelfde
+   e-mailadres** als in DPP (Entra admin center → Users → New user, aanmelden met e-mailadres
+   en wachtwoord). Zet dit account **niet** in `DPP-Standard-Users`:
+   de System Owner krijgt verplichte MFA.
+2. Zet de Entra-variabelen (§10) en herstart de app.
+3. Log in via `/login.html`. DPP zoekt eerst op de Entra `sub`-claim; is die nog onbekend, dan
+   koppelt DPP de identiteit eenmalig aan het **actieve**, nog niet gekoppelde DPP-account met
+   hetzelfde e-mailadres (hoofdletterongevoelig; zie `src/services/entraLogin.service.js`).
+   Daarbij wordt het lokale wachtwoord (`password_hash`) gewist: vanaf dan kan dit account
+   alleen nog via Entra inloggen.
+4. Geen actief DPP-account met dat e-mailadres? Dan geen koppeling en meldt de loginpagina
+   `no_account`. Is het account al gekoppeld maar niet (meer) actief, of is het bedrijf niet
+   actief, dan `inactive`. Een al gekoppeld account (`entra_subject_id` gezet) wordt nooit
+   opnieuw aan een andere Entra-identiteit gehangen.
+
+Zorg dat alleen jij (en eventuele mede-beheerders) gebruikers in de External-tenant kunnen
+aanmaken, en laat zelfregistratie uit (§5): wie een Entra-account met het e-mailadres van
+een ongekoppeld DPP-account kan aanmaken, wordt bij de eerste login aan dat account gekoppeld.
+Nieuwe accounts na het omzetten maakt DPP zelf aan via Graph (Company Admins bij activatie,
+medewerkers via "Medewerker toevoegen"). Die hebben nooit een lokaal wachtwoord en krijgen hun
+`sub`-koppeling op dezelfde manier bij de eerste login.
+
+## 10. Environment variables (App Service Application Settings + lokale `.env`)
 
 ```
 ENTRA_TENANT_NAME=jouw-tenant-naam        (het stuk vóór .onmicrosoft.com / .ciamlogin.com)
@@ -133,17 +221,20 @@ ENTRA_WEB_CLIENT_ID=...                    (van dpp-platform-web)
 ENTRA_WEB_CLIENT_SECRET=...
 ENTRA_GRAPH_CLIENT_ID=...                  (van dpp-platform-graph-service)
 ENTRA_GRAPH_CLIENT_SECRET=...
-ENTRA_REDIRECT_URI=https://.../api/auth/entra/callback
+ENTRA_REDIRECT_URI=https://.../auth/redirect           (exact dit pad, gelijk aan de redirect URI in de app-registratie)
 ENTRA_POST_LOGOUT_REDIRECT_URI=https://.../login.html
 COOKIE_SECRET=...                          (willekeurige lange string, voor het signeren van de korte OIDC-state-cookie — GEEN Entra-secret, zelf te genereren, bv. met `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
 ```
 
 Nooit in `.env` committen (staat al in `.gitignore`); op Azure als Application Settings.
 
-## 9. Wat blijft ongewijzigd werken
+## 11. Wat blijft ongewijzigd werken
 
-Zolang bovenstaande niet (volledig) is ingevuld: `POST /api/auth/login` (bcrypt) blijft
-100% functioneel voor bestaande accounts (zoals de gezaaide System Owner). Nieuwe
+Zolang de login-variabelen (`ENTRA_TENANT_NAME`, `ENTRA_TENANT_ID`, `ENTRA_WEB_CLIENT_ID`,
+`ENTRA_WEB_CLIENT_SECRET`, `ENTRA_REDIRECT_URI`, `ENTRA_POST_LOGOUT_REDIRECT_URI`,
+`COOKIE_SECRET`) niet allemaal gezet zijn: `POST /api/auth/login` (bcrypt) blijft
+100% functioneel voor bestaande accounts (zoals de gezaaide System Owner). Zodra ze wel
+allemaal gezet zijn, gaat de lokale login dicht; koppel de System Owner daarom eerst (§9). Nieuwe
 gebruikers aanmaken via `POST /api/users` valt in die situatie terug op het oude
 wachtwoord-invoerveld. Zodra alle env vars gezet zijn, schakelt user-creation
 automatisch over naar Entra-provisioning — er hoeft geen code aangepast te worden.

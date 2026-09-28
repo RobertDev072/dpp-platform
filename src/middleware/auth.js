@@ -151,6 +151,7 @@ module.exports = {
   createSession,
   destroySession,
   revokeUserSessions,
+  getUserForToken,
   setSessionCookie,
   clearSessionCookie,
   requireAuth,

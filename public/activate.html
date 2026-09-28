@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Account activeren — DPP Platform</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="stylesheet" href="/css/admin.css" />
+  </head>
+  <body class="auth-page">
+    <main class="auth-card auth-card-wide">
+      <div class="auth-brand">
+        <span class="brand-mark">DPP</span>
+        <span class="brand-name">DPP Platform</span>
+      </div>
+
+      <div id="activate-loading" class="auth-loading">Uitnodiging controleren…</div>
+
+      <!-- Ongeldige, verlopen of al gebruikte link -->
+      <section id="activate-invalid" class="hidden">
+        <h1>Link ongeldig of verlopen</h1>
+        <p class="subtitle">Deze activatielink kan niet (meer) worden gebruikt. Een link is 72 uur geldig en werkt maar één keer.</p>
+        <div class="alert alert-info"><span>Vraag de beheerder van het DPP Platform om een nieuwe uitnodiging. Heb je je account al geactiveerd? Log dan gewoon in.</span></div>
+        <a class="btn" href="/login.html">Naar inloggen</a>
+      </section>
+
+      <!-- Formulier -->
+      <section id="activate-form-section" class="hidden">
+        <h1>Account activeren</h1>
+        <p class="subtitle">Je bent uitgenodigd als Company Admin. Kies een wachtwoord om je account te activeren.</p>
+
+        <dl class="invite-summary">
+          <dt>Bedrijf</dt>
+          <dd id="invite-company"></dd>
+          <dt>E-mailadres</dt>
+          <dd id="invite-email"></dd>
+          <dt>Geldig tot</dt>
+          <dd id="invite-expires"></dd>
+        </dl>
+
+        <div id="activate-alert" aria-live="polite"></div>
+
+        <form id="activate-form" novalidate>
+          <!-- Voor wachtwoordmanagers: koppelt het nieuwe wachtwoord aan het juiste account. -->
+          <input type="email" id="username" name="username" autocomplete="username" class="hidden" readonly tabindex="-1" aria-hidden="true" />
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="first-name">Voornaam</label>
+              <input class="input" type="text" id="first-name" name="firstName" autocomplete="given-name" maxlength="100" />
+            </div>
+            <div class="form-field">
+              <label for="last-name">Achternaam</label>
+              <input class="input" type="text" id="last-name" name="lastName" autocomplete="family-name" maxlength="100" />
+            </div>
+            <div class="form-field full">
+              <label for="password">Wachtwoord *</label>
+              <input class="input" type="password" id="password" name="password" autocomplete="new-password" required maxlength="256" aria-describedby="password-rules" />
+            </div>
+            <div class="form-field full">
+              <label for="password-confirm">Herhaal wachtwoord *</label>
+              <input class="input" type="password" id="password-confirm" name="passwordConfirm" autocomplete="new-password" required maxlength="256" />
+            </div>
+          </div>
+
+          <ul id="password-rules" class="password-rules" aria-live="polite">
+            <li data-rule="length">Minimaal 12 tekens</li>
+            <li data-rule="upper">Minstens één hoofdletter</li>
+            <li data-rule="lower">Minstens één kleine letter</li>
+            <li data-rule="digit">Minstens één cijfer</li>
+            <li data-rule="symbol">Minstens één symbool (bijv. !#@)</li>
+            <li data-rule="ascii" class="hidden">Geen letters met accenten of speciale tekens buiten het toetsenbord</li>
+            <li data-rule="match">Beide wachtwoorden zijn gelijk</li>
+          </ul>
+
+          <button type="submit" id="activate-submit" class="btn" disabled>Account activeren</button>
+        </form>
+      </section>
+
+      <!-- Gelukt -->
+      <section id="activate-success" class="hidden">
+        <div class="success-mark" aria-hidden="true">✓</div>
+        <h1>Je account is geactiveerd</h1>
+        <p class="subtitle">Je kunt nu inloggen met <strong id="success-email"></strong> en het wachtwoord dat je net hebt gekozen.</p>
+        <div id="success-mfa" class="alert alert-info"><span>Bij je eerste login vraagt de inlogpagina om een tweede stap (MFA), bijvoorbeeld een verificatiecode per e-mail. Houd je mailbox bij de hand.</span></div>
+        <a class="btn" id="to-login" href="/login.html">Naar inloggen</a>
+      </section>
+    </main>
+    <script src="/js/api.js"></script>
+    <script src="/js/activate.js"></script>
+  </body>
+</html>

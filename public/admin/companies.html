@@ -2,47 +2,22 @@
 <html lang="nl">
   <head>
     <meta charset="UTF-8" />
-    <title>Bedrijven — DPP Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bedrijven — DPP Platformbeheer</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="stylesheet" href="/css/admin.css" />
   </head>
-  <body>
-    <header>
-      <nav>
-        <a href="/admin/index.html">Dashboard</a>
-        <a href="/admin/companies.html">Bedrijven</a>
-        <a href="/admin/users.html">Gebruikers</a>
-        <a href="/admin/products.html">Producten</a>
-      </nav>
-      <div>
-        <span id="whoami"></span>
-        <button id="logout-btn">Uitloggen</button>
-      </div>
-    </header>
-    <main>
-      <h1>Bedrijven</h1>
-      <p class="error hidden" id="error"></p>
-
-      <form class="card" id="create-form">
-        <h2>Nieuw bedrijf</h2>
-        <label>Naam <input id="name" required /></label>
-        <label>Slug <input id="slug" placeholder="bijv. acme-manufacturing" required /></label>
-        <button type="submit">Aanmaken</button>
-      </form>
-
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Naam</th>
-            <th>Slug</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </main>
+  <body class="app-shell" data-area="admin" data-page="companies">
+    <aside id="sidebar" class="sidebar"></aside>
+    <div class="main-col">
+      <header id="topbar" class="topbar"></header>
+      <main id="content" class="content"></main>
+    </div>
     <script src="/js/api.js"></script>
-    <script src="/js/nav.js"></script>
-    <script src="/js/companies.js"></script>
+    <script src="/js/dom.js"></script>
+    <script src="/js/layout.js"></script>
+    <script src="/js/admin/common.js"></script>
+    <script src="/js/admin/companies.js"></script>
   </body>
 </html>

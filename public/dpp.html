@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Digitaal Productpaspoort: productinformatie, materialen, compliance, recycling en reparatie." />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>Digitaal Productpaspoort — DPP Platform</title>
+    <!-- Absolute paden: deze pagina wordt geserveerd op /p/<public_id>, niet op /dpp.html. -->
+    <!-- Ingebed icoon (img-src staat data: toe): voorkomt een 404 op /favicon.ico. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f172a'/%3E%3Cpath d='M10 8h6.5a8 8 0 0 1 0 16H10z' fill='%2338bdf8'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/dpp.css" />
+  </head>
+  <body class="dpp-page">
+    <a class="dpp-skip" href="#dpp-main">Naar de inhoud</a>
+
+    <header class="dpp-topbar">
+      <div class="dpp-topbar-inner">
+        <span class="dpp-brand">
+          <span class="dpp-brand-mark" aria-hidden="true">DPP</span>
+          <span class="dpp-brand-label">Digitaal Productpaspoort</span>
+        </span>
+      </div>
+    </header>
+
+    <main id="dpp-main" class="dpp-main" tabindex="-1" aria-busy="true">
+      <!-- Laadstatus: skelet met dezelfde opbouw als het paspoort, zodat de pagina niet verspringt. -->
+      <div id="dpp-loading" class="dpp-loading" role="status">
+        <span class="dpp-sr-only">Productpaspoort laden…</span>
+        <div class="dpp-hero" aria-hidden="true">
+          <div class="dpp-hero-inner">
+            <span class="dpp-skel dpp-skel-title"></span>
+            <span class="dpp-skel dpp-skel-line"></span>
+            <span class="dpp-skel dpp-skel-pill"></span>
+          </div>
+        </div>
+        <div class="dpp-container" aria-hidden="true">
+          <div class="dpp-facts-skeleton">
+            <span class="dpp-skel dpp-skel-fact"></span>
+            <span class="dpp-skel dpp-skel-fact"></span>
+            <span class="dpp-skel dpp-skel-fact"></span>
+            <span class="dpp-skel dpp-skel-fact"></span>
+          </div>
+          <div class="dpp-card">
+            <span class="dpp-skel dpp-skel-heading"></span>
+            <span class="dpp-skel dpp-skel-text"></span>
+            <span class="dpp-skel dpp-skel-text"></span>
+            <span class="dpp-skel dpp-skel-text dpp-skel-short"></span>
+          </div>
+          <div class="dpp-card">
+            <span class="dpp-skel dpp-skel-heading"></span>
+            <span class="dpp-skel dpp-skel-text"></span>
+            <span class="dpp-skel dpp-skel-text dpp-skel-short"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Het paspoort zelf; dpp.js vult dit met textContent (nooit innerHTML). -->
+      <div id="dpp-passport" class="hidden"></div>
+
+      <!-- Niet gevonden: onbekend, ongeldig of niet (meer) gepubliceerd. Bewust één melding. -->
+      <section id="dpp-not-found" class="dpp-state hidden" aria-labelledby="dpp-not-found-title">
+        <div class="dpp-state-icon" aria-hidden="true">?</div>
+        <h1 id="dpp-not-found-title">Productpaspoort niet gevonden</h1>
+        <p>Dit paspoort bestaat niet of is op dit moment niet gepubliceerd.</p>
+        <p class="dpp-muted">Controleer of je de volledige link hebt gebruikt, of scan de QR-code op het product opnieuw. Neem bij twijfel contact op met de fabrikant of verkoper.</p>
+      </section>
+
+      <!-- Tijdelijke fout (netwerk, server, te veel verzoeken): opnieuw proberen kan helpen. -->
+      <section id="dpp-error" class="dpp-state hidden" aria-labelledby="dpp-error-title">
+        <div class="dpp-state-icon dpp-state-icon-error" aria-hidden="true">!</div>
+        <h1 id="dpp-error-title">Het paspoort kan nu niet worden geladen</h1>
+        <p id="dpp-error-message">Er ging iets mis bij het ophalen van de productinformatie.</p>
+        <button type="button" id="dpp-retry" class="dpp-btn">Opnieuw proberen</button>
+      </section>
+    </main>
+
+    <footer class="dpp-footer">
+      <div class="dpp-container dpp-footer-inner">
+        <div id="dpp-footer-meta" class="dpp-footer-meta"></div>
+        <div class="dpp-footer-bottom">
+          <span class="dpp-powered">Powered by <strong>DPP Platform</strong></span>
+          <button type="button" id="dpp-print" class="dpp-btn dpp-btn-ghost hidden">Afdrukken</button>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/js/dom.js"></script>
+    <script src="/js/dpp.js"></script>
+  </body>
+</html>

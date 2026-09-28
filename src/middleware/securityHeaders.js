@@ -1,7 +1,23 @@
+const { isEntraLoginConfigured, getEntraConfig } = require("../config/entra");
+
+// Alleen een kale hostnaam (letters, cijfers, koppeltekens, punten) mag de CSP in: een
+// verkeerd ingevulde ENTRA_TENANT_NAME met bijv. ";" of een spatie zou anders extra
+// directives aan de policy kunnen toevoegen.
+const HOST_PATTERN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i;
+
+// form-action geldt in Chrome/Edge (CSP3) ook voor de redirect ná een form-post. Het
+// Entra-loginformulier (POST /auth/login) antwoordt met een 302 naar
+// https://<tenant>.ciamlogin.com; zonder die origin hier blokkeert de browser "Doorgaan".
+function formActionDirective() {
+  if (!isEntraLoginConfigured()) return "form-action 'self'";
+  const { ciamHost } = getEntraConfig();
+  return HOST_PATTERN.test(ciamHost) ? `form-action 'self' https://${ciamHost}` : "form-action 'self'";
+}
+
 // Basis security-headers voor alle responses. De CSP staat geen inline scripts/styles toe:
 // alle JS/CSS komt uit /public als los bestand, en DOM-updates gaan via textContent.
 function securityHeaders(req, res, next) {
-  res.set({
+  const headers = {
     "Content-Security-Policy": [
       "default-src 'self'",
       "script-src 'self'",
@@ -11,13 +27,26 @@ function securityHeaders(req, res, next) {
       "object-src 'none'",
       "base-uri 'self'",
       "frame-ancestors 'none'",
-      "form-action 'self'"
+      formActionDirective()
     ].join("; "),
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
-  });
+  };
+
+  // HSTS: na het eerste https-bezoek gebruikt de browser nooit meer plain http voor deze host,
+  // dus een getypte http://-URL, oude bookmark of verkeerd geconfigureerde QR-link kan niet
+  // vóór de https-redirect van App Service worden onderschept of gedowngraded ("HTTPS Only"
+  // stuurt alleen een 301, geen HSTS). Zelfde fail-closed regel als de secure sessie-cookie:
+  // alleen expliciet NODE_ENV=development slaat het over, zodat localhost niet aan https
+  // vastgepind raakt. Geen "preload": niet aangemeld en op *.azurewebsites.net niet mogelijk.
+  // Browsers negeren de header over plain http, dus altijd meesturen is onschadelijk.
+  if (process.env.NODE_ENV !== "development") {
+    headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+  }
+
+  res.set(headers);
   next();
 }
 

@@ -3,21 +3,46 @@ const express = require("express");
 const { isEntraLoginConfigured, getEntraConfig } = require("../config/entra");
 const { getWebConfidentialClient } = require("../services/msalClients");
 const { setOAuthStateCookie, consumeOAuthStateCookie } = require("../utils/oauthState");
-const { resolveEntraLogin, EntraLoginError } = require("../services/entraLogin.service");
-const { createSession, destroySession, setSessionCookie, clearSessionCookie, requireAuth } = require("../middleware/auth");
+const {
+  resolveEntraLogin,
+  EntraLoginError,
+  getHomePathForRole,
+  getLoginErrorCode
+} = require("../services/entraLogin.service");
+const { entraLoginHintSchema, entraCallbackSchema } = require("../schemas/auth.schema");
+const {
+  SESSION_COOKIE_NAME,
+  createSession,
+  destroySession,
+  getUserForToken,
+  setSessionCookie,
+  clearSessionCookie
+} = require("../middleware/auth");
 const { logAudit } = require("../utils/auditLog");
-const { HttpError } = require("../middleware/errorHandler");
 
 const router = express.Router();
 const ENTRA_SCOPES = ["openid", "profile", "email"];
 
-router.get("/login", async (req, res, next) => {
-  try {
-    if (!isEntraLoginConfigured()) {
-      next(new HttpError(503, "Entra External ID-login is niet geconfigureerd"));
-      return;
-    }
+// Alleen deze codes komen ooit in de URL; /login.html vertaalt ze naar een Nederlandse
+// melding. Nooit de ruwe foutmelding van Entra/MSAL: die hoort niet in de adresbalk,
+// browsergeschiedenis of access logs.
+const LOGIN_ERROR_CODES = new Set(["login_failed", "no_account", "inactive", "state"]);
 
+function redirectToLoginError(res, code) {
+  const safeCode = LOGIN_ERROR_CODES.has(code) ? code : "login_failed";
+  res.redirect(`/login.html?error=${safeCode}`);
+}
+
+// Gedeeld door GET (zonder hint) en POST (e-mail uit stap 1 van de loginpagina als
+// login_hint, zodat de gebruiker het adres bij Entra niet opnieuw hoeft te typen).
+async function startEntraLogin(req, res, loginHint) {
+  if (!isEntraLoginConfigured()) {
+    // Browsernavigatie: een JSON-foutpagina helpt niemand, terug naar de loginpagina.
+    redirectToLoginError(res, "login_failed");
+    return;
+  }
+
+  try {
     const entra = getEntraConfig();
     const client = await getWebConfidentialClient();
 
@@ -26,8 +51,6 @@ router.get("/login", async (req, res, next) => {
     const state = crypto.randomBytes(16).toString("hex");
     const nonce = crypto.randomBytes(16).toString("hex");
 
-    setOAuthStateCookie(res, { state, nonce, codeVerifier });
-
     const authUrl = await client.getAuthCodeUrl({
       scopes: ENTRA_SCOPES,
       redirectUri: entra.redirectUri,
@@ -35,35 +58,60 @@ router.get("/login", async (req, res, next) => {
       state,
       nonce,
       codeChallenge,
-      codeChallengeMethod: "S256"
+      codeChallengeMethod: "S256",
+      ...(loginHint ? { loginHint } : {})
     });
 
+    setOAuthStateCookie(res, { state, nonce, codeVerifier });
     res.redirect(authUrl);
   } catch (error) {
-    next(error);
+    // Alleen de melding loggen: MSAL-fouten bevatten geen secrets, maar het volledige
+    // error-object kan request-config (incl. client secret) meeslepen.
+    console.error("Starten van Entra-login mislukt:", error.message);
+    redirectToLoginError(res, "login_failed");
   }
+}
+
+router.get("/login", async (req, res) => {
+  await startEntraLogin(req, res);
+});
+
+router.post("/login", async (req, res) => {
+  // Ongeldig of ontbrekend e-mailadres is geen fout: dan zonder login_hint verder.
+  const parsed = entraLoginHintSchema.safeParse(req.body || {});
+  await startEntraLogin(req, res, parsed.success ? parsed.data.email : undefined);
 });
 
 // Entra stuurt de authorization code terug via een auto-submittende HTML-form
 // (response_mode=form_post), vandaar POST i.p.v. GET voor deze callback. Het pad
 // (/auth/redirect) moet exact overeenkomen met de redirect URI in de app-registratie.
-router.post("/redirect", async (req, res, next) => {
+// Elke fout eindigt als redirect naar /login.html?error=<code> (browsernavigatie).
+router.post("/redirect", async (req, res) => {
+  // Cookie altijd eerst consumeren (ook bij fouten): een state is maar één keer bruikbaar.
+  const stored = consumeOAuthStateCookie(req, res);
+
   try {
     if (!isEntraLoginConfigured()) {
-      next(new HttpError(503, "Entra External ID-login is niet geconfigureerd"));
+      redirectToLoginError(res, "login_failed");
       return;
     }
 
-    const { code, state: returnedState, error: oidcError, error_description: oidcErrorDescription } = req.body;
-    const stored = consumeOAuthStateCookie(req, res);
+    const parsed = entraCallbackSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      redirectToLoginError(res, "login_failed");
+      return;
+    }
+    const { code, state: returnedState, error: oidcError } = parsed.data;
 
     if (oidcError) {
-      next(new HttpError(401, `Inloggen mislukt: ${oidcErrorDescription || oidcError}`));
+      // Alleen de (korte, gestandaardiseerde) OIDC-foutcode loggen, niet de beschrijving.
+      console.error("Entra-login geweigerd door identity provider:", oidcError);
+      redirectToLoginError(res, "login_failed");
       return;
     }
 
     if (!stored || !code || !returnedState || returnedState !== stored.state) {
-      next(new HttpError(401, "Ongeldige of verlopen login-poging (state mismatch)"));
+      redirectToLoginError(res, "state");
       return;
     }
 
@@ -83,10 +131,12 @@ router.post("/redirect", async (req, res, next) => {
     // overeenkomen met de waarde die we bij /login hebben gegenereerd en opgeslagen.
     // Dit bindt het teruggekregen token aan déze specifieke login-poging.
     if (!stored.nonce || claims.nonce !== stored.nonce) {
-      next(new HttpError(401, "Ongeldige of verlopen login-poging (nonce mismatch)"));
+      redirectToLoginError(res, "state");
       return;
     }
 
+    // resolveEntraLogin weigert ook inactieve/geblokkeerde accounts en gebruikers van een
+    // niet-actieve company (EntraLoginError -> "inactive").
     const user = await resolveEntraLogin({ sub: claims.sub, email: claims.email });
 
     const { token, expiresAt } = await createSession(user.id);
@@ -101,29 +151,38 @@ router.post("/redirect", async (req, res, next) => {
       metadata: { via: "entra" }
     });
 
-    res.redirect("/admin/index.html");
+    res.redirect(getHomePathForRole(user.role));
   } catch (error) {
-    if (error instanceof EntraLoginError) {
-      next(new HttpError(401, error.message));
-      return;
+    if (!(error instanceof EntraLoginError)) {
+      console.error("Entra-login mislukt:", error.message);
     }
-    next(error);
+    redirectToLoginError(res, getLoginErrorCode(error));
   }
 });
 
-router.get("/logout", requireAuth, async (req, res, next) => {
+// Bewust zonder requireAuth: ook met een al verlopen/ingetrokken DPP-sessie moet de browser
+// door naar het Entra end-session endpoint, anders blijft de SSO-sessie bij ciamlogin.com
+// leven en logt "Doorgaan" op een gedeeld apparaat de vorige gebruiker weer in.
+router.get("/logout", async (req, res, next) => {
   try {
-    await destroySession(req.sessionToken);
+    const token = req.cookies?.[SESSION_COOKIE_NAME];
+    const user = token ? await getUserForToken(token) : null;
+
+    if (token) {
+      await destroySession(token);
+    }
     clearSessionCookie(res);
 
-    await logAudit({
-      companyId: req.user.companyId,
-      userId: req.user.id,
-      action: "logout",
-      entityType: "User",
-      entityId: req.user.id,
-      metadata: { via: "entra" }
-    });
+    if (user) {
+      await logAudit({
+        companyId: user.companyId,
+        userId: user.id,
+        action: "logout",
+        entityType: "User",
+        entityId: user.id,
+        metadata: { via: "entra" }
+      });
+    }
 
     res.redirect(isEntraLoginConfigured() ? getEntraConfig().logoutEndpoint : "/login.html");
   } catch (error) {

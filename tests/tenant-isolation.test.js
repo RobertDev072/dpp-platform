@@ -19,26 +19,32 @@ async function login(baseUrl, user) {
 
 test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", async (t) => {
   const { server, baseUrl } = await startTestServer();
+  const cleanup = { companyIds: [], userIds: [], productIds: [] };
 
-  const companyA = await createTestCompany("Company A");
-  const companyB = await createTestCompany("Company B");
-
-  const owner = await createTestUser({ companyId: null, role: "system_owner" });
-  const adminA = await createTestUser({ companyId: companyA, role: "company_admin" });
-  const adminB = await createTestUser({ companyId: companyB, role: "company_admin" });
-  const viewerA = await createTestUser({ companyId: companyA, role: "viewer" });
-
-  const productA = await createTestProduct({ companyId: companyA, name: "Product A" });
-
+  // Direct registreren (vóór de fixtures): faalt het aanmaken van een fixture, dan blijven
+  // server en SQL-pool anders open en blijft het testproces eeuwig hangen.
   t.after(async () => {
-    await cleanupTestData({
-      companyIds: [companyA, companyB],
-      userIds: [owner.id, adminA.id, adminB.id, viewerA.id],
-      productIds: [productA]
-    });
+    await cleanupTestData(cleanup);
     await stopTestServer(server);
     await sql.close();
   });
+
+  const companyA = await createTestCompany("Company A");
+  cleanup.companyIds.push(companyA);
+  const companyB = await createTestCompany("Company B");
+  cleanup.companyIds.push(companyB);
+
+  const owner = await createTestUser({ companyId: null, role: "system_owner" });
+  cleanup.userIds.push(owner.id);
+  const adminA = await createTestUser({ companyId: companyA, role: "company_admin" });
+  cleanup.userIds.push(adminA.id);
+  const adminB = await createTestUser({ companyId: companyB, role: "company_admin" });
+  cleanup.userIds.push(adminB.id);
+  const viewerA = await createTestUser({ companyId: companyA, role: "viewer" });
+  cleanup.userIds.push(viewerA.id);
+
+  const productA = await createTestProduct({ companyId: companyA, name: "Product A" });
+  cleanup.productIds.push(productA);
 
   let ownerCookie;
   let adminACookie;

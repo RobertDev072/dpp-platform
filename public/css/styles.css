@@ -217,6 +217,12 @@ h3 {
   color: var(--muted);
 }
 
+/* Sluitknop en backdrop bestaan alleen voor de tablet-overlay (zie media query onderaan). */
+.sidebar-close,
+.sidebar-backdrop {
+  display: none;
+}
+
 .sidebar-toggle {
   display: none;
   background: none;
@@ -491,8 +497,9 @@ textarea:disabled {
   margin-top: 16px;
 }
 
-.btn,
-button.btn {
+/* Bewust alleen de klasse (0,1,0), net als .btn-secondary/-ghost/-danger/-sm hieronder:
+   met "button.btn" (0,1,1) zou elke <button> de primaire stijl houden. */
+.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -642,6 +649,16 @@ button.btn {
   gap: 8px;
   padding: 14px 20px;
   border-top: 1px solid var(--border);
+}
+
+/* Eenmalig-tonen-dialoog (DPP.showSecretOnce): hier en niet in app.css/admin.css, zodat
+   de dialoog op /admin en /app dezelfde veldafstand heeft. */
+.secret-once .form-field + .form-field {
+  margin-top: 12px;
+}
+
+.secret-once .alert {
+  margin-bottom: 14px;
 }
 
 /* ---------- Tabs / toolbar / detail lists ---------- */
@@ -805,8 +822,46 @@ button.btn {
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
   }
 
+  /* Dicht = ook onbereikbaar voor Tab/schermlezer; visibility schakelt pas na de slide-out. */
+  body:not(.sidebar-open) .sidebar {
+    visibility: hidden;
+    transition: transform 0.2s ease, visibility 0s linear 0.2s;
+  }
+
   .sidebar-toggle {
     display: inline-block;
+  }
+
+  /* De open sidebar ligt over de ☰-knop: sluiten via × in de sidebar of een klik ernaast. */
+  .sidebar-close {
+    display: inline-block;
+    margin-left: auto;
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    padding: 0 6px;
+    color: var(--sidebar-fg);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .sidebar-close:hover,
+  .sidebar-close:focus-visible {
+    color: #fff;
+    background: var(--sidebar-active);
+  }
+
+  /* Boven de topbar (10), onder de sidebar (50) en modals (100). */
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(15, 23, 42, 0.45);
+  }
+
+  body.sidebar-open .sidebar-backdrop {
+    display: block;
   }
 
   .grid-2 {
@@ -828,7 +883,8 @@ button.btn {
   }
 
   .form-grid {
-    grid-template-columns: 1fr;
+    /* minmax(0, …): anders groeit de kolom mee met de min-content van brede velden. */
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .detail-list {

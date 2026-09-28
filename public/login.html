@@ -2,29 +2,61 @@
 <html lang="nl">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Inloggen — DPP Platform</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="stylesheet" href="/css/admin.css" />
   </head>
-  <body>
-    <div class="login-box">
-      <h1>DPP Platform</h1>
-      <form id="login-form">
-        <label>
-          E-mail
-          <input type="email" id="email" required autofocus />
-        </label>
-        <label>
-          Wachtwoord
-          <input type="password" id="password" required />
-        </label>
-        <p class="error hidden" id="error"></p>
-        <button type="submit">Inloggen</button>
+  <body class="auth-page">
+    <main class="auth-card">
+      <div class="auth-brand">
+        <span class="brand-mark">DPP</span>
+        <span class="brand-name">DPP Platform</span>
+      </div>
+      <h1>Inloggen</h1>
+      <p class="subtitle">Digitaal Productpaspoort — beheer je producten en paspoorten.</p>
+
+      <div id="login-alert" aria-live="polite"></div>
+
+      <div id="login-loading" class="auth-loading">Laden…</div>
+
+      <!-- Lokale (ontwikkel)modus: e-mail + wachtwoord naar /api/auth/login. -->
+      <form id="local-form" class="hidden" novalidate>
+        <div class="form-field">
+          <label for="local-email">E-mailadres</label>
+          <input class="input" type="email" id="local-email" name="email" autocomplete="username" required maxlength="256" />
+        </div>
+        <div class="form-field">
+          <label for="local-password">Wachtwoord</label>
+          <input class="input" type="password" id="local-password" name="password" autocomplete="current-password" required maxlength="1024" />
+        </div>
+        <button type="submit" class="btn">Inloggen</button>
       </form>
-      <p style="text-align:center; margin: 16px 0 4px;">of</p>
-      <a href="/auth/login" style="display:block; text-align:center; padding: 8px 14px; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #1a2b4c;">
-        Inloggen met Microsoft
-      </a>
-    </div>
+
+      <!-- Entra-modus: stap 1 = e-mail, gewone form-post naar /auth/login (login_hint).
+           De wachtwoordstap volgt op de beveiligde DPP-loginpagina van Entra. -->
+      <form id="entra-form" class="hidden" method="post" action="/auth/login" novalidate>
+        <div class="form-field">
+          <label for="entra-email">E-mailadres</label>
+          <input class="input" type="email" id="entra-email" name="email" autocomplete="username" required maxlength="256" />
+        </div>
+        <p class="auth-note">Na <strong>Doorgaan</strong> vul je je wachtwoord in op de beveiligde DPP-inlogpagina. Daar wordt ook je tweestapsverificatie (MFA) gevraagd.</p>
+        <button type="submit" class="btn">Doorgaan</button>
+      </form>
+
+      <div id="auth-links" class="auth-links hidden">
+        <button type="button" id="forgot-toggle" class="link-button" aria-expanded="false" aria-controls="forgot-help">Wachtwoord vergeten?</button>
+      </div>
+
+      <div id="forgot-help" class="auth-help hidden">
+        <p id="forgot-local" class="hidden">Neem contact op met de Company Admin van je bedrijf. Die kan je wachtwoord resetten en geeft je een tijdelijk wachtwoord. Ben je zelf Company Admin? Neem dan contact op met de beheerder van het DPP Platform.</p>
+        <div id="forgot-entra" class="hidden">
+          <p>Vul hierboven je e-mailadres in en ga door naar de beveiligde DPP-inlogpagina. Kies daar onder het wachtwoordveld <strong>Wachtwoord vergeten?</strong>: je ontvangt een verificatiecode per e-mail en stelt zelf een nieuw wachtwoord in.</p>
+          <button type="submit" form="entra-form" formnovalidate class="btn btn-secondary">Doorgaan naar wachtwoord herstellen</button>
+        </div>
+      </div>
+    </main>
     <script src="/js/api.js"></script>
     <script src="/js/login.js"></script>
   </body>

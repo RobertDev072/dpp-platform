@@ -24,10 +24,10 @@ jobs:
         with:
           node-version: '22.x'
 
-      # De testsuite (tests/) heeft een live Azure SQL-verbinding nodig en draait bewust
-      # niet hier: die DB-secrets staan niet in GitHub Actions. Tests draaien lokaal
-      # (npm test) vóór elke push. Zonder timeout-minutes hierboven zou een verbindings-
-      # poging zonder DB-credentials tot 6 uur kunnen blijven hangen i.p.v. snel falen.
+      # De testsuite (tests/) heeft een SQL Server-database nodig en draait (nog) niet hier.
+      # Lokaal draait hij tegen een SQL Server-container, zie README "Tests"; draai npm test
+      # vóór elke push. Zonder timeout-minutes hierboven zou een verbindingspoging zonder
+      # DB-credentials tot 6 uur kunnen blijven hangen i.p.v. snel falen.
       - name: npm install and build
         run: |
           npm install

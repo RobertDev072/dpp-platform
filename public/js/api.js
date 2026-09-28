@@ -7,8 +7,12 @@ async function apiRequest(method, url, body) {
   });
 
   if (response.status === 401 && !url.startsWith("/api/auth/login") && !url.startsWith("/api/invitations")) {
-    window.location.href = "/login.html";
-    throw new Error("Niet ingelogd");
+    window.location.href = "/login.html?error=session";
+    // De browser navigeert al weg (sessie verlopen, account geblokkeerd, company gedeactiveerd):
+    // de aanroeper mag niet verder en ook geen "Niet ingelogd"-melding of onafgehandelde
+    // rejection (elke pagina doet DPP.initPage().then(...) zonder catch) veroorzaken. Een
+    // promise die nooit settlet stopt de aanroeper stil tot de navigatie klaar is.
+    return new Promise(() => {});
   }
 
   if (response.status === 204) {

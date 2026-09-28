@@ -2,30 +2,22 @@
 <html lang="nl">
   <head>
     <meta charset="UTF-8" />
-    <title>Dashboard — DPP Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard — DPP Platformbeheer</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/css/styles.css" />
+    <link rel="stylesheet" href="/css/admin.css" />
   </head>
-  <body>
-    <header>
-      <nav>
-        <a href="/admin/index.html">Dashboard</a>
-        <a href="/admin/companies.html">Bedrijven</a>
-        <a href="/admin/users.html">Gebruikers</a>
-        <a href="/admin/products.html">Producten</a>
-      </nav>
-      <div>
-        <span id="whoami"></span>
-        <button id="logout-btn">Uitloggen</button>
-      </div>
-    </header>
-    <main>
-      <h1>DPP Platform — beheer</h1>
-      <p>Kies links een onderdeel om te beheren.</p>
-    </main>
+  <body class="app-shell" data-area="admin" data-page="dashboard">
+    <aside id="sidebar" class="sidebar"></aside>
+    <div class="main-col">
+      <header id="topbar" class="topbar"></header>
+      <main id="content" class="content"></main>
+    </div>
     <script src="/js/api.js"></script>
-    <script src="/js/nav.js"></script>
-    <script>
-      initNav();
-    </script>
+    <script src="/js/dom.js"></script>
+    <script src="/js/layout.js"></script>
+    <script src="/js/admin/common.js"></script>
+    <script src="/js/admin/dashboard.js"></script>
   </body>
 </html>

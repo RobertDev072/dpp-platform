@@ -1,0 +1,1189 @@
+/* Company-console (/app) voor de Company Admin en medewerkers. Aanvulling op styles.css
+   (daarna geladen); alleen klassen, geen inline styles (CSP: style-src 'self'). Dynamische
+   breedtes/hoogtes (voortgangsbalken, grafieken) worden in JS via element.style gezet. */
+
+/* ---------- Knoppen ---------- */
+
+/* Varianten (.btn-secondary/-ghost/-danger/-sm) staan in styles.css. */
+.btn-danger-outline {
+  color: var(--danger);
+  border-color: #fecaca;
+}
+
+.btn-danger-outline:hover {
+  background: var(--danger-bg);
+  border-color: #fca5a5;
+  color: var(--danger);
+}
+
+.btn-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* ---------- Algemeen ---------- */
+
+.loading-state {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty-cta h2 {
+  color: var(--text);
+  margin: 0;
+}
+
+.empty-cta p {
+  margin: 0;
+  max-width: 460px;
+}
+
+/* Titelblok mag krimpen, zodat de actieknoppen naast een lange ondertitel blijven staan. */
+.page-header > div:first-child {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.page-header .subtitle {
+  max-width: 760px;
+}
+
+.back-link {
+  display: inline-block;
+  font-size: 13px;
+  text-decoration: none;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.back-link:hover {
+  color: var(--primary);
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  margin: 6px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  grid-column: 1 / -1;
+}
+
+.section-title:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.readonly-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 16px;
+}
+
+.help-text {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--danger-bg);
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  white-space: nowrap;
+}
+
+/* ---------- Badges ---------- */
+
+.badge-role {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.badge-public {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-private {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.badge-self {
+  background: #ede9fe;
+  color: #5b21b6;
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 1px 7px;
+  vertical-align: 1px;
+}
+
+.badge-lg {
+  font-size: 13px;
+  padding: 3px 11px;
+}
+
+/* ---------- Formulieren / modals ---------- */
+
+.modal-intro {
+  margin: 0 0 14px;
+  color: #334155;
+}
+
+.modal-error:empty {
+  display: none;
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.input.input-invalid {
+  border-color: var(--danger);
+}
+
+.confirm-text {
+  margin: 0;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.role-help {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.role-help li {
+  padding: 2px 0;
+}
+
+.role-help strong {
+  color: #334155;
+}
+
+.form-actions.full {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+.panel-form .form-actions {
+  align-items: center;
+}
+
+.dirty-hint {
+  font-size: 12px;
+  color: var(--warning);
+  margin-right: auto;
+}
+
+.dirty-hint:empty {
+  display: none;
+}
+
+/* ---------- Dashboard ---------- */
+
+.stat-grid-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-group-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.stat-card .progress {
+  margin-top: 10px;
+}
+
+.stat-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.stat-card-link .stat-card {
+  height: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-card-link:hover .stat-card,
+.stat-card-link:focus-visible .stat-card {
+  border-color: #93c5fd;
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.12);
+}
+
+.dash-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 20px;
+}
+
+.dash-columns > .card {
+  margin-bottom: 0;
+}
+
+.quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.quick-action:hover,
+.quick-action:focus-visible {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.quick-action-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.quick-action-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.quick-action-text strong {
+  font-weight: 600;
+}
+
+.quick-action-text span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------- Cards / tabellen ---------- */
+
+.card-flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.card-flush > .card-header {
+  padding: 14px 20px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-flush .empty-state {
+  padding: 28px 16px;
+}
+
+.card-flush > .card-body {
+  padding: 16px 20px;
+}
+
+.card-link {
+  font-size: 13px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.card-link:hover {
+  text-decoration: underline;
+}
+
+.card-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.toolbar .toolbar-search {
+  min-width: 260px;
+  flex: 0 1 320px;
+}
+
+.toolbar select {
+  max-width: 240px;
+}
+
+.toolbar-count {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.cell-stack .muted {
+  font-size: 12px;
+}
+
+.cell-strong {
+  font-weight: 600;
+}
+
+.table td.nowrap,
+.table th.nowrap {
+  white-space: nowrap;
+}
+
+.table td.num,
+.table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table td.col-actions,
+.table th.col-actions {
+  white-space: nowrap;
+  width: 1%;
+  text-align: right;
+}
+
+.table td.cell-truncate {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table tr.row-muted td {
+  color: var(--muted);
+}
+
+.row-actions {
+  display: inline-flex;
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.table a.cell-link {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.table a.cell-link:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.show-tablet {
+  display: none;
+}
+
+/* ---------- Actiemenu (per rij) ---------- */
+
+/* position: fixed + coördinaten via JS: een menu in een tabel met overflow-x: auto zou
+   anders worden afgeknipt. */
+.action-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.action-menu-item {
+  background: none;
+  border: none;
+  text-align: left;
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.action-menu-item:hover,
+.action-menu-item:focus-visible {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.action-menu-item.danger {
+  color: var(--danger);
+}
+
+.action-menu-item.danger:hover,
+.action-menu-item.danger:focus-visible {
+  background: var(--danger-bg);
+}
+
+.action-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+
+/* ---------- Gebruikers / licenties ---------- */
+
+.seats-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 24px;
+  align-items: center;
+}
+
+.seats-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* Het licentiecijfer "4 / 5" mag nooit over regels breken; de meta-kolom wrapt in plaats
+   daarvan (min-content van het cijfer = het hele cijfer, dus het grid knijpt .seats-meta). */
+.seats-number {
+  font-size: 24px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.seats-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+  justify-content: flex-end;
+}
+
+.seats-card .progress {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.seats-card .alert {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+}
+
+.progress-unlimited {
+  background: repeating-linear-gradient(90deg, #e2e8f0 0 6px, #f1f5f9 6px 12px);
+}
+
+/* ---------- Productdetail ---------- */
+
+.product-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+
+.product-aside .card {
+  padding: 16px 18px;
+}
+
+.tab-count {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  vertical-align: 1px;
+}
+
+.tab.active .tab-count {
+  background: #dbeafe;
+  color: var(--primary);
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.panel-header h2 {
+  margin: 0;
+}
+
+.panel-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Documententabel in de productdetail. Die staat naast de checklist en is daardoor veel
+   smaller dan het venster (±610-770px op een laptop), dus viewport-breakpoints zoals
+   hide-tablet (1024px) helpen hier niet. Daarom reageert de tabel op de breedte van zijn
+   eigen kaart: is die te smal voor Titel + Type + Zichtbaarheid + Acties (±760px met lange
+   Nederlandse woorden als "Conformiteitsverklaring"), dan schuift het type als regel in de
+   titelcel en blijft 'Acties' binnen de kaart. Het actiemenu hangt aan <body>, dus de
+   containment van de container raakt het niet. */
+.docs-card {
+  container-type: inline-size;
+}
+
+.cell-stack .show-narrow {
+  display: none;
+}
+
+@container (max-width: 760px) {
+  .table th.hide-narrow,
+  .table td.hide-narrow {
+    display: none;
+  }
+
+  .cell-stack .show-narrow {
+    display: block;
+  }
+}
+
+.detail-list .empty-value {
+  color: var(--muted);
+}
+
+.detail-list.detail-compact {
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 6px 12px;
+  font-size: 13px;
+}
+
+.detail-list.detail-compact dd {
+  overflow-wrap: anywhere;
+}
+
+.checklist-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checklist-summary.ready {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid #bbf7d0;
+}
+
+.checklist-summary.not-ready {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid #fde68a;
+}
+
+.checklist-group {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  font-weight: 600;
+  margin: 12px 0 4px;
+}
+
+.check-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.check-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.check-item.ok .check-mark {
+  background: #dcfce7;
+  color: var(--success);
+}
+
+.check-item.missing .check-mark {
+  background: #fee2e2;
+  color: var(--danger);
+}
+
+.check-item.warn .check-mark {
+  background: #fef9c3;
+  color: var(--warning);
+}
+
+.check-item.flagged {
+  background: var(--danger-bg);
+  border-radius: 6px;
+  padding-left: 6px;
+  padding-right: 6px;
+  margin: 0 -6px;
+}
+
+.check-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.check-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: #cbd5e1;
+  text-underline-offset: 2px;
+}
+
+.check-link:hover {
+  color: var(--primary);
+}
+
+.check-tag {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.alert-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.alert-body {
+  flex: 1;
+}
+
+.alert-title {
+  font-weight: 600;
+}
+
+/* ---------- QR ---------- */
+
+.qr-panel {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.qr-panel .qr-preview {
+  width: 220px;
+  height: 220px;
+}
+
+.qr-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.url-box {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.url-box .input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.qr-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qr-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.qr-card-title {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.qr-card-title:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.qr-card .qr-preview {
+  width: 168px;
+  height: 168px;
+  align-self: center;
+}
+
+.url-box.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.url-box-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.url-box-buttons .btn {
+  flex: 1 1 0;
+}
+
+.qr-card .url-box .input {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.qr-card-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: -4px;
+}
+
+.qr-card-actions {
+  display: flex;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.qr-card-actions .btn {
+  flex: 1 1 0;
+}
+
+.usage-note {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.usage-note h3 {
+  margin: 0 0 4px;
+}
+
+.usage-note p {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+/* ---------- Rapportages (CSS-grafieken) ---------- */
+
+/* Horizontale balken: één reeks, één tint (magnitude). Waarde staat aan het eind van de
+   balk in teksttint; afgeronde kop, rechte basis. */
+.bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-label.muted {
+  font-style: italic;
+}
+
+.bar-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.bar-fill {
+  height: 14px;
+  min-width: 2px;
+  background: var(--primary);
+  border-radius: 0 4px 4px 0;
+  flex-shrink: 0;
+}
+
+.bar-fill.zero {
+  background: #cbd5e1;
+}
+
+.bar-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Kolomgrafiek scans per dag. */
+.col-chart {
+  position: relative;
+  padding-left: 36px;
+}
+
+.col-plot {
+  position: relative;
+  height: 180px;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.col-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #eef2f7;
+}
+
+.col-grid-label {
+  position: absolute;
+  left: -36px;
+  width: 30px;
+  text-align: right;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.col-bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.col-slot {
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: default;
+  border-radius: 4px;
+}
+
+.col-slot:hover,
+.col-slot:focus-visible {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.col-bar {
+  width: 100%;
+  max-width: 18px;
+  background: var(--primary);
+  border-radius: 4px 4px 0 0;
+}
+
+.col-slot:hover .col-bar,
+.col-slot:focus-visible .col-bar {
+  background: #3b82f6;
+}
+
+.col-bar.zero {
+  background: transparent;
+}
+
+.col-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.chart-tooltip {
+  position: fixed;
+  z-index: 150;
+  pointer-events: none;
+  background: #0f172a;
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25);
+  white-space: nowrap;
+}
+
+.chart-tooltip strong {
+  display: block;
+  font-size: 14px;
+}
+
+.chart-tooltip span {
+  color: #cbd5e1;
+}
+
+.chart-summary {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.chart-summary-item .label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chart-summary-item .value {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.table-toggle {
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.table-toggle summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.table-toggle .table-wrap {
+  margin-top: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* ---------- Instellingen ---------- */
+
+.settings-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.settings-columns .card {
+  margin-bottom: 0;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1200px) {
+  .product-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .table th.hide-tablet,
+  .table td.hide-tablet {
+    display: none;
+  }
+
+  .cell-stack .show-tablet {
+    display: block;
+  }
+
+  .stat-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-columns,
+  .settings-columns {
+    grid-template-columns: 1fr;
+  }
+
+  /* Gestapeld: de kaarten brengen zelf hun ondermarge mee. minmax(0, 1fr) i.p.v. 1fr: anders
+     groeit de kolom mee met de breedste inhoud (tabbalk, tabel) en scrollt op een telefoon de
+     hele pagina opzij; nu scrollen .tabs en .table-wrap zelf binnen de kaart. */
+  .product-layout {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0;
+  }
+
+  .product-aside {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .product-aside .card {
+    margin-bottom: 0;
+  }
+
+  .toolbar .toolbar-search {
+    min-width: 220px;
+    flex: 1 1 100%;
+  }
+
+  .usage-note {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 720px) {
+  .product-aside {
+    grid-template-columns: 1fr;
+  }
+
+  .qr-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .bar-row {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+
+  .seats-card {
+    grid-template-columns: 1fr;
+  }
+
+  .seats-meta {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .stat-grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Rij van kaarten (grid-2): de rij zelf houdt de afstand, zodat gestapelde kaarten op
+   tablet geen dubbele marge krijgen. */
+.card-row {
+  margin-bottom: 20px;
+}
+
+.card-row > .card {
+  margin-bottom: 0;
+}
