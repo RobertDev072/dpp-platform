@@ -3,7 +3,6 @@ const { requireAuth } = require("../middleware/auth");
 const companiesRepo = require("../repositories/companies.repository");
 const usersRepo = require("../repositories/users.repository");
 const productsRepo = require("../repositories/products.repository");
-const plansRepo = require("../repositories/plans.repository");
 
 const router = express.Router();
 
@@ -29,23 +28,16 @@ router.get("/stats", requireAuth, async (req, res, next) => {
       return;
     }
 
-    const [activeUsers, products, company, maxUsers] = await Promise.all([
+    const [activeUsers, products] = await Promise.all([
       usersRepo.countActiveUsers(req.user.companyId),
-      productsRepo.countProductsByStatus({ companyId: req.user.companyId }),
-      companiesRepo.getCompanyById(req.user.companyId),
-      plansRepo.getMaxUsersForCompany(req.user.companyId)
+      productsRepo.countProductsByStatus({ companyId: req.user.companyId })
     ]);
-
-    const plan = company && company.plan_id ? await plansRepo.getPlanById(company.plan_id) : null;
 
     res.json({
       scope: "company",
       activeUsers,
       products,
-      qrScans: 0,
-      companyName: company ? company.name : null,
-      planName: plan ? plan.name : null,
-      maxUsers
+      qrScans: 0
     });
   } catch (error) {
     next(error);
