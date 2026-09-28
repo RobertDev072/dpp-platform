@@ -5,4 +5,9 @@ const loginSchema = z.object({
   password: z.string().min(1)
 });
 
-module.exports = { loginSchema };
+const mfaSchema = z.object({
+  continuationToken: z.string().min(1),
+  code: z.string().min(1)
+});
+
+module.exports = { loginSchema, mfaSchema };

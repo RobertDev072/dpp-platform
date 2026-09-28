@@ -7,8 +7,14 @@ import { api } from "@/lib/api";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [continuationToken, setContinuationToken] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  function goToApp(user) {
+    window.location.href = user.role === "system_owner" ? "/admin" : "/company";
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -16,10 +22,30 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      const user = await api.post("/api/auth/login", { email, password });
-      window.location.href = user.role === "system_owner" ? "/admin" : "/company";
+      const result = await api.post("/api/auth/login", { email, password });
+      if (result.mfaRequired) {
+        setContinuationToken(result.continuationToken);
+      } else {
+        goToApp(result);
+      }
     } catch (err) {
       setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleMfaSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
+
+    try {
+      const result = await api.post("/api/auth/login/mfa", { continuationToken, code: mfaCode });
+      goToApp(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setSubmitting(false);
     }
   }
@@ -31,52 +57,89 @@ export default function LoginPage() {
           <Logo />
         </div>
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-          <label className="block text-sm font-medium text-slate-700">
-            E-mail
-            <input
-              type="email"
-              required
-              autoFocus
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
-            />
-          </label>
+        {!continuationToken && (
+          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+            <label className="block text-sm font-medium text-slate-700">
+              E-mail
+              <input
+                type="email"
+                required
+                autoFocus
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+              />
+            </label>
 
-          <label className="block text-sm font-medium text-slate-700">
-            Wachtwoord
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
-            />
-          </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Wachtwoord
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+              />
+            </label>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
-          >
-            Inloggen
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+            >
+              Inloggen
+            </button>
 
-        <p className="my-4 text-center text-sm text-slate-400">of</p>
+            <a href="/wachtwoord-vergeten" className="block text-center text-sm text-blue-600 hover:underline">
+              Wachtwoord vergeten?
+            </a>
+          </form>
+        )}
 
-        <a
-          href="/auth/login"
-          className="block w-full rounded-lg border border-slate-300 px-4 py-2 text-center text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-        >
-          Inloggen met bedrijfsaccount
-        </a>
-        <p className="mt-2 text-center text-xs text-slate-400">
-          Voor accounts die door een beheerder zijn aangemaakt — geen eigen Microsoft-account nodig.
-        </p>
+        {continuationToken && (
+          <form className="mt-6 space-y-4" onSubmit={handleMfaSubmit}>
+            <p className="text-sm text-slate-600">
+              Voer de verificatiecode in die naar je e-mailadres is gestuurd.
+            </p>
+            <label className="block text-sm font-medium text-slate-700">
+              Verificatiecode
+              <input
+                required
+                autoFocus
+                value={mfaCode}
+                onChange={(event) => setMfaCode(event.target.value)}
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+              />
+            </label>
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+            >
+              Bevestigen
+            </button>
+          </form>
+        )}
+
+        {!continuationToken && (
+          <>
+            <p className="my-4 text-center text-sm text-slate-400">of</p>
+            <a
+              href="/auth/login"
+              className="block w-full rounded-lg border border-slate-300 px-4 py-2 text-center text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              Inloggen met bedrijfsaccount
+            </a>
+            <p className="mt-2 text-center text-xs text-slate-400">
+              Voor accounts die door een beheerder zijn aangemaakt — geen eigen Microsoft-account nodig.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

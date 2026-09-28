@@ -7,6 +7,7 @@ const usersRoutes = require("./routes/users.routes");
 const productsRoutes = require("./routes/products.routes");
 const plansRoutes = require("./routes/plans.routes");
 const inviteActivationRoutes = require("./routes/inviteActivation.routes");
+const passwordResetRoutes = require("./routes/passwordReset.routes");
 const dashboardRoutes = require("./routes/dashboard.routes");
 const publicProductsRoutes = require("./routes/publicProducts.routes");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
@@ -24,6 +25,7 @@ app.use("/api/users", usersRoutes);
 app.use("/api/products", productsRoutes);
 app.use("/api/admin/plans", plansRoutes);
 app.use("/api/invites", inviteActivationRoutes);
+app.use("/api/password-reset", passwordResetRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public/products", publicProductsRoutes);
 

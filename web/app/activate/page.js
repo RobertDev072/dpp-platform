@@ -56,8 +56,12 @@ function ActivateForm() {
     const body = invite && invite.requiresPassword ? { password } : {};
 
     try {
-      await api.post(`/api/invites/${token}/accept`, body);
-      window.location.href = "/login";
+      const result = await api.post(`/api/invites/${token}/accept`, body);
+      if (result.mustSetPassword) {
+        window.location.href = `/wachtwoord-vergeten?setup=1&email=${encodeURIComponent(result.email)}`;
+      } else {
+        window.location.href = "/login";
+      }
     } catch (err) {
       setSubmitError(err.message);
       setSubmitting(false);

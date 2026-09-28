@@ -110,7 +110,11 @@ router.post("/:token/accept", validateBody(acceptInviteSchema), async (req, res,
       entityId: user.id
     });
 
-    res.status(201).json({ email: user.email });
+    // Bij Entra-provisioning heeft de gebruiker nog geen bruikbaar wachtwoord (het
+    // Graph-aanroep vereist er wel één, maar die wordt nooit getoond of gedeeld) -
+    // stuur de frontend expliciet door naar de wachtwoord-instellen-flow i.p.v. direct
+    // naar /login, waar hij anders vast zou lopen.
+    res.status(201).json({ email: user.email, mustSetPassword: entraObjectId !== null });
   } catch (error) {
     next(error);
   }
