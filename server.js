@@ -1,11 +1,8 @@
 require("dotenv").config();
-const http = require("http");
-const next = require("next");
 const app = require("./src/app");
 const { isEntraLoginConfigured } = require("./src/config/entra");
 
 const PORT = process.env.PORT || 3000;
-const dev = process.env.NODE_ENV !== "production";
 
 // Fail loud, niet stil: in productie mag login nooit ongemerkt op de bcrypt-fallback
 // blijven draaien omdat iemand vergat de Entra-omgevingsvariabelen te zetten.
@@ -18,19 +15,6 @@ if (process.env.NODE_ENV === "production" && !isEntraLoginConfigured()) {
   process.exit(1);
 }
 
-const nextApp = next({ dev, dir: "web" });
-const nextHandler = nextApp.getRequestHandler();
-
-nextApp.prepare().then(() => {
-  const server = http.createServer((req, res) => {
-    if (req.url.startsWith("/api/") || req.url.startsWith("/auth/")) {
-      app(req, res);
-    } else {
-      nextHandler(req, res);
-    }
-  });
-
-  server.listen(PORT, () => {
-    console.log(`DPP Platform draait op poort ${PORT}`);
-  });
+app.listen(PORT, () => {
+  console.log(`DPP Platform draait op poort ${PORT}`);
 });

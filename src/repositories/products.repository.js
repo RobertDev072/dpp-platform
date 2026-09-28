@@ -1,9 +1,8 @@
-const crypto = require("crypto");
 const { getPool, sql } = require("../config/db");
 
 const PUBLIC_COLUMNS = `
-  id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
-  manufacturer, country_of_origin, status, highlights, public_id, published_at, created_at, updated_at
+  id, company_id, name, brand, model, sku, gtin, category_id, description,
+  manufacturer, country_of_origin, status, public_id, published_at, created_at, updated_at
 `;
 
 async function listProducts({ companyId } = {}) {
@@ -128,45 +127,6 @@ async function updateProduct(id, fields) {
   return result.recordset[0] || null;
 }
 
-async function getProductByPublicId(publicId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("publicId", sql.UniqueIdentifier, publicId)
-    .query(`
-      SELECT ${PUBLIC_COLUMNS}
-      FROM dbo.Products
-      WHERE public_id = @publicId AND status = 'published'
-    `);
-  return result.recordset[0] || null;
-}
-
-async function publishProduct(id) {
-  const pool = await getPool();
-  const existing = await getProductById(id);
-  if (!existing) {
-    return null;
-  }
-
-  const publicId = existing.public_id || crypto.randomUUID();
-
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .input("publicId", sql.UniqueIdentifier, publicId)
-    .query(`
-      UPDATE dbo.Products
-      SET public_id = @publicId,
-          status = 'published',
-          published_at = SYSUTCDATETIME(),
-          updated_at = SYSUTCDATETIME()
-      OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
-      WHERE id = @id
-    `);
-
-  return result.recordset[0] || null;
-}
-
 async function countProductsByStatus({ companyId } = {}) {
   const pool = await getPool();
   const request = pool.request();
@@ -191,12 +151,4 @@ async function countProductsByStatus({ companyId } = {}) {
   return counts;
 }
 
-module.exports = {
-  listProducts,
-  getProductById,
-  createProduct,
-  updateProduct,
-  getProductByPublicId,
-  publishProduct,
-  countProductsByStatus
-};
+module.exports = { listProducts, getProductById, createProduct, updateProduct, countProductsByStatus };

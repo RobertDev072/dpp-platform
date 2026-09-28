@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Inloggen — DPP Platform</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <div class="login-box">
+      <h1>DPP Platform</h1>
+      <form id="login-form">
+        <label>
+          E-mail
+          <input type="email" id="email" required autofocus />
+        </label>
+        <label>
+          Wachtwoord
+          <input type="password" id="password" required />
+        </label>
+        <p class="error hidden" id="error"></p>
+        <button type="submit">Inloggen</button>
+      </form>
+      <p style="text-align:center; margin: 16px 0 4px;">of</p>
+      <a href="/auth/login" style="display:block; text-align:center; padding: 8px 14px; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #1a2b4c;">
+        Inloggen met Microsoft
+      </a>
+    </div>
+    <script src="/js/api.js"></script>
+    <script src="/js/login.js"></script>
+  </body>
+</html>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Licenties — DPP Platform</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header>
+      <nav id="nav-links"></nav>
+      <div>
+        <span id="whoami"></span>
+        <button id="logout-btn">Uitloggen</button>
+      </div>
+    </header>
+    <main>
+      <h1>Licenties</h1>
+      <p class="error hidden" id="error"></p>
+
+      <form class="card" id="create-form">
+        <h2>Nieuw plan</h2>
+        <label>Naam <input id="name" required /></label>
+        <label>Max. gebruikers <input id="maxUsers" type="number" min="1" required /></label>
+        <label>Max. producten <input id="maxProducts" type="number" min="1" required /></label>
+        <button type="submit">Aanmaken</button>
+      </form>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Naam</th>
+            <th>Max. gebruikers</th>
+            <th>Max. producten</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </main>
+    <script src="/js/api.js"></script>
+    <script src="/js/nav.js"></script>
+    <script>
+      const NAV_MENU = ADMIN_MENU;
+    </script>
+    <script src="/js/plans.js"></script>
+  </body>
+</html>

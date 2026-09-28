@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Gebruikers — DPP Platform</title>
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <header>
+      <nav id="nav-links"></nav>
+      <div>
+        <span id="whoami"></span>
+        <button id="logout-btn">Uitloggen</button>
+      </div>
+    </header>
+    <main>
+      <h1>Gebruikers</h1>
+      <p class="error hidden" id="error"></p>
+
+      <form class="card" id="create-form">
+        <h2>Nieuwe gebruiker</h2>
+        <label id="company-field">
+          Bedrijf
+          <select id="companyId"></select>
+        </label>
+        <label>E-mail <input type="email" id="email" required /></label>
+        <label>Wachtwoord (min. 12 tekens) <input type="password" id="password" minlength="12" required /></label>
+        <label>Voornaam <input id="firstName" /></label>
+        <label>Achternaam <input id="lastName" /></label>
+        <label>
+          Rol
+          <select id="role"></select>
+        </label>
+        <button type="submit">Aanmaken</button>
+      </form>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>E-mail</th>
+            <th>Bedrijf</th>
+            <th>Rol</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </main>
+    <script src="/js/api.js"></script>
+    <script src="/js/nav.js"></script>
+    <script>
+      const NAV_MENU = ADMIN_MENU;
+    </script>
+    <script src="/js/users.js"></script>
+  </body>
+</html>
