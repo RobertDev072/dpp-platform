@@ -125,7 +125,7 @@ router.post("/:id/invites", validateBody(createInviteSchema), async (req, res, n
     });
 
     // Token zit alleen in dít antwoord — wordt nergens anders (log, DB) in plaintext bewaard.
-    const activationUrl = `${req.protocol}://${req.get("host")}/activate.html?token=${token}`;
+    const activationUrl = `${req.protocol}://${req.get("host")}/activate?token=${token}`;
     res.status(201).json({ ...invite, activationUrl });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
