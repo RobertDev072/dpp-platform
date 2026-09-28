@@ -101,7 +101,7 @@ router.post("/redirect", async (req, res, next) => {
       metadata: { via: "entra" }
     });
 
-    res.redirect(user.role === "system_owner" ? "/admin/index.html" : "/company/index.html");
+    res.redirect(user.role === "system_owner" ? "/admin" : "/company");
   } catch (error) {
     if (error instanceof EntraLoginError) {
       next(new HttpError(401, error.message));
@@ -125,7 +125,7 @@ router.get("/logout", requireAuth, async (req, res, next) => {
       metadata: { via: "entra" }
     });
 
-    res.redirect(isEntraLoginConfigured() ? getEntraConfig().logoutEndpoint : "/login.html");
+    res.redirect(isEntraLoginConfigured() ? getEntraConfig().logoutEndpoint : "/login");
   } catch (error) {
     next(error);
   }
