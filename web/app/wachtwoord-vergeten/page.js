@@ -62,7 +62,7 @@ function ForgotPasswordForm() {
 
     setSubmitting(true);
     try {
-      const result = await api.post("/api/password-reset/submit", { continuationToken, password });
+      const result = await api.post("/api/password-reset/submit", { continuationToken, password, code });
       if (result.status === "completed") {
         setStep("done");
       } else {

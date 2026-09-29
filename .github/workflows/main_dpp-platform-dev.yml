@@ -56,7 +56,11 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Was 10: Oryx bouwt de app nu zelf op Azure (npm install + next build) in plaats
+    # van een kant-en-klaar pakket te ontvangen, en kwam al een keer boven de 10
+    # minuten uit (build #17 werd afgebroken). Ruimer gezet zodat een normale, iets
+    # tragere build niet halverwege wordt gekilld.
+    timeout-minutes: 20
     needs: build
     permissions:
       id-token: write #This is required for requesting the JWT

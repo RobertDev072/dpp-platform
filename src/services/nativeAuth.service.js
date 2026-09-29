@@ -204,11 +204,14 @@ async function submitPasswordResetCode({ continuationToken, code }) {
   return { continuationToken: result.continuation_token };
 }
 
-async function submitNewPassword({ continuationToken, password }) {
+async function submitNewPassword({ continuationToken, password, code }) {
+  // Empirisch bevestigd tegen de echte tenant (AADSTS900144): deze aanroep verwacht
+  // de oob-code ook hier, niet alleen bij de vorige /continue-stap.
   const result = await callNativeAuth("/resetpassword/v1.0/continue", {
     continuation_token: continuationToken,
     grant_type: "password",
-    password
+    password,
+    oob: code
   });
   return { continuationToken: result.continuation_token };
 }

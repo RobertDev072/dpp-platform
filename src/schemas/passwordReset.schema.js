@@ -8,7 +8,8 @@ const submitCodeSchema = z.object({
 });
 const submitPasswordSchema = z.object({
   continuationToken: z.string().min(1),
-  password: z.string().min(12, "Wachtwoord moet minimaal 12 tekens zijn")
+  password: z.string().min(12, "Wachtwoord moet minimaal 12 tekens zijn"),
+  code: z.string().min(1)
 });
 
 module.exports = { startResetSchema, continueTokenSchema, submitCodeSchema, submitPasswordSchema };

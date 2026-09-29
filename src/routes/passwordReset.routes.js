@@ -59,7 +59,8 @@ router.post("/submit", validateBody(submitPasswordSchema), async (req, res, next
   try {
     await nativeAuth.submitNewPassword({
       continuationToken: req.body.continuationToken,
-      password: req.body.password
+      password: req.body.password,
+      code: req.body.code
     });
 
     // Wachtwoordwijziging kan een fractie vertraagd zijn aan Entra's kant - kort
