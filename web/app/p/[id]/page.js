@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Logo from "@/components/ui/Logo";
+import { documentCategoryLabel, formatFileSize } from "@/components/products/documentUtils";
 
 async function getProduct(id) {
   const headersList = await headers();
@@ -31,6 +32,10 @@ export default async function ProductPassportPage({ params }) {
   if (!product) {
     notFound();
   }
+
+  // Alleen documenten met een downloadlink tonen; rijen zonder downloadUrl zijn
+  // op het publieke paspoort niet te openen.
+  const publicDocuments = (product.documents || []).filter((doc) => doc.downloadUrl);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6 sm:py-10">
@@ -146,17 +151,27 @@ export default async function ProductPassportPage({ params }) {
         </Card>
       )}
 
-      {product.documents?.length > 0 && (
+      {publicDocuments.length > 0 && (
         <Card className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-900">Documenten</h2>
           <ul className="space-y-1 text-sm">
-            {product.documents.map((doc) => (
-              <li key={doc.id}>
-                <a href={doc.storage_url} target="_blank" rel="noreferrer" className="text-blue-600">
-                  {doc.title}
-                </a>
-              </li>
-            ))}
+            {publicDocuments.map((doc) => {
+              const meta = [
+                documentCategoryLabel(doc.category),
+                doc.fileSize != null ? formatFileSize(doc.fileSize) : ""
+              ]
+                .filter(Boolean)
+                .join(" · ");
+
+              return (
+                <li key={doc.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <a href={doc.downloadUrl} target="_blank" rel="noreferrer" className="text-blue-600">
+                    {doc.title}
+                  </a>
+                  {meta && <span className="text-xs text-slate-500">{meta}</span>}
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}

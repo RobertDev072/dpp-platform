@@ -3,10 +3,18 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { useForm } from "@/lib/useForm";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import Tabs from "@/components/ui/Tabs";
+import Field from "@/components/ui/Field";
+import SubmitButton from "@/components/ui/SubmitButton";
+import FormError from "@/components/ui/FormError";
+import Skeleton from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import NumberField from "@/components/products/NumberField";
+import DocumentsTab from "@/components/products/DocumentsTab";
 
 const TABS = [
   { key: "overview", label: "Overzicht" },
@@ -15,6 +23,30 @@ const TABS = [
   { key: "documents", label: "Documenten" },
   { key: "qr", label: "QR-code" }
 ];
+
+// Client-side validators die de Zod-regels van de backend spiegelen, zodat de
+// gebruiker de fout al ziet vóór de request.
+function percentageValidator(value) {
+  if (value === "" || value == null) {
+    return null;
+  }
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+    return "Vul een percentage tussen 0 en 100 in";
+  }
+  return null;
+}
+
+function nonNegativeValidator(value) {
+  if (value === "" || value == null) {
+    return null;
+  }
+  const parsed = Number(value);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return "Vul een waarde van 0 of hoger in";
+  }
+  return null;
+}
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -98,77 +130,137 @@ export default function ProductDetailPage() {
 }
 
 function OverviewTab({ product, onSaved }) {
-  const [fields, setFields] = useState({
-    name: product.name || "",
-    brand: product.brand || "",
-    model: product.model || "",
-    sku: product.sku || "",
-    gtin: product.gtin || "",
-    manufacturer: product.manufacturer || "",
-    countryOfOrigin: product.country_of_origin || "",
-    description: product.description || "",
-    photoUrl: product.photo_url || ""
+  const toast = useToast();
+  const form = useForm({
+    initial: {
+      name: product.name || "",
+      brand: product.brand || "",
+      model: product.model || "",
+      sku: product.sku || "",
+      gtin: product.gtin || "",
+      manufacturer: product.manufacturer || "",
+      countryOfOrigin: product.country_of_origin || "",
+      description: product.description || "",
+      photoUrl: product.photo_url || ""
+    },
+    validators: {
+      name: (value) => (String(value || "").trim() ? null : "Vul een naam in")
+    }
   });
-  const [error, setError] = useState("");
-
-  function set(field, value) {
-    setFields((current) => ({ ...current, [field]: value }));
-  }
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState(null);
 
   async function handleSave(event) {
     event.preventDefault();
+    setFormError(null);
+    if (!form.validateAll()) {
+      return;
+    }
+    setSaving(true);
     try {
-      await api.patch(`/api/products/${product.id}`, fields);
+      await api.patch(`/api/products/${product.id}`, form.values);
+      toast.success("Gegevens opgeslagen");
       await onSaved();
     } catch (err) {
-      setError(err.message);
+      const applied = form.applyServerErrors(err);
+      if (!applied) {
+        setFormError(err);
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
     <Card className="space-y-4">
-      {error && <div className="text-sm text-red-700">{error}</div>}
-      <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <FormError error={formError} />
+      <form onSubmit={handleSave} noValidate className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <ProductPhotoField
             productId={product.id}
             hasPhoto={Boolean(product.photo_blob_name || product.photo_url)}
-            urlValue={fields.photoUrl}
-            onChangeUrl={(v) => set("photoUrl", v)}
+            urlValue={form.values.photoUrl}
+            onChangeUrl={(v) => form.setValue("photoUrl", v)}
             onUploaded={async () => {
               // Een upload vervangt server-side altijd een eerder geplakte URL - leeg het
               // lokale veld mee zodat "Opslaan" die oude URL niet per ongeluk terugzet.
-              set("photoUrl", "");
+              form.setValue("photoUrl", "");
               await onSaved();
             }}
           />
         </div>
-        <Field label="Naam" value={fields.name} onChange={(v) => set("name", v)} />
-        <Field label="Merk" value={fields.brand} onChange={(v) => set("brand", v)} />
-        <Field label="Model" value={fields.model} onChange={(v) => set("model", v)} />
-        <Field label="SKU" value={fields.sku} onChange={(v) => set("sku", v)} />
-        <Field label="GTIN" value={fields.gtin} onChange={(v) => set("gtin", v)} />
+        <Field
+          label="Naam"
+          name="name"
+          required
+          value={form.values.name}
+          onChange={(e) => form.setValue("name", e.target.value)}
+          onBlur={() => form.onBlur("name")}
+          error={form.errors.name}
+        />
+        <Field
+          label="Merk"
+          name="brand"
+          value={form.values.brand}
+          onChange={(e) => form.setValue("brand", e.target.value)}
+          error={form.errors.brand}
+        />
+        <Field
+          label="Model"
+          name="model"
+          value={form.values.model}
+          onChange={(e) => form.setValue("model", e.target.value)}
+          error={form.errors.model}
+        />
+        <Field
+          label="SKU"
+          name="sku"
+          value={form.values.sku}
+          onChange={(e) => form.setValue("sku", e.target.value)}
+          error={form.errors.sku}
+        />
+        <Field
+          label="GTIN"
+          name="gtin"
+          value={form.values.gtin}
+          onChange={(e) => form.setValue("gtin", e.target.value)}
+          error={form.errors.gtin}
+        />
         <Field
           label="Fabrikant"
-          value={fields.manufacturer}
-          onChange={(v) => set("manufacturer", v)}
+          name="manufacturer"
+          value={form.values.manufacturer}
+          onChange={(e) => form.setValue("manufacturer", e.target.value)}
+          error={form.errors.manufacturer}
         />
         <Field
           label="Land van herkomst"
-          value={fields.countryOfOrigin}
-          onChange={(v) => set("countryOfOrigin", v)}
+          name="countryOfOrigin"
+          value={form.values.countryOfOrigin}
+          onChange={(e) => form.setValue("countryOfOrigin", e.target.value)}
+          error={form.errors.countryOfOrigin}
         />
-        <label className="flex flex-col gap-1 text-sm text-slate-600 sm:col-span-2">
-          Omschrijving
-          <textarea
-            value={fields.description}
-            onChange={(e) => set("description", e.target.value)}
-            rows={4}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-          />
-        </label>
         <div className="sm:col-span-2">
-          <Button type="submit">Opslaan</Button>
+          <label htmlFor="description" className="block text-sm font-medium text-slate-700">
+            Omschrijving
+          </label>
+          <textarea
+            id="description"
+            name="description"
+            value={form.values.description}
+            onChange={(e) => form.setValue("description", e.target.value)}
+            rows={4}
+            aria-invalid={form.errors.description ? true : undefined}
+            className={`mt-1 block w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 ${
+              form.errors.description ? "border-red-500" : "border-slate-300"
+            }`}
+          />
+          {form.errors.description && (
+            <p className="mt-1 text-sm text-red-600">{form.errors.description}</p>
+          )}
+        </div>
+        <div className="sm:col-span-2">
+          <SubmitButton loading={saving}>Opslaan</SubmitButton>
         </div>
       </form>
     </Card>
@@ -257,22 +349,9 @@ function ProductPhotoField({ productId, hasPhoto, urlValue, onChangeUrl, onUploa
   );
 }
 
-function Field({ label, value, onChange }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm text-slate-600">
-      {label}
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-      />
-    </label>
-  );
-}
-
 function SustainabilityTab({ productId }) {
-  const [fields, setFields] = useState(null);
-  const [error, setError] = useState("");
+  const [initial, setInitial] = useState(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -280,7 +359,7 @@ function SustainabilityTab({ productId }) {
       .get(`/api/products/${productId}/sustainability`)
       .then((data) => {
         if (!cancelled) {
-          setFields({
+          setInitial({
             co2FootprintKg: data?.co2_footprint_kg ?? "",
             co2ReductionPct: data?.co2_reduction_pct ?? "",
             recycledMaterialPct: data?.recycled_material_pct ?? "",
@@ -292,85 +371,140 @@ function SustainabilityTab({ productId }) {
           });
         }
       })
-      .catch((err) => !cancelled && setError(err.message));
+      .catch((err) => !cancelled && setLoadError(err.message));
     return () => {
       cancelled = true;
     };
   }, [productId]);
 
-  async function handleSave(event) {
-    event.preventDefault();
-    try {
-      const body = {};
-      if (fields.co2FootprintKg !== "") body.co2FootprintKg = Number(fields.co2FootprintKg);
-      if (fields.co2ReductionPct !== "") body.co2ReductionPct = Number(fields.co2ReductionPct);
-      if (fields.recycledMaterialPct !== "")
-        body.recycledMaterialPct = Number(fields.recycledMaterialPct);
-      if (fields.epdUrl !== "") body.epdUrl = fields.epdUrl;
-      if (fields.expectedLifespanYears !== "")
-        body.expectedLifespanYears = Number(fields.expectedLifespanYears);
-      body.recyclable = fields.recyclable;
-      body.reachConform = fields.reachConform;
-      body.rohsConform = fields.rohsConform;
-
-      await api.put(`/api/products/${productId}/sustainability`, body);
-    } catch (err) {
-      setError(err.message);
-    }
+  if (loadError) {
+    return <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>;
   }
 
-  if (!fields) {
-    return <Card>Laden...</Card>;
+  if (!initial) {
+    return <Skeleton className="h-64 w-full" />;
+  }
+
+  return <SustainabilityForm productId={productId} initial={initial} />;
+}
+
+function SustainabilityForm({ productId, initial }) {
+  const toast = useToast();
+  const form = useForm({
+    initial,
+    validators: {
+      co2FootprintKg: nonNegativeValidator,
+      co2ReductionPct: percentageValidator,
+      recycledMaterialPct: percentageValidator,
+      expectedLifespanYears: nonNegativeValidator
+    }
+  });
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  async function handleSave(event) {
+    event.preventDefault();
+    setFormError(null);
+    if (!form.validateAll()) {
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const values = form.values;
+      const body = {};
+      if (values.co2FootprintKg !== "") body.co2FootprintKg = Number(values.co2FootprintKg);
+      if (values.co2ReductionPct !== "") body.co2ReductionPct = Number(values.co2ReductionPct);
+      if (values.recycledMaterialPct !== "")
+        body.recycledMaterialPct = Number(values.recycledMaterialPct);
+      if (values.epdUrl !== "") body.epdUrl = values.epdUrl;
+      if (values.expectedLifespanYears !== "")
+        body.expectedLifespanYears = Number(values.expectedLifespanYears);
+      body.recyclable = values.recyclable;
+      body.reachConform = values.reachConform;
+      body.rohsConform = values.rohsConform;
+
+      await api.put(`/api/products/${productId}/sustainability`, body);
+      toast.success("Gegevens opgeslagen");
+    } catch (err) {
+      const applied = form.applyServerErrors(err);
+      if (!applied) {
+        setFormError(err);
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Card className="space-y-4">
-      {error && <div className="text-sm text-red-700">{error}</div>}
-      <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field
+      <FormError error={formError} />
+      <form onSubmit={handleSave} noValidate className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <NumberField
           label="CO2-voetafdruk (kg)"
-          value={fields.co2FootprintKg}
-          onChange={(v) => setFields((c) => ({ ...c, co2FootprintKg: v }))}
+          name="co2FootprintKg"
+          min="0"
+          value={form.values.co2FootprintKg}
+          onChange={(e) => form.setValue("co2FootprintKg", e.target.value)}
+          onBlur={() => form.onBlur("co2FootprintKg")}
+          error={form.errors.co2FootprintKg}
         />
-        <Field
+        <NumberField
           label="CO2-reductie (%)"
-          value={fields.co2ReductionPct}
-          onChange={(v) => setFields((c) => ({ ...c, co2ReductionPct: v }))}
+          name="co2ReductionPct"
+          min="0"
+          max="100"
+          value={form.values.co2ReductionPct}
+          onChange={(e) => form.setValue("co2ReductionPct", e.target.value)}
+          onBlur={() => form.onBlur("co2ReductionPct")}
+          error={form.errors.co2ReductionPct}
         />
-        <Field
+        <NumberField
           label="Gerecycled materiaal (%)"
-          value={fields.recycledMaterialPct}
-          onChange={(v) => setFields((c) => ({ ...c, recycledMaterialPct: v }))}
+          name="recycledMaterialPct"
+          min="0"
+          max="100"
+          value={form.values.recycledMaterialPct}
+          onChange={(e) => form.setValue("recycledMaterialPct", e.target.value)}
+          onBlur={() => form.onBlur("recycledMaterialPct")}
+          error={form.errors.recycledMaterialPct}
         />
-        <Field
+        <NumberField
           label="Verwachte levensduur (jaren)"
-          value={fields.expectedLifespanYears}
-          onChange={(v) => setFields((c) => ({ ...c, expectedLifespanYears: v }))}
+          name="expectedLifespanYears"
+          min="0"
+          value={form.values.expectedLifespanYears}
+          onChange={(e) => form.setValue("expectedLifespanYears", e.target.value)}
+          onBlur={() => form.onBlur("expectedLifespanYears")}
+          error={form.errors.expectedLifespanYears}
         />
         <Field
           label="EPD URL"
-          value={fields.epdUrl}
-          onChange={(v) => setFields((c) => ({ ...c, epdUrl: v }))}
+          name="epdUrl"
+          placeholder="https://..."
+          value={form.values.epdUrl}
+          onChange={(e) => form.setValue("epdUrl", e.target.value)}
+          error={form.errors.epdUrl}
         />
         <div className="flex flex-wrap gap-4 sm:col-span-2">
           <Checkbox
             label="Recyclebaar"
-            checked={fields.recyclable}
-            onChange={(v) => setFields((c) => ({ ...c, recyclable: v }))}
+            checked={form.values.recyclable}
+            onChange={(v) => form.setValue("recyclable", v)}
           />
           <Checkbox
             label="REACH-conform"
-            checked={fields.reachConform}
-            onChange={(v) => setFields((c) => ({ ...c, reachConform: v }))}
+            checked={form.values.reachConform}
+            onChange={(v) => form.setValue("reachConform", v)}
           />
           <Checkbox
             label="RoHS-conform"
-            checked={fields.rohsConform}
-            onChange={(v) => setFields((c) => ({ ...c, rohsConform: v }))}
+            checked={form.values.rohsConform}
+            onChange={(v) => form.setValue("rohsConform", v)}
           />
         </div>
         <div className="sm:col-span-2">
-          <Button type="submit">Opslaan</Button>
+          <SubmitButton loading={saving}>Opslaan</SubmitButton>
         </div>
       </form>
     </Card>
@@ -378,10 +512,8 @@ function SustainabilityTab({ productId }) {
 }
 
 function ComplianceTab({ productId }) {
-  const [ceMarked, setCeMarked] = useState(false);
-  const [regulations, setRegulations] = useState("");
-  const [error, setError] = useState("");
-  const [loaded, setLoaded] = useState(false);
+  const [initial, setInitial] = useState(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -389,160 +521,78 @@ function ComplianceTab({ productId }) {
       .get(`/api/products/${productId}/compliance`)
       .then((data) => {
         if (!cancelled) {
-          setCeMarked(Boolean(data?.ce_marked));
-          setRegulations((data?.applicable_regulations || []).join(", "));
-          setLoaded(true);
+          setInitial({
+            ceMarked: Boolean(data?.ce_marked),
+            applicableRegulations: (data?.applicable_regulations || []).join(", ")
+          });
         }
       })
-      .catch((err) => !cancelled && setError(err.message));
+      .catch((err) => !cancelled && setLoadError(err.message));
     return () => {
       cancelled = true;
     };
   }, [productId]);
 
+  if (loadError) {
+    return <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>;
+  }
+
+  if (!initial) {
+    return <Skeleton className="h-40 w-full" />;
+  }
+
+  return <ComplianceForm productId={productId} initial={initial} />;
+}
+
+function ComplianceForm({ productId, initial }) {
+  const toast = useToast();
+  const form = useForm({ initial });
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState(null);
+
   async function handleSave(event) {
     event.preventDefault();
+    setFormError(null);
+    setSaving(true);
     try {
       await api.put(`/api/products/${productId}/compliance`, {
-        ceMarked,
-        applicableRegulations: regulations
+        ceMarked: form.values.ceMarked,
+        applicableRegulations: form.values.applicableRegulations
           .split(",")
           .map((r) => r.trim())
           .filter(Boolean)
       });
+      toast.success("Gegevens opgeslagen");
     } catch (err) {
-      setError(err.message);
+      const applied = form.applyServerErrors(err);
+      if (!applied) {
+        setFormError(err);
+      }
+    } finally {
+      setSaving(false);
     }
-  }
-
-  if (!loaded) {
-    return <Card>Laden...</Card>;
   }
 
   return (
     <Card className="space-y-4">
-      {error && <div className="text-sm text-red-700">{error}</div>}
-      <form onSubmit={handleSave} className="space-y-4">
-        <Checkbox label="CE-gemarkeerd" checked={ceMarked} onChange={setCeMarked} />
-        <label className="flex flex-col gap-1 text-sm text-slate-600">
-          Toepasselijke regelgeving (komma-gescheiden)
-          <input
-            value={regulations}
-            onChange={(e) => setRegulations(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-          />
-        </label>
-        <Button type="submit">Opslaan</Button>
+      <FormError error={formError} />
+      <form onSubmit={handleSave} noValidate className="space-y-4">
+        <Checkbox
+          label="CE-gemarkeerd"
+          checked={form.values.ceMarked}
+          onChange={(v) => form.setValue("ceMarked", v)}
+        />
+        <Field
+          label="Toepasselijke regelgeving (komma-gescheiden)"
+          name="applicableRegulations"
+          placeholder="Bijv. ESPR, REACH"
+          value={form.values.applicableRegulations}
+          onChange={(e) => form.setValue("applicableRegulations", e.target.value)}
+          error={form.errors.applicableRegulations}
+        />
+        <SubmitButton loading={saving}>Opslaan</SubmitButton>
       </form>
     </Card>
-  );
-}
-
-function DocumentsTab({ productId }) {
-  const [documents, setDocuments] = useState([]);
-  const [error, setError] = useState("");
-  const [type, setType] = useState("");
-  const [title, setTitle] = useState("");
-  const [storageUrl, setStorageUrl] = useState("");
-  const [isPublic, setIsPublic] = useState(false);
-
-  async function loadDocuments() {
-    const data = await api.get(`/api/products/${productId}/documents`);
-    setDocuments(data);
-  }
-
-  useEffect(() => {
-    loadDocuments().catch((err) => setError(err.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId]);
-
-  async function handleCreate(event) {
-    event.preventDefault();
-    try {
-      await api.post(`/api/products/${productId}/documents`, {
-        type,
-        title,
-        storageUrl,
-        isPublic
-      });
-      setType("");
-      setTitle("");
-      setStorageUrl("");
-      setIsPublic(false);
-      await loadDocuments();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function handleDelete(documentId) {
-    try {
-      await api.delete(`/api/products/${productId}/documents/${documentId}`);
-      await loadDocuments();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {error && (
-        <Card className="border-red-200 bg-red-50 text-red-700">{error}</Card>
-      )}
-
-      <Card>
-        <h2 className="mb-4 text-sm font-semibold text-slate-900">
-          Document toevoegen (URL)
-        </h2>
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-          <Field label="Type" value={type} onChange={setType} />
-          <Field label="Titel" value={title} onChange={setTitle} />
-          <Field label="URL" value={storageUrl} onChange={setStorageUrl} />
-          <Checkbox label="Publiek zichtbaar" checked={isPublic} onChange={setIsPublic} />
-          <Button type="submit">Toevoegen</Button>
-        </form>
-      </Card>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 pr-3">Titel</th>
-                <th className="py-2 pr-3">Type</th>
-                <th className="py-2 pr-3">Publiek</th>
-                <th className="py-2 pr-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((doc) => (
-                <tr key={doc.id} className="border-b border-slate-100">
-                  <td className="py-2 pr-3">
-                    <a href={doc.storage_url} target="_blank" rel="noreferrer" className="text-blue-600">
-                      {doc.title}
-                    </a>
-                  </td>
-                  <td className="py-2 pr-3">{doc.type}</td>
-                  <td className="py-2 pr-3">{doc.is_public ? "ja" : "nee"}</td>
-                  <td className="py-2 pr-3">
-                    <Button variant="outline" onClick={() => handleDelete(doc.id)}>
-                      Verwijderen
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-              {documents.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="py-4 text-center text-slate-500">
-                    Nog geen documenten.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
   );
 }
 

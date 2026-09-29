@@ -1,7 +1,7 @@
 const { getPool, sql } = require("../config/db");
 
 const COLUMNS = `
-  id, company_id, product_id, type, title, language, storage_url, is_public, category, created_at
+  id, company_id, product_id, type, title, language, storage_url, blob_name, file_size, mime_type, is_public, category, created_at
 `;
 
 async function listDocumentsForProduct(productId, options = {}) {
@@ -22,7 +22,19 @@ async function listDocumentsForProduct(productId, options = {}) {
   return result.recordset;
 }
 
-async function createDocument({ companyId, productId, type, title, language, storageUrl, isPublic, category }) {
+async function createDocument({
+  companyId,
+  productId,
+  type,
+  title,
+  language,
+  storageUrl,
+  blobName,
+  fileSize,
+  mimeType,
+  isPublic,
+  category
+}) {
   const pool = await getPool();
   const result = await pool
     .request()
@@ -31,17 +43,29 @@ async function createDocument({ companyId, productId, type, title, language, sto
     .input("type", sql.NVarChar(50), type)
     .input("title", sql.NVarChar(200), title)
     .input("language", sql.NVarChar(10), language ?? null)
-    .input("storageUrl", sql.NVarChar(1000), storageUrl)
+    .input("storageUrl", sql.NVarChar(1000), storageUrl ?? null)
+    .input("blobName", sql.NVarChar(300), blobName ?? null)
+    .input("fileSize", sql.Int, fileSize ?? null)
+    .input("mimeType", sql.NVarChar(100), mimeType ?? null)
     .input("isPublic", sql.Bit, isPublic ?? false)
     .input("category", sql.NVarChar(30), category ?? "document")
     .query(`
       INSERT INTO dbo.Documents
-        (company_id, product_id, type, title, language, storage_url, is_public, category)
+        (company_id, product_id, type, title, language, storage_url, blob_name, file_size, mime_type, is_public, category)
       OUTPUT ${COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
       VALUES
-        (@companyId, @productId, @type, @title, @language, @storageUrl, @isPublic, @category)
+        (@companyId, @productId, @type, @title, @language, @storageUrl, @blobName, @fileSize, @mimeType, @isPublic, @category)
     `);
   return result.recordset[0];
+}
+
+async function getDocumentById(id) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input("id", sql.Int, id)
+    .query(`SELECT ${COLUMNS} FROM dbo.Documents WHERE id = @id`);
+  return result.recordset[0] || null;
 }
 
 async function deleteDocument(id) {
@@ -75,4 +99,4 @@ async function listDocumentsForCompany(companyId) {
   return result.recordset;
 }
 
-module.exports = { listDocumentsForProduct, listDocumentsForCompany, createDocument, deleteDocument };
+module.exports = { listDocumentsForProduct, listDocumentsForCompany, createDocument, getDocumentById, deleteDocument };

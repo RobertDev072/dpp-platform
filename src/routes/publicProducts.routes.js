@@ -1,6 +1,6 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
-const { downloadProductPhoto } = require("../services/blobStorage.service");
+const { downloadProductPhoto, downloadProductDocument } = require("../services/blobStorage.service");
 const sustainabilityRepo = require("../repositories/sustainability.repository");
 const complianceRepo = require("../repositories/compliance.repository");
 const partsRepo = require("../repositories/parts.repository");
@@ -93,7 +93,19 @@ router.get("/:publicId", async (req, res, next) => {
       sustainability,
       compliance,
       parts,
-      documents
+      // Whitelist + stabiele downloadlink: geüploade documenten worden via ons eigen
+      // publieke endpoint gestreamd (blobs zijn nooit rechtstreeks bereikbaar).
+      documents: documents.map((d) => ({
+        id: d.id,
+        title: d.title,
+        type: d.type,
+        category: d.category,
+        language: d.language,
+        fileSize: d.file_size,
+        downloadUrl: d.blob_name
+          ? `/api/public/products/${req.params.publicId}/documents/${d.id}/file`
+          : d.storage_url
+      }))
     });
   } catch (error) {
     next(error);
@@ -104,6 +116,40 @@ router.get("/:publicId", async (req, res, next) => {
 // voorwaarde als hierboven) - geen enkele blob is rechtstreeks van buitenaf te raden of te
 // benaderen, dit media-endpoint haalt de bytes zelf op (Managed Identity) en streamt ze
 // door. Elke blobnaam is een unieke, onveranderlijke upload, dus mag lang gecachet worden.
+// Publiek document van een gepubliceerd product: alleen is_public-documenten,
+// gestreamd via de server (zelfde principe als de foto hieronder).
+router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
+  try {
+    const product = await productsRepo.getProductByPublicId(req.params.publicId);
+    if (!product) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    const document = await documentsRepo.getDocumentById(Number(req.params.documentId));
+    if (!document || document.product_id !== product.id || !document.is_public) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+
+    if (document.blob_name) {
+      const { stream, contentType, contentLength } = await downloadProductDocument(document.blob_name);
+      res.set("Content-Type", contentType || document.mime_type || "application/octet-stream");
+      if (contentLength) res.set("Content-Length", String(contentLength));
+      res.set("Cache-Control", "public, max-age=86400, immutable");
+      stream.on("error", () => res.destroy());
+      stream.pipe(res);
+      return;
+    }
+    if (document.storage_url) {
+      res.redirect(302, document.storage_url);
+      return;
+    }
+    next(new HttpError(404, "Niet gevonden"));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/:publicId/photo", async (req, res, next) => {
   try {
     const product = await productsRepo.getProductByPublicId(req.params.publicId);

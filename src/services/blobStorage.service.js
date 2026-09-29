@@ -123,10 +123,34 @@ async function downloadProductPhoto(blobName) {
   return downloadBlob({ containerName: IMAGES_CONTAINER, blobName });
 }
 
+// Productdocumenten: handleidingen, certificaten, beschrijvingen e.d.
+const ALLOWED_DOCUMENT_MIME_TYPES = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/svg+xml": "svg",
+  "image/webp": "webp"
+};
+
+async function uploadProductDocument({ buffer, mimeType }) {
+  const extension = ALLOWED_DOCUMENT_MIME_TYPES[mimeType];
+  if (!extension) {
+    throw new HttpError(400, "Alleen PDF, JPEG, PNG, SVG of WEBP-bestanden zijn toegestaan.");
+  }
+  return uploadBlob({ containerName: DOCUMENTS_CONTAINER, buffer, mimeType, extension });
+}
+
+async function downloadProductDocument(blobName) {
+  return downloadBlob({ containerName: DOCUMENTS_CONTAINER, blobName });
+}
+
 module.exports = {
   uploadProductPhoto,
   downloadProductPhoto,
+  uploadProductDocument,
+  downloadProductDocument,
   ALLOWED_IMAGE_MIME_TYPES,
+  ALLOWED_DOCUMENT_MIME_TYPES,
   IMAGES_CONTAINER,
   DOCUMENTS_CONTAINER
 };

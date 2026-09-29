@@ -27,7 +27,10 @@ const {
 const {
   uploadProductPhoto,
   downloadProductPhoto,
-  ALLOWED_IMAGE_MIME_TYPES
+  ALLOWED_IMAGE_MIME_TYPES,
+  ALLOWED_DOCUMENT_MIME_TYPES,
+  uploadProductDocument,
+  downloadProductDocument
 } = require("../services/blobStorage.service");
 
 const router = express.Router();
@@ -38,6 +41,19 @@ const photoUpload = multer({
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_IMAGE_MIME_TYPES[file.mimetype]) {
       cb(new HttpError(400, "Alleen JPEG, PNG, WEBP of GIF-afbeeldingen zijn toegestaan."));
+      return;
+    }
+    cb(null, true);
+  }
+});
+
+const DOCUMENT_MAX_MB = 10;
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: DOCUMENT_MAX_MB * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_DOCUMENT_MIME_TYPES[file.mimetype]) {
+      cb(new HttpError(400, "Alleen PDF, JPEG, PNG, SVG of WEBP-bestanden zijn toegestaan."));
       return;
     }
     cb(null, true);
@@ -547,6 +563,119 @@ router.post(
     }
   }
 );
+
+// Documentupload (PDF/JPEG/PNG/SVG/WEBP, max 10 MB) naar de private
+// documenten-container; zelfde patroon als de foto-upload.
+router.post(
+  "/:id/documents/upload",
+  requireRole(...EDITOR_ROLES),
+  (req, res, next) => {
+    documentUpload.single("file")(req, res, (err) => {
+      if (!err) {
+        next();
+        return;
+      }
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        next(
+          new HttpError(
+            400,
+            `Het bestand is te groot (max ${DOCUMENT_MAX_MB} MB). Verklein de PDF (bijv. comprimeren of splitsen) en probeer opnieuw.`
+          )
+        );
+        return;
+      }
+      next(err);
+    });
+  },
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const product = await productsRepo.getProductById(id);
+      if (!product) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+      assertCompanyAccess(req.user, product.company_id);
+
+      if (!req.file) {
+        next(new HttpError(400, "Geen bestand ontvangen."));
+        return;
+      }
+      const title = (req.body.title || "").trim();
+      if (!title) {
+        next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { title: ["Vul een titel in"] } }));
+        return;
+      }
+
+      const blobName = await uploadProductDocument({
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype
+      });
+
+      const document = await documentsRepo.createDocument({
+        companyId: product.company_id,
+        productId: id,
+        type: req.body.type || req.file.mimetype.split("/")[1] || "document",
+        title,
+        language: req.body.language || null,
+        blobName,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        isPublic: req.body.isPublic === "true" || req.body.isPublic === "1",
+        category: ["document", "manual", "video", "3d_model"].includes(req.body.category) ? req.body.category : "document"
+      });
+
+      await logAudit({
+        companyId: product.company_id,
+        userId: req.user.id,
+        action: "create",
+        entityType: "Document",
+        entityId: document.id,
+        metadata: { upload: true, fileSize: req.file.size, mimeType: req.file.mimetype }
+      });
+
+      res.status(201).json(document);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Geüpload document (of URL-document via redirect) ophalen - zelfde
+// toegangsregels als de rest van het product.
+router.get("/:id/documents/:documentId/file", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const product = await productsRepo.getProductById(id);
+    if (!product) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    assertCompanyAccess(req.user, product.company_id);
+
+    const document = await documentsRepo.getDocumentById(Number(req.params.documentId));
+    if (!document || document.product_id !== id) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+
+    if (document.blob_name) {
+      const { stream, contentType, contentLength } = await downloadProductDocument(document.blob_name);
+      res.setHeader("Content-Type", contentType || document.mime_type || "application/octet-stream");
+      if (contentLength) res.setHeader("Content-Length", contentLength);
+      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(document.title)}.${(document.mime_type || "").split("/")[1] || "bin"}"`);
+      stream.pipe(res);
+      return;
+    }
+    if (document.storage_url) {
+      res.redirect(document.storage_url);
+      return;
+    }
+    next(new HttpError(404, "Niet gevonden"));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.delete(
   "/:id/documents/:documentId",
