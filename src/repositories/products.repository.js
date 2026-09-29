@@ -3,7 +3,8 @@ const { getPool, sql } = require("../config/db");
 
 const PUBLIC_COLUMNS = `
   id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
-  manufacturer, country_of_origin, photo_url, status, highlights, public_id, published_at, created_at, updated_at
+  manufacturer, country_of_origin, photo_url, photo_blob_name, status, highlights, public_id,
+  published_at, created_at, updated_at
 `;
 
 async function listProducts({ companyId } = {}) {
@@ -79,6 +80,7 @@ const UPDATABLE_FIELDS = [
   "manufacturer",
   "countryOfOrigin",
   "photoUrl",
+  "photoBlobName",
   "status"
 ];
 const FIELD_TO_COLUMN = {
@@ -91,6 +93,7 @@ const FIELD_TO_COLUMN = {
   manufacturer: "manufacturer",
   countryOfOrigin: "country_of_origin",
   photoUrl: "photo_url",
+  photoBlobName: "photo_blob_name",
   status: "status"
 };
 const FIELD_TO_SQL_TYPE = {
@@ -103,6 +106,7 @@ const FIELD_TO_SQL_TYPE = {
   manufacturer: () => sql.NVarChar(200),
   countryOfOrigin: () => sql.NVarChar(100),
   photoUrl: () => sql.NVarChar(1000),
+  photoBlobName: () => sql.NVarChar(255),
   status: () => sql.NVarChar(20)
 };
 

@@ -16,6 +16,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@azure/identity": "^4.13.3",
     "@azure/msal-node": "^7.0.0",
     "@azure/storage-blob": "^12.34.0",
     "@tailwindcss/postcss": "^4.3.3",

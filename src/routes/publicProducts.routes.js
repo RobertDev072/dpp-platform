@@ -1,5 +1,6 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
+const { downloadProductPhoto } = require("../services/blobStorage.service");
 const sustainabilityRepo = require("../repositories/sustainability.repository");
 const complianceRepo = require("../repositories/compliance.repository");
 const partsRepo = require("../repositories/parts.repository");
@@ -76,7 +77,13 @@ router.get("/:publicId", async (req, res, next) => {
       description: product.description,
       manufacturer: product.manufacturer,
       countryOfOrigin: product.country_of_origin,
-      photoUrl: product.photo_url,
+      // Stabiele, eigen link i.p.v. de rauwe photo_url/blobnaam: bij een upload gaat dit
+      // achter de schermen via een kortlevende SAS (de container is prive), bij een
+      // geplakte externe URL redirect dezelfde route er gewoon naartoe. De frontend hoeft
+      // dat onderscheid niet te kennen.
+      photoUrl: product.photo_blob_name || product.photo_url
+        ? `/api/public/products/${req.params.publicId}/photo`
+        : null,
       highlights,
       publishedAt: product.published_at,
       sustainability,
@@ -84,6 +91,41 @@ router.get("/:publicId", async (req, res, next) => {
       parts,
       documents
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Publiek, maar alleen bereikbaar met de public_id van een gepubliceerd product (dezelfde
+// voorwaarde als hierboven) - geen enkele blob is rechtstreeks van buitenaf te raden of te
+// benaderen, dit media-endpoint haalt de bytes zelf op (Managed Identity) en streamt ze
+// door. Elke blobnaam is een unieke, onveranderlijke upload, dus mag lang gecachet worden.
+router.get("/:publicId/photo", async (req, res, next) => {
+  try {
+    const product = await productsRepo.getProductByPublicId(req.params.publicId);
+    if (!product) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+
+    if (product.photo_blob_name) {
+      const { stream, contentType, contentLength } = await downloadProductPhoto(
+        product.photo_blob_name
+      );
+      res.set("Content-Type", contentType || "application/octet-stream");
+      if (contentLength) res.set("Content-Length", String(contentLength));
+      res.set("Cache-Control", "public, max-age=86400, immutable");
+      stream.on("error", () => res.destroy());
+      stream.pipe(res);
+      return;
+    }
+
+    if (product.photo_url) {
+      res.redirect(302, product.photo_url);
+      return;
+    }
+
+    next(new HttpError(404, "Geen foto beschikbaar"));
   } catch (error) {
     next(error);
   }

@@ -21,7 +21,7 @@ function extractCookie(response) {
   return setCookie.split(";")[0];
 }
 
-async function request(baseUrl, method, path, { body, cookie } = {}) {
+async function request(baseUrl, method, path, { body, cookie, redirect } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (cookie) headers["Cookie"] = cookie;
@@ -29,7 +29,11 @@ async function request(baseUrl, method, path, { body, cookie } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    // Standaard "follow" (fetch-default): voor routes die doorverwijzen naar een
+    // kortlevende SAS-link of externe URL wil je soms juist de 30x zelf zien i.p.v. de
+    // redirect te volgen - geef dan redirect: "manual" mee.
+    redirect
   });
 
   const text = await response.text();
@@ -42,7 +46,12 @@ async function request(baseUrl, method, path, { body, cookie } = {}) {
     }
   }
 
-  return { status: response.status, data, cookie: extractCookie(response) };
+  return {
+    status: response.status,
+    data,
+    cookie: extractCookie(response),
+    location: response.headers.get("location")
+  };
 }
 
 module.exports = { startTestServer, stopTestServer, request };

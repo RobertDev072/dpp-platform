@@ -132,10 +132,13 @@ function OverviewTab({ product, onSaved }) {
         <div className="sm:col-span-2">
           <ProductPhotoField
             productId={product.id}
-            photoUrl={fields.photoUrl}
+            hasPhoto={Boolean(product.photo_blob_name || product.photo_url)}
+            urlValue={fields.photoUrl}
             onChangeUrl={(v) => set("photoUrl", v)}
-            onUploaded={async (url) => {
-              set("photoUrl", url);
+            onUploaded={async () => {
+              // Een upload vervangt server-side altijd een eerder geplakte URL - leeg het
+              // lokale veld mee zodat "Opslaan" die oude URL niet per ongeluk terugzet.
+              set("photoUrl", "");
               await onSaved();
             }}
           />
@@ -172,7 +175,7 @@ function OverviewTab({ product, onSaved }) {
   );
 }
 
-function ProductPhotoField({ productId, photoUrl, onChangeUrl, onUploaded }) {
+function ProductPhotoField({ productId, hasPhoto, urlValue, onChangeUrl, onUploaded }) {
   const [mode, setMode] = useState("url");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -187,8 +190,8 @@ function ProductPhotoField({ productId, photoUrl, onChangeUrl, onUploaded }) {
     try {
       const formData = new FormData();
       formData.append("photo", file);
-      const updated = await api.upload(`/api/products/${productId}/photo`, formData);
-      await onUploaded(updated.photo_url);
+      await api.upload(`/api/products/${productId}/photo`, formData);
+      await onUploaded();
     } catch (err) {
       setUploadError(err.message);
     } finally {
@@ -199,9 +202,9 @@ function ProductPhotoField({ productId, photoUrl, onChangeUrl, onUploaded }) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 sm:flex-row sm:items-start">
       <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-        {photoUrl ? (
+        {hasPhoto ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+          <img src={`/api/products/${productId}/photo`} alt="" className="h-full w-full object-cover" />
         ) : (
           <span className="text-xs text-slate-400">Geen foto</span>
         )}
@@ -231,7 +234,7 @@ function ProductPhotoField({ productId, photoUrl, onChangeUrl, onUploaded }) {
 
         {mode === "url" ? (
           <input
-            value={photoUrl}
+            value={urlValue}
             onChange={(e) => onChangeUrl(e.target.value)}
             placeholder="https://..."
             className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"

@@ -69,9 +69,16 @@ async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] 
   }
   if (companies.length) {
     await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${companies.join(",")})`);
+    // ScanEvents heeft een FK naar Products - moet weg vóór de Products zelf verwijderd
+    // worden (raakt gevuld zodra een test de publieke paspoortpagina bezoekt).
+    await pool.request().query(`
+      DELETE FROM dbo.ScanEvents
+      WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${companies.join(",")}))
+    `);
     await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
   }
   if (products.length) {
+    await pool.request().query(`DELETE FROM dbo.ScanEvents WHERE product_id IN (${products.join(",")})`);
     await pool.request().query(`DELETE FROM dbo.Products WHERE id IN (${products.join(",")})`);
   }
   if (users.length) {

@@ -44,18 +44,29 @@ Multi-tenant SaaS-platform voor Digital Product Passport (DPP) implementatie in 
    COOKIE_SECRET=
 
    # Optioneel: Azure Blob Storage voor productfoto-uploads (naast de bestaande optie om
-   # een externe URL te plakken). Zolang AZURE_STORAGE_CONNECTION_STRING niet is gezet,
-   # geeft de upload-knop een duidelijke foutmelding i.p.v. stil te falen; de URL-optie
-   # blijft altijd werken. Haal de connection string op via Azure Portal > het storage
-   # account > "Access keys". De container ("product-images") wordt automatisch
-   # aangemaakt als hij nog niet bestaat, met publieke lees-toegang per blob (nodig omdat
-   # productfoto's zonder login zichtbaar moeten zijn op de publieke DPP-paspoortpagina).
-   # Bestaat de container al (bijv. handmatig aangemaakt in de Portal), controleer dan
-   # zelf of het toegangsniveau "Blob" (anonieme leestoegang per blob) is - dat wordt
-   # alleen bij het aanmaken automatisch gezet, niet achteraf. Zet ook "Allow Blob public
-   # access" aan op het storage account zelf (Configuration-blad), anders werkt dit niet.
-   AZURE_STORAGE_CONNECTION_STRING=
-   AZURE_STORAGE_CONTAINER=product-images
+   # een externe URL te plakken). Er staat GEEN storage-accountkey of connection string
+   # in de app: authenticatie loopt via DefaultAzureCredential (@azure/identity), dat in
+   # Azure App Service automatisch de system-assigned Managed Identity gebruikt. Zolang
+   # AZURE_STORAGE_ACCOUNT_NAME niet is gezet, geeft de upload-knop een duidelijke
+   # foutmelding i.p.v. stil te falen; de URL-optie blijft altijd werken.
+   #
+   # De containers ("product-images", "product-documents") zijn en blijven PRIVE - geen
+   # anonieme/publieke blob-toegang. Productfoto's zijn zonder login zichtbaar op de
+   # publieke DPP-paspoortpagina via een eigen media-endpoint
+   # (/api/public/products/:publicId/photo): de server haalt de blob zelf op met de
+   # Managed Identity en streamt de bytes door, er wordt nooit een directe blob-URL of
+   # SAS-link naar de browser gestuurd.
+   #
+   # Benodigde RBAC-roltoewijzing (Azure Portal > het storage account > Access control
+   # (IAM) > Add role assignment), toegekend aan de Managed Identity van de App Service:
+   #   - "Storage Blob Data Contributor" (lezen/schrijven van blobs)
+   # Lokaal ontwikkelen zonder een App Service-identity: draai `az login` met een
+   # AAD-account dat dezelfde rol heeft op het storage account, of zet
+   # AZURE_CLIENT_ID/AZURE_CLIENT_SECRET/AZURE_TENANT_ID voor een service principal
+   # (DefaultAzureCredential probeert beide automatisch).
+   AZURE_STORAGE_ACCOUNT_NAME=
+   AZURE_STORAGE_IMAGES_CONTAINER=product-images
+   AZURE_STORAGE_DOCUMENTS_CONTAINER=product-documents
    ```
 3. Test de databaseverbinding:
    ```
@@ -77,9 +88,12 @@ Multi-tenant SaaS-platform voor Digital Product Passport (DPP) implementatie in 
 ## Voor Azure App Service
 
 Dezelfde variabelen (`DB_SERVER`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`, `PORT`, en indien gebruikt
-`AZURE_STORAGE_CONNECTION_STRING`/`AZURE_STORAGE_CONTAINER`) worden ingesteld als Application Settings
-in de Azure Portal, niet in een `.env`-bestand. Er worden nooit secrets gecommit
-naar GitHub. Zet `NODE_ENV=development` **niet** als Application Setting op Azure — de sessie-cookie
+`AZURE_STORAGE_ACCOUNT_NAME`/`AZURE_STORAGE_IMAGES_CONTAINER`/`AZURE_STORAGE_DOCUMENTS_CONTAINER`)
+worden ingesteld als Application Settings in de Azure Portal, niet in een `.env`-bestand. Er worden
+nooit secrets gecommit naar GitHub - voor Blob Storage is dat ook niet nodig: met de system-assigned
+Managed Identity van de App Service (Identity-blad > System assigned > On) plus de RBAC-roltoewijzing
+hierboven is er helemaal geen storage-accountkey of connection string om te bewaren.
+Zet `NODE_ENV=development` **niet** als Application Setting op Azure — de sessie-cookie
 staat dan onterecht op `secure=false`. Zet in de Azure Portal onder "TLS/SSL settings" ook "HTTPS Only"
 aan, zodat de sessie-cookie nooit onversleuteld over het netwerk kan gaan.
 

@@ -23,7 +23,11 @@ const {
   generateQrSvgString,
   generateLabelPdfBuffer
 } = require("../services/qrCode.service");
-const { uploadProductPhoto, ALLOWED_MIME_TYPES } = require("../services/blobStorage.service");
+const {
+  uploadProductPhoto,
+  downloadProductPhoto,
+  ALLOWED_IMAGE_MIME_TYPES
+} = require("../services/blobStorage.service");
 
 const router = express.Router();
 
@@ -31,7 +35,7 @@ const photoUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (!ALLOWED_MIME_TYPES[file.mimetype]) {
+    if (!ALLOWED_IMAGE_MIME_TYPES[file.mimetype]) {
       cb(new HttpError(400, "Alleen JPEG, PNG, WEBP of GIF-afbeeldingen zijn toegestaan."));
       return;
     }
@@ -158,12 +162,17 @@ router.post(
         return;
       }
 
-      const photoUrl = await uploadProductPhoto({
+      const photoBlobName = await uploadProductPhoto({
         buffer: req.file.buffer,
         mimeType: req.file.mimetype
       });
 
-      const updated = await productsRepo.updateProduct(id, { photoUrl });
+      // Een upload vervangt een eventueel eerder geplakte externe URL - er kan maar één
+      // actieve foto-bron tegelijk zijn.
+      const updated = await productsRepo.updateProduct(id, {
+        photoBlobName,
+        photoUrl: null
+      });
 
       await logAudit({
         companyId: existing.company_id,
@@ -171,7 +180,7 @@ router.post(
         action: "update",
         entityType: "Product",
         entityId: id,
-        metadata: { photoUrl }
+        metadata: { photoBlobName }
       });
 
       res.json(updated);
@@ -180,6 +189,39 @@ router.post(
     }
   }
 );
+
+router.get("/:id/photo", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const product = await productsRepo.getProductById(id);
+    if (!product) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    assertCompanyAccess(req.user, product.company_id);
+
+    if (product.photo_blob_name) {
+      const { stream, contentType, contentLength } = await downloadProductPhoto(
+        product.photo_blob_name
+      );
+      res.set("Content-Type", contentType || "application/octet-stream");
+      if (contentLength) res.set("Content-Length", String(contentLength));
+      res.set("Cache-Control", "private, max-age=300");
+      stream.on("error", () => res.destroy());
+      stream.pipe(res);
+      return;
+    }
+
+    if (product.photo_url) {
+      res.redirect(302, product.photo_url);
+      return;
+    }
+
+    next(new HttpError(404, "Geen foto beschikbaar"));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.delete("/:id", requireRole(...EDITOR_ROLES), async (req, res, next) => {
   try {
