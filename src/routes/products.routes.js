@@ -25,14 +25,16 @@ const {
 
 const router = express.Router();
 
-const ALL_ROLES = ["system_owner", "company_admin", "company_user", "viewer"];
+const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
+
+const ALL_ROLES = [...PLATFORM_OWNER_ROLES, "company_admin", "company_user", "viewer"];
 const EDITOR_ROLES = ["company_admin", "company_user"];
 
 router.use(requireAuth);
 
 router.get("/", requireRole(...ALL_ROLES), async (req, res, next) => {
   try {
-    if (req.user.role === "system_owner") {
+    if (isPlatformOwner(req.user.role)) {
       const companyId = req.query.companyId !== undefined ? Number(req.query.companyId) : undefined;
       res.json(await productsRepo.listProducts({ companyId }));
       return;

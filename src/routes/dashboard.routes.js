@@ -9,7 +9,7 @@ const router = express.Router();
 
 router.get("/stats", requireAuth, async (req, res, next) => {
   try {
-    if (req.user.role === "system_owner") {
+    if (require("../utils/roles").isPlatformOwner(req.user.role)) {
       const [companies, activeCompanies, activeUsers, products] = await Promise.all([
         companiesRepo.countCompanies(),
         companiesRepo.countActiveCompanies(),

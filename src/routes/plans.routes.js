@@ -8,7 +8,7 @@ const { HttpError } = require("../middleware/errorHandler");
 
 const router = express.Router();
 
-router.use(requireAuth, requireRole("system_owner"));
+router.use(requireAuth, requireRole(...require("../utils/roles").PLATFORM_OWNER_ROLES));
 
 router.get("/", async (req, res, next) => {
   try {

@@ -11,10 +11,11 @@ const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const { isEntraConfigured } = require("../config/entra");
 const graphClient = require("../services/graphClient");
+const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
 
 const router = express.Router();
 
-router.use(requireAuth, requireRole("system_owner", "company_admin"));
+router.use(requireAuth, requireRole(...PLATFORM_OWNER_ROLES, "company_admin"));
 
 router.get("/", async (req, res, next) => {
   try {
@@ -35,12 +36,12 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
     const body = { ...req.body };
 
     if (req.user.role === "company_admin") {
-      if (["system_owner"].includes(body.role)) {
+      if (isPlatformOwner(body.role)) {
         next(new HttpError(403, "Geen toegang"));
         return;
       }
       body.companyId = req.user.companyId;
-    } else if (body.role === "system_owner") {
+    } else if (isPlatformOwner(body.role)) {
       body.companyId = null;
     } else if (body.companyId == null) {
       next(new HttpError(400, "companyId is verplicht voor deze rol"));
@@ -133,13 +134,13 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
     }
 
     if (req.user.role === "company_admin") {
-      if (existing.role === "system_owner") {
+      if (isPlatformOwner(existing.role)) {
         next(new HttpError(404, "Niet gevonden"));
         return;
       }
       assertCompanyAccess(req.user, existing.company_id);
 
-      if (req.body.role === "system_owner") {
+      if (isPlatformOwner(req.body.role)) {
         next(new HttpError(403, "Geen toegang"));
         return;
       }

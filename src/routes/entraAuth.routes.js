@@ -101,7 +101,7 @@ router.post("/redirect", async (req, res, next) => {
       metadata: { via: "entra" }
     });
 
-    res.redirect(user.role === "system_owner" ? "/admin" : "/company");
+    res.redirect(require("../utils/roles").isPlatformOwner(user.role) ? "/admin" : "/company");
   } catch (error) {
     if (error instanceof EntraLoginError) {
       next(new HttpError(401, error.message));
