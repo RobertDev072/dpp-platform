@@ -29,6 +29,7 @@ export default function InviteCompanyAdminPage() {
   const [inviting, setInviting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [activationUrl, setActivationUrl] = useState("");
+  const [emailSent, setEmailSent] = useState(false);
 
   const form = useForm({
     initial: { email: "", firstName: "", lastName: "" },
@@ -71,12 +72,17 @@ export default function InviteCompanyAdminPage() {
 
       // Het token zit alleen in dít antwoord: de activatielink is eenmalig zichtbaar.
       setActivationUrl(result.activationUrl);
+      setEmailSent(Boolean(result.emailSent));
       setInvites((prev) => [
         { id: result.id, email: result.email, status: result.status, expires_at: result.expires_at },
         ...prev
       ]);
       form.reset();
-      toast.success(`Uitnodiging aangemaakt voor ${result.email}`);
+      toast.success(
+        result.emailSent
+          ? `Uitnodiging gemaild naar ${result.email}`
+          : `Uitnodiging aangemaakt voor ${result.email}`
+      );
     } catch (err) {
       const applied = form.applyServerErrors(err);
       if (!applied) {
@@ -169,9 +175,15 @@ export default function InviteCompanyAdminPage() {
               </form>
 
               {activationUrl && (
-                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <p className="mb-2 text-sm font-medium text-amber-800">
-                    Activatielink (wordt maar één keer getoond, deel deze zelf met de Company Admin):
+                <div
+                  className={`mt-4 rounded-lg border p-3 ${
+                    emailSent ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+                  }`}
+                >
+                  <p className={`mb-2 text-sm font-medium ${emailSent ? "text-emerald-800" : "text-amber-800"}`}>
+                    {emailSent
+                      ? "De uitnodiging is per e-mail verstuurd (24 uur geldig). Hieronder staat de link nog één keer als reserve:"
+                      : "Activatielink (wordt maar één keer getoond, deel deze zelf met de Company Admin — 24 uur geldig):"}
                   </p>
                   <input
                     readOnly
