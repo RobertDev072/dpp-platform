@@ -1,5 +1,5 @@
 const express = require("express");
-const { requireAuth, requireRole } = require("../middleware/auth");
+const { requireAuth, requireRole, denyIfImpersonating } = require("../middleware/auth");
 const { validateBody } = require("../middleware/validate");
 const { createUserSchema, updateUserSchema } = require("../schemas/users.schema");
 const usersRepo = require("../repositories/users.repository");
@@ -122,6 +122,13 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
 
 router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
   try {
+    // Tijdens impersonatie zijn rol- en statuswijzigingen geblokkeerd; naamswijzigingen
+    // (gewoon supportwerk) mogen wel en blijven via de audit-log herleidbaar.
+    if (req.user.impersonator && (req.body.role !== undefined || req.body.status !== undefined)) {
+      next(new HttpError(403, "Rol- en statuswijzigingen zijn niet toegestaan tijdens impersonatie"));
+      return;
+    }
+
     const id = Number(req.params.id);
     const existing = await usersRepo.getUserById(id);
     if (!existing) {
@@ -199,7 +206,7 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
   }
 });
 
-router.post("/:id/reset-password", async (req, res, next) => {
+router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const existing = await usersRepo.getUserById(id);

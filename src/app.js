@@ -1,3 +1,4 @@
+require("./config/zod");
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const authRoutes = require("./routes/auth.routes");
@@ -33,6 +34,8 @@ app.use("/api/invites", inviteActivationRoutes);
 app.use("/api/password-reset", passwordResetRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public/products", publicProductsRoutes);
+app.use("/api/admin", require("./routes/admin.routes"));
+app.use("/api/audit", require("./routes/audit.routes"));
 
 app.use(notFoundHandler);
 app.use(errorHandler);

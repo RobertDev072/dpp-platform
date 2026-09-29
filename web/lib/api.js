@@ -23,6 +23,10 @@ export async function apiRequest(method, url, body) {
     const message = (data && data.error && data.error.message) || `Fout (${response.status})`;
     const error = new Error(message);
     error.code = data && data.error && data.error.code;
+    error.status = response.status;
+    // Zod-details van de backend (errorHandler.js): per-veld fouten voor formulieren.
+    error.fieldErrors = data?.error?.details?.fieldErrors ?? null;
+    error.formErrors = data?.error?.details?.formErrors ?? [];
     throw error;
   }
 

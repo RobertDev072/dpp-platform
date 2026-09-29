@@ -2,59 +2,106 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useForm } from "@/lib/useForm";
+import {
+  ASSIGNABLE_ROLE_OPTIONS,
+  USER_STATUS_BADGE_VARIANTS,
+  USER_STATUS_OPTIONS,
+  fullName,
+  statusLabel
+} from "@/lib/labels";
 import Card from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
+import Badge from "@/components/ui/Badge";
+import Field from "@/components/ui/Field";
+import Select from "@/components/ui/Select";
+import SubmitButton from "@/components/ui/SubmitButton";
+import FormError from "@/components/ui/FormError";
+import EmptyState from "@/components/ui/EmptyState";
+import Skeleton from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
 
-const ROLE_OPTIONS = [
-  { value: "company_admin", label: "Company Admin" },
-  { value: "company_user", label: "Productmedewerker" }
-];
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function insertSorted(list, user) {
+  const next = [...list.filter((u) => u.id !== user.id), user];
+  next.sort((a, b) => a.email.localeCompare(b.email));
+  return next;
+}
 
 export default function OrganisatiePage() {
+  const toast = useToast();
+
   const [users, setUsers] = useState([]);
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [role, setRole] = useState("company_user");
+  const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState(null);
+  // Na aanmaken: ofwel een eenmalig tijdelijk wachtwoord (legacy), ofwel de SSPR-instructie.
+  const [createdInfo, setCreatedInfo] = useState(null);
 
-  async function loadUsers() {
-    const data = await api.get("/api/users");
-    setUsers(data);
-  }
+  const form = useForm({
+    initial: { email: "", firstName: "", lastName: "", role: "company_user" },
+    validators: {
+      email: (value) => (EMAIL_PATTERN.test((value || "").trim()) ? null : "Vul een geldig e-mailadres in")
+    }
+  });
 
   useEffect(() => {
-    loadUsers().catch((err) => setError(err.message));
+    api
+      .get("/api/users")
+      .then((data) => setUsers(data))
+      .catch((err) => setLoadError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
   async function handleCreate(event) {
     event.preventDefault();
+    setFormError(null);
+    setCreatedInfo(null);
+
+    if (!form.validateAll()) {
+      return;
+    }
+
+    setCreating(true);
     try {
-      await api.post("/api/users", {
-        email,
-        password: password || undefined,
-        firstName: firstName || undefined,
-        lastName: lastName || undefined,
-        role
+      const created = await api.post("/api/users", {
+        email: form.values.email.trim(),
+        firstName: form.values.firstName.trim() || undefined,
+        lastName: form.values.lastName.trim() || undefined,
+        role: form.values.role
       });
-      setEmail("");
-      setPassword("");
-      setFirstName("");
-      setLastName("");
-      await loadUsers();
+
+      setUsers((prev) => insertSorted(prev, created));
+      setCreatedInfo({ email: created.email, tempPassword: created.tempPassword || null });
+      form.reset();
+      toast.success(`Gebruiker ${created.email} aangemaakt`);
     } catch (err) {
-      setError(err.message);
+      const applied = form.applyServerErrors(err);
+      if (!applied) {
+        if (err.status === 409 && !err.code) {
+          // Duplicaat-e-mail komt als kale 409-message terug: onder het e-mailveld tonen.
+          form.applyServerErrors({ fieldErrors: { email: [err.message] } });
+        } else {
+          setFormError(err);
+        }
+      }
+    } finally {
+      setCreating(false);
     }
   }
 
-  async function handleStatusChange(user, value) {
+  async function patchUser(user, body) {
+    const previous = users;
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...body } : u)));
     try {
-      await api.patch(`/api/users/${user.id}`, { status: value });
-      await loadUsers();
+      const updated = await api.patch(`/api/users/${user.id}`, body);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
     } catch (err) {
-      setError(err.message);
+      setUsers(previous);
+      // O.a. 409 LAST_COMPANY_ADMIN: de server legt in het Nederlands uit waarom het niet mag.
+      toast.error(err.message);
     }
   }
 
@@ -62,98 +109,163 @@ export default function OrganisatiePage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-slate-900">Organisatie</h1>
 
-      {error && (
-        <Card className="border-red-200 bg-red-50 text-red-700">{error}</Card>
+      {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
+
+      {createdInfo && !createdInfo.tempPassword && (
+        <Card className="border-blue-200 bg-blue-50 text-blue-800">
+          <p className="text-sm">
+            Laat <span className="font-medium">{createdInfo.email}</span> het wachtwoord instellen via{" "}
+            <span className="font-medium">Wachtwoord vergeten</span> op de loginpagina.
+          </p>
+        </Card>
+      )}
+
+      {createdInfo && createdInfo.tempPassword && (
+        <Card className="border-amber-200 bg-amber-50 text-amber-800">
+          <p className="mb-2 text-sm font-medium">
+            Tijdelijk wachtwoord voor {createdInfo.email} (wordt maar één keer getoond, deel dit zelf
+            veilig met de gebruiker):
+          </p>
+          <input
+            readOnly
+            value={createdInfo.tempPassword}
+            onClick={(e) => e.target.select()}
+            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+          />
+          <p className="mt-2 text-xs">
+            De gebruiker kan het wachtwoord daarna zelf wijzigen via Wachtwoord vergeten op de
+            loginpagina.
+          </p>
+        </Card>
       )}
 
       <Card>
         <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuwe gebruiker</h2>
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            E-mail
-            <input
+        <form onSubmit={handleCreate} noValidate className="space-y-4">
+          <FormError error={formError} />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="E-mail"
+              name="email"
               type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               required
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+              autoComplete="off"
+              placeholder="naam@bedrijf.nl"
+              value={form.values.email}
+              onChange={(e) => form.setValue("email", e.target.value)}
+              onBlur={() => form.onBlur("email")}
+              error={form.errors.email}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Wachtwoord
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            <Select
+              label="Rol"
+              name="role"
+              required
+              options={ASSIGNABLE_ROLE_OPTIONS}
+              value={form.values.role}
+              onChange={(e) => form.setValue("role", e.target.value)}
+              error={form.errors.role}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Voornaam
-            <input
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            <Field
+              label="Voornaam"
+              name="firstName"
+              autoComplete="off"
+              placeholder="Bijv. Anna"
+              value={form.values.firstName}
+              onChange={(e) => form.setValue("firstName", e.target.value)}
+              error={form.errors.firstName}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Achternaam
-            <input
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            <Field
+              label="Achternaam"
+              name="lastName"
+              autoComplete="off"
+              placeholder="Bijv. de Vries"
+              value={form.values.lastName}
+              onChange={(e) => form.setValue("lastName", e.target.value)}
+              error={form.errors.lastName}
             />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Rol
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              {ROLE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button type="submit">Aanmaken</Button>
+          </div>
+
+          <p className="text-xs text-slate-400">
+            De nieuwe gebruiker stelt het eigen wachtwoord in via Wachtwoord vergeten op de loginpagina.
+          </p>
+
+          <SubmitButton loading={creating}>Aanmaken</SubmitButton>
         </form>
       </Card>
 
       <Card>
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="py-2 pr-3">E-mail</th>
-              <th className="py-2 pr-3">Naam</th>
-              <th className="py-2 pr-3">Rol</th>
-              <th className="py-2 pr-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id} className="border-b border-slate-100">
-                <td className="py-2 pr-3">{user.email}</td>
-                <td className="py-2 pr-3">
-                  {[user.first_name, user.last_name].filter(Boolean).join(" ") || "—"}
-                </td>
-                <td className="py-2 pr-3">{user.role}</td>
-                <td className="py-2 pr-3">
-                  <select
-                    value={user.status}
-                    onChange={(e) => handleStatusChange(user, e.target.value)}
-                    className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                  >
-                    <option value="active">active</option>
-                    <option value="inactive">inactive</option>
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <h2 className="mb-4 text-sm font-semibold text-slate-900">Gebruikers</h2>
+
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : users.length === 0 ? (
+          <EmptyState
+            title="Nog geen gebruikers"
+            description="Maak hierboven de eerste gebruiker aan voor je organisatie."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="py-2 pr-3">E-mail</th>
+                  <th className="py-2 pr-3">Naam</th>
+                  <th className="py-2 pr-3">Rol</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2 pr-3">Status wijzigen</th>
+                  <th className="py-2 pr-3">Wachtwoord</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} className="border-b border-slate-100">
+                    <td className="py-2 pr-3">{user.email}</td>
+                    <td className="py-2 pr-3">{fullName(user) || "—"}</td>
+                    <td className="py-2 pr-3">
+                      <select
+                        aria-label={`Rol van ${user.email}`}
+                        value={user.role}
+                        onChange={(e) => patchUser(user, { role: e.target.value })}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                      >
+                        {ASSIGNABLE_ROLE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <Badge variant={USER_STATUS_BADGE_VARIANTS[user.status] || "neutral"}>
+                        {statusLabel(user.status)}
+                      </Badge>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <select
+                        aria-label={`Status van ${user.email}`}
+                        value={user.status}
+                        onChange={(e) => patchUser(user, { status: e.target.value })}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                      >
+                        {USER_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="py-2 pr-3 text-xs text-slate-400">via Wachtwoord vergeten</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   );

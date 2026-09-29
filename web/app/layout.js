@@ -1,4 +1,5 @@
 import "./globals.css";
+import { ToastProvider } from "@/components/ui/Toast";
 
 export const metadata = {
   title: "DPP Platform",
@@ -8,7 +9,9 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="nl">
-      <body className="bg-slate-50 text-slate-900 antialiased">{children}</body>
+      <body className="bg-slate-50 text-slate-900 antialiased">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

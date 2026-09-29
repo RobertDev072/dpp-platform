@@ -1,5 +1,6 @@
 const express = require("express");
-const { loginSchema, mfaSchema } = require("../schemas/auth.schema");
+const { loginSchema, mfaSchema, updateMeSchema } = require("../schemas/auth.schema");
+const { updateUser } = require("../repositories/users.repository");
 const { validateBody } = require("../middleware/validate");
 const { getUserByEmail } = require("../repositories/users.repository");
 const { verifyPassword, DUMMY_HASH } = require("../utils/password");
@@ -182,6 +183,33 @@ router.post("/logout", requireAuth, async (req, res, next) => {
 
 router.get("/me", requireAuth, (req, res) => {
   res.json(req.user);
+});
+
+// Eigen profiel bijwerken: alleen naamvelden (schema dwingt dat af).
+router.patch("/me", requireAuth, validateBody(updateMeSchema), async (req, res, next) => {
+  try {
+    await updateUser(req.user.id, {
+      firstName: req.body.firstName,
+      lastName: req.body.lastName
+    });
+
+    await logAudit({
+      companyId: req.user.companyId,
+      userId: req.user.id,
+      impersonatorUserId: req.user.impersonator?.id ?? null,
+      action: "update_profile",
+      entityType: "User",
+      entityId: req.user.id
+    });
+
+    res.json({
+      ...req.user,
+      firstName: req.body.firstName ?? req.user.firstName,
+      lastName: req.body.lastName ?? req.user.lastName
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;

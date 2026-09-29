@@ -4,6 +4,9 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Logo from "@/components/ui/Logo";
 import { api } from "@/lib/api";
+import Field from "@/components/ui/Field";
+import SubmitButton from "@/components/ui/SubmitButton";
+import FormError from "@/components/ui/FormError";
 
 function ActivateForm() {
   const searchParams = useSearchParams();
@@ -13,7 +16,7 @@ function ActivateForm() {
   const [invite, setInvite] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [password, setPassword] = useState("");
-  const [submitError, setSubmitError] = useState("");
+  const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -50,7 +53,7 @@ function ActivateForm() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    setSubmitError("");
+    setSubmitError(null);
     setSubmitting(true);
 
     const body = invite && invite.requiresPassword ? { password } : {};
@@ -63,7 +66,7 @@ function ActivateForm() {
         window.location.href = "/login";
       }
     } catch (err) {
-      setSubmitError(err.message);
+      setSubmitError(err);
       setSubmitting(false);
     }
   }
@@ -89,28 +92,25 @@ function ActivateForm() {
         {!loading && invite && (
           <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
             {invite.requiresPassword && (
-              <label className="block text-sm font-medium text-slate-700">
-                Kies een wachtwoord (min. 12 tekens)
-                <input
-                  type="password"
-                  required
-                  minLength={12}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
-                />
-              </label>
+              <Field
+                label="Kies een wachtwoord"
+                name="password"
+                type="password"
+                required
+                minLength={12}
+                autoComplete="new-password"
+                placeholder="Minimaal 12 tekens"
+                help="Gebruik minimaal 12 tekens, en combineer bij voorkeur hoofdletters, kleine letters, cijfers en een symbool."
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
             )}
 
-            {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+            <FormError error={submitError} />
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
-            >
+            <SubmitButton loading={submitting} className="w-full">
               Account activeren
-            </button>
+            </SubmitButton>
           </form>
         )}
       </div>

@@ -1,96 +1,75 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
+import {
+  ASSIGNABLE_ROLE_OPTIONS,
+  USER_STATUS_BADGE_VARIANTS,
+  USER_STATUS_OPTIONS,
+  fullName,
+  roleLabel,
+  statusLabel
+} from "@/lib/labels";
 import Card from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
-
-const ROLE_OPTIONS = [
-  { value: "company_admin", label: "Company Admin" },
-  { value: "company_user", label: "Productmedewerker" }
-];
+import Badge from "@/components/ui/Badge";
+import EmptyState from "@/components/ui/EmptyState";
+import Skeleton from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
 
 export default function UsersPage() {
+  const toast = useToast();
+
   const [users, setUsers] = useState([]);
   const [companies, setCompanies] = useState([]);
-  const [error, setError] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [tempPassword, setTempPassword] = useState(null);
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [role, setRole] = useState("company_user");
-  const [companyId, setCompanyId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [search, setSearch] = useState("");
 
   const companiesById = useMemo(
-    () => Object.fromEntries(companies.map((c) => [c.id, c])),
+    () => Object.fromEntries(companies.map((company) => [company.id, company])),
     [companies]
   );
 
-  async function loadUsers() {
-    const data = await api.get("/api/users");
-    setUsers(data);
-  }
-
-  async function loadCompanies() {
-    const data = await api.get("/api/admin/companies");
-    setCompanies(data);
-    if (data.length > 0) {
-      setCompanyId((current) => current || String(data[0].id));
-    }
-  }
-
   useEffect(() => {
-    Promise.all([loadCompanies(), loadUsers()]).catch((err) => setError(err.message));
+    Promise.all([api.get("/api/admin/companies"), api.get("/api/users")])
+      .then(([companyData, userData]) => {
+        setCompanies(companyData);
+        setUsers(userData);
+      })
+      .catch((err) => setLoadError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
-  async function handleCreate(event) {
-    event.preventDefault();
-    setError("");
-    setTempPassword(null);
-    setCreating(true);
-    try {
-      const body = {
-        email,
-        password: password || undefined,
-        firstName: firstName || undefined,
-        lastName: lastName || undefined,
-        role
-      };
-
-      body.companyId = companyId ? Number(companyId) : undefined;
-
-      const created = await api.post("/api/users", body);
-      // De nieuwe gebruiker direct in de lijst tonen i.p.v. alles opnieuw op te halen.
-      setUsers((prev) => [...prev, created].sort((a, b) => a.email.localeCompare(b.email)));
-
-      // Bij Entra-provisioning stuurt de API eenmalig een tijdelijk wachtwoord mee - dat
-      // wordt nooit opgeslagen en moet dus nu getoond worden, anders is het weg.
-      if (created.tempPassword) {
-        setTempPassword({ email: created.email, value: created.tempPassword });
-      }
-
-      setEmail("");
-      setPassword("");
-      setFirstName("");
-      setLastName("");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setCreating(false);
+  function companyName(user) {
+    if (user.company_id == null) {
+      return "";
     }
+    return companiesById[user.company_id]?.name || `#${user.company_id}`;
   }
 
-  async function handleStatusChange(user, value) {
+  const filteredUsers = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) {
+      return users;
+    }
+    return users.filter((user) => {
+      const haystack = [user.email, fullName(user), companyName(user)].join(" ").toLowerCase();
+      return haystack.includes(term);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, search, companiesById]);
+
+  async function patchUser(user, body) {
     const previous = users;
-    setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, status: value } : u)));
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...body } : u)));
     try {
-      await api.patch(`/api/users/${user.id}`, { status: value });
+      const updated = await api.patch(`/api/users/${user.id}`, body);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
     } catch (err) {
       setUsers(previous);
-      setError(err.message);
+      // O.a. 409 LAST_COMPANY_ADMIN: de server legt in het Nederlands uit waarom het niet mag.
+      toast.error(err.message);
     }
   }
 
@@ -98,132 +77,117 @@ export default function UsersPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-slate-900">Gebruikers</h1>
 
-      {error && (
-        <Card className="border-red-200 bg-red-50 text-red-700">{error}</Card>
-      )}
+      {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
 
-      {tempPassword && (
-        <Card className="border-amber-200 bg-amber-50 text-amber-800">
-          <p className="mb-2 text-sm font-medium">
-            Tijdelijk wachtwoord voor {tempPassword.email} (wordt maar één keer getoond,
-            deel dit zelf veilig met de gebruiker):
-          </p>
-          <input
-            readOnly
-            value={tempPassword.value}
-            onClick={(e) => e.target.select()}
-            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm text-slate-900"
-          />
-        </Card>
-      )}
-
-      <Card>
-        <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuwe gebruiker</h2>
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            E-mail
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Wachtwoord
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="alleen zonder Entra"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Voornaam
-            <input
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Achternaam
-            <input
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Rol
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              {ROLE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Bedrijf
-            <select
-              value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button type="submit" disabled={creating}>
-            {creating ? "Bezig..." : "Aanmaken"}
-          </Button>
-        </form>
+      <Card className="border-blue-200 bg-blue-50 text-blue-800">
+        <p className="text-sm">
+          Nieuwe gebruikers worden hier niet aangemaakt. Company Admins nodig je uit via de{" "}
+          <Link href="/admin/companies" className="font-medium underline hover:no-underline">
+            bedrijvenpagina
+          </Link>
+          ; medewerkers worden aangemaakt door hun eigen Company Admin.
+        </p>
       </Card>
 
       <Card>
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="py-2 pr-3">ID</th>
-              <th className="py-2 pr-3">E-mail</th>
-              <th className="py-2 pr-3">Bedrijf</th>
-              <th className="py-2 pr-3">Rol</th>
-              <th className="py-2 pr-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id} className="border-b border-slate-100">
-                <td className="py-2 pr-3">{user.id}</td>
-                <td className="py-2 pr-3">{user.email}</td>
-                <td className="py-2 pr-3">
-                  {user.company_id ? companiesById[user.company_id]?.name || `#${user.company_id}` : "—"}
-                </td>
-                <td className="py-2 pr-3">{user.role}</td>
-                <td className="py-2 pr-3">
-                  <select
-                    value={user.status}
-                    onChange={(e) => handleStatusChange(user, e.target.value)}
-                    className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                  >
-                    <option value="active">active</option>
-                    <option value="inactive">inactive</option>
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <label htmlFor="user-search" className="block text-sm font-medium text-slate-700">
+          Zoeken
+        </label>
+        <input
+          id="user-search"
+          type="search"
+          placeholder="Zoek op e-mail, naam of bedrijf"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="mt-1 block w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+        />
+
+        <div className="mt-4">
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <EmptyState
+              title={search ? "Geen gebruikers gevonden" : "Nog geen gebruikers"}
+              description={
+                search
+                  ? "Probeer een andere zoekterm."
+                  : "Zodra bedrijven gebruikers hebben, verschijnen ze hier."
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500">
+                    <th className="py-2 pr-3">E-mail</th>
+                    <th className="py-2 pr-3">Naam</th>
+                    <th className="py-2 pr-3">Bedrijf</th>
+                    <th className="py-2 pr-3">Rol</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Status wijzigen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((user) => {
+                    const isPlatformOwner = user.role === "platform_owner";
+                    return (
+                      <tr key={user.id} className="border-b border-slate-100">
+                        <td className="py-2 pr-3">{user.email}</td>
+                        <td className="py-2 pr-3">{fullName(user) || "—"}</td>
+                        <td className="py-2 pr-3">{companyName(user) || "—"}</td>
+                        <td className="py-2 pr-3">
+                          {isPlatformOwner ? (
+                            roleLabel(user.role)
+                          ) : (
+                            <select
+                              aria-label={`Rol van ${user.email}`}
+                              value={user.role}
+                              onChange={(e) => patchUser(user, { role: e.target.value })}
+                              className="rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                            >
+                              {ASSIGNABLE_ROLE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <Badge variant={USER_STATUS_BADGE_VARIANTS[user.status] || "neutral"}>
+                            {statusLabel(user.status)}
+                          </Badge>
+                        </td>
+                        <td className="py-2 pr-3">
+                          {isPlatformOwner ? (
+                            <span className="text-xs text-slate-400">Niet wijzigbaar</span>
+                          ) : (
+                            <select
+                              aria-label={`Status van ${user.email}`}
+                              value={user.status}
+                              onChange={(e) => patchUser(user, { status: e.target.value })}
+                              className="rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                            >
+                              {USER_STATUS_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </Card>
     </div>
   );
