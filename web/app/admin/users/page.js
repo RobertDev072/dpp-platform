@@ -117,9 +117,11 @@ export default function UsersPage() {
 
   const stats = useMemo(
     () => ({
-      total: users.length,
-      admins: users.filter((u) => u.role === "company_admin").length,
-      members: users.filter((u) => u.role === "company_user").length,
+      // Verwijderde accounts blijven bewust in de lijst zichtbaar (audit-historie),
+      // maar tellen niet mee als "gebruikers".
+      total: users.filter((u) => u.status !== "deleted").length,
+      admins: users.filter((u) => u.role === "company_admin" && u.status !== "deleted").length,
+      members: users.filter((u) => u.role === "company_user" && u.status !== "deleted").length,
       blocked: users.filter((u) => u.status === "blocked").length
     }),
     [users]
