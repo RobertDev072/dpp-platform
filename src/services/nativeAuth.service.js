@@ -32,11 +32,26 @@ function clientId() {
 
 async function callNativeAuth(path, params) {
   const body = new URLSearchParams({ client_id: clientId(), ...params });
-  const response = await fetch(`${baseUrl()}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body
-  });
+  let response;
+  try {
+    response = await fetch(`${baseUrl()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      // Zonder eigen limiet kan een trage/hangende netwerkaanroep naar Entra de hele
+      // aanvraag oneindig laten hangen (bv. de "Bezig..."-spinner die nooit stopt) -
+      // fetch() heeft standaard geen timeout.
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch (err) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") {
+      throw new NativeAuthError(
+        "TIMEOUT",
+        "Het duurt te lang om te verbinden. Probeer het over een moment opnieuw."
+      );
+    }
+    throw err;
+  }
 
   const rawText = await response.text();
   let data = {};

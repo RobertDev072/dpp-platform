@@ -27,7 +27,21 @@ function getPool() {
     // database allang weer bereikbaar is. Zonder deze reset was dat precies wat er
     // gebeurde: een enkele ETIMEOUT maakte de hele instance blijvend onbruikbaar tot
     // een herstart.
-    poolPromise = sql.connect(config).catch((err) => {
+    poolPromise = sql.connect(config).then((pool) => {
+      // Een serverless Azure SQL-database kan zichzelf pauzeren of een bestaande
+      // TCP-verbinding laten vallen (ECONNRESET) nadat de pool al langer bestaat -
+      // dat gebeurt los van een nieuwe .connect()-poging, als een 'error'-event op de
+      // pool zelf. Node.js beschouwt een EventEmitter-'error' zonder listener als
+      // fataal en crasht het hele proces - dat was de werkelijke oorzaak van de
+      // herhaalde volledige uitval (niet alleen trage queries). Met deze listener
+      // wordt de kapotte pool simpelweg bij de eerstvolgende aanvraag opnieuw
+      // opgebouwd, zonder het proces te laten crashen.
+      pool.on("error", (err) => {
+        console.error("SQL-pool-fout (verbinding verbroken), pool wordt bij volgende aanvraag herbouwd:", err.message);
+        poolPromise = undefined;
+      });
+      return pool;
+    }).catch((err) => {
       poolPromise = undefined;
       throw err;
     });
