@@ -47,10 +47,13 @@ async function callNativeAuth(path, params) {
   }
 
   if (!response.ok) {
-    if (Object.keys(data).length === 0 && rawText) {
-      // Respons was geen (geldige) JSON - log de rauwe body, anders is dit onzichtbaar.
-      console.error("Niet-JSON native-auth-respons van Entra:", path, response.status, rawText.slice(0, 500));
-    }
+    console.error(
+      "Native-auth-antwoord niet ok:",
+      path,
+      "status=" + response.status,
+      "content-type=" + response.headers.get("content-type"),
+      "body=" + rawText.slice(0, 500)
+    );
     if (data.error === "user_not_found") {
       throw new NativeAuthError("USER_NOT_FOUND", "Geen account gevonden voor dit e-mailadres");
     }
