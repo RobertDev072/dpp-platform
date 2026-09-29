@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+  <title id="title">VeriPasso logo voor lichte achtergrond</title>
+  <desc id="desc">Een gestileerde V van twee digitale paspoortpagina's met het marineblauwe woordmerk VeriPasso.</desc>
+  <g transform="translate(18 12)">
+    <path fill="#72E600" d="M34 42C20 52 18 72 27 91l78 145c8 15 29 16 38 1l24-42-68-132C85 36 55 27 34 42Z"/>
+    <path fill="#1476FF" d="M222 38c21-9 40 10 35 32l-31 142c-3 14-12 26-25 33l-59 31c-14 7-30-4-26-20l49-181c7-18 31-30 57-37Z"/>
+    <path fill="#FFFFFF" d="M174 91h47c7 0 12 5 12 12s-5 12-12 12h-47c-7 0-12-5-12-12s5-12 12-12Zm-10 45h48c7 0 12 5 12 12s-5 12-12 12h-48c-7 0-12-5-12-12s5-12 12-12Z" opacity=".96"/>
+    <path fill="#06162A" d="m115 233 27 43c-14 3-28-4-35-16L27 110l88 123Z" opacity=".22"/>
+  </g>
+  <text x="320" y="188" fill="#06162A" font-family="Inter, Manrope, Arial, sans-serif" font-size="142" font-weight="750" letter-spacing="-6">VeriPasso</text>
+</svg>
