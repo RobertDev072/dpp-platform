@@ -2,15 +2,18 @@ const { getPool, sql } = require("../config/db");
 
 const PUBLIC_COLUMNS = `id, company_id, email, first_name, last_name, role, status, entra_object_id, entra_subject_id, created_at, updated_at`;
 
-async function listUsers({ companyId } = {}) {
+async function listUsers({ companyId, includeDeleted = false } = {}) {
   const pool = await getPool();
   const request = pool.request();
 
-  let where = "";
+  // Definitief verwijderde accounts horen niet in beheerlijsten thuis (de rijen
+  // blijven alleen bestaan voor audit-historie).
+  const clauses = includeDeleted ? [] : ["u.status <> 'deleted'"];
   if (companyId !== undefined) {
     request.input("companyId", sql.Int, companyId);
-    where = "WHERE u.company_id = @companyId";
+    clauses.push("u.company_id = @companyId");
   }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const columns = PUBLIC_COLUMNS.split(", ").map((c) => `u.${c}`).join(", ");
   const result = await request.query(`

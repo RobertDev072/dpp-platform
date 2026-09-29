@@ -17,6 +17,7 @@ import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import Select from "@/components/ui/Select";
 import EmptyState from "@/components/ui/EmptyState";
+import IconButton, { CogIcon, KeyIcon, LoginIcon, TrashIcon } from "@/components/ui/IconButton";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import AdminStatTile from "@/components/admin/AdminStatTile";
@@ -31,8 +32,8 @@ const ROLE_FILTER_OPTIONS = [
   { value: "company_user", label: "Productmedewerker" }
 ];
 
-// "Verwijderd" hoort wel in het filter, maar niet in de wijzig-dropdown.
-const STATUS_FILTER_OPTIONS = [...USER_STATUS_OPTIONS, { value: "deleted", label: "Verwijderd" }];
+// Soft-verwijderde accounts komen niet meer terug uit de API, dus geen "Verwijderd"-filter.
+const STATUS_FILTER_OPTIONS = USER_STATUS_OPTIONS;
 
 // auth_provider van de backend: 'entra' of 'local'. Bewust "Verificatie" genoemd, niet "MFA".
 const PROVIDER_FILTER_OPTIONS = [
@@ -117,11 +118,10 @@ export default function UsersPage() {
 
   const stats = useMemo(
     () => ({
-      // Verwijderde accounts blijven bewust in de lijst zichtbaar (audit-historie),
-      // maar tellen niet mee als "gebruikers".
-      total: users.filter((u) => u.status !== "deleted").length,
-      admins: users.filter((u) => u.role === "company_admin" && u.status !== "deleted").length,
-      members: users.filter((u) => u.role === "company_user" && u.status !== "deleted").length,
+      // Verwijderde accounts komen niet meer terug uit /api/users, dus alles telt mee.
+      total: users.length,
+      admins: users.filter((u) => u.role === "company_admin").length,
+      members: users.filter((u) => u.role === "company_user").length,
       blocked: users.filter((u) => u.status === "blocked").length
     }),
     [users]
@@ -374,13 +374,12 @@ export default function UsersPage() {
                 <tbody>
                   {pageItems.map((user) => {
                     const isPlatformOwner = user.role === "platform_owner";
-                    const isDeleted = user.status === "deleted";
                     const name = fullName(user);
                     const canImpersonate =
                       !isPlatformOwner &&
                       user.status === "active" &&
                       (user.role === "company_admin" || user.role === "company_user");
-                    const isExpanded = expandedId === user.id && !isPlatformOwner && !isDeleted;
+                    const isExpanded = expandedId === user.id && !isPlatformOwner;
                     const showReset = resetInfo && resetInfo.userId === user.id;
 
                     return (
@@ -390,7 +389,6 @@ export default function UsersPage() {
                         name={name}
                         companyLabel={companyName(user)}
                         isPlatformOwner={isPlatformOwner}
-                        isDeleted={isDeleted}
                         canImpersonate={canImpersonate}
                         isExpanded={isExpanded}
                         showReset={showReset}
@@ -433,7 +431,6 @@ function UserRows({
   name,
   companyLabel,
   isPlatformOwner,
-  isDeleted,
   canImpersonate,
   isExpanded,
   showReset,
@@ -489,34 +486,26 @@ function UserRows({
               <LockIcon />
               Beschermd
             </span>
-          ) : isDeleted ? (
-            <span className="text-xs text-slate-400">—</span>
           ) : (
-            <div className="flex flex-wrap items-center gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5">
               {canImpersonate && (
-                <button
-                  type="button"
-                  onClick={onImpersonate}
-                  className="font-medium text-blue-600 hover:text-blue-700"
-                >
-                  Inloggen als
-                </button>
+                <IconButton title="Inloggen als" tone="primary" onClick={onImpersonate}>
+                  <LoginIcon />
+                </IconButton>
               )}
-              <button
-                type="button"
-                onClick={onResetPassword}
-                className="font-medium text-blue-600 hover:text-blue-700"
-              >
-                Reset wachtwoord
-              </button>
-              <button
-                type="button"
+              <IconButton title="Reset wachtwoord" onClick={onResetPassword}>
+                <KeyIcon />
+              </IconButton>
+              <IconButton
+                title={isExpanded ? "Sluiten" : "Beheren"}
                 onClick={onToggleExpand}
                 aria-expanded={isExpanded}
-                className="font-medium text-slate-600 hover:text-slate-800"
               >
-                {isExpanded ? "Sluiten" : "Beheren"}
-              </button>
+                <CogIcon />
+              </IconButton>
+              <IconButton title="Verwijderen" tone="danger" onClick={onDelete}>
+                <TrashIcon />
+              </IconButton>
             </div>
           )}
         </td>
@@ -542,13 +531,6 @@ function UserRows({
                 onChange={(e) => onStatusChange(e.target.value)}
                 className="w-full sm:w-56"
               />
-              <button
-                type="button"
-                onClick={onDelete}
-                className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
-              >
-                Verwijderen
-              </button>
             </div>
           </td>
         </tr>

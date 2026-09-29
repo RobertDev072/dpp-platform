@@ -17,6 +17,7 @@ import Select from "@/components/ui/Select";
 import SubmitButton from "@/components/ui/SubmitButton";
 import FormError from "@/components/ui/FormError";
 import EmptyState from "@/components/ui/EmptyState";
+import IconButton, { ArchiveIcon, KeyIcon, RestoreIcon } from "@/components/ui/IconButton";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 
@@ -101,20 +102,28 @@ export default function OrganisatiePage() {
     try {
       const updated = await api.patch(`/api/users/${user.id}`, body);
       setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
+      return true;
     } catch (err) {
       setUsers(previous);
       // O.a. 409 LAST_COMPANY_ADMIN: de server legt in het Nederlands uit waarom het niet mag.
       toast.error(err.message);
+      return false;
     }
   }
 
-  async function handleDelete(user) {
+  // Company admins verwijderen niet (dat kan alleen de platform owner): zij archiveren.
+  async function handleArchive(user) {
     const sure = window.confirm(
-      `Weet je zeker dat je ${user.email} wilt verwijderen? Dit verwijdert ook het account in ` +
-        "Microsoft Entra en kan niet ongedaan gemaakt worden."
+      `Weet je zeker dat je ${user.email} wilt archiveren? De gebruiker kan dan niet meer inloggen.`
     );
     if (!sure) return;
-    await patchUser(user, { status: "deleted" });
+    const ok = await patchUser(user, { status: "archived" });
+    if (ok) toast.success(`${user.email} is gearchiveerd`);
+  }
+
+  async function handleRestore(user) {
+    const ok = await patchUser(user, { status: "active" });
+    if (ok) toast.success(`${user.email} is hersteld en kan weer inloggen`);
   }
 
   async function handleResetPassword(user) {
@@ -129,16 +138,6 @@ export default function OrganisatiePage() {
       } else {
         setResetInfo({ email: user.email, tempPassword: result.tempPassword });
       }
-    } catch (err) {
-      setActionError(err.message);
-    }
-  }
-
-  async function handleImpersonate(user) {
-    setActionError("");
-    try {
-      const { impersonating } = await api.post(`/api/admin/impersonate/${user.id}`);
-      window.location.href = impersonating.role === "platform_owner" ? "/admin" : "/company";
     } catch (err) {
       setActionError(err.message);
     }
@@ -307,51 +306,41 @@ export default function OrganisatiePage() {
                       </Badge>
                     </td>
                     <td className="py-2 pr-3">
-                      {user.status === "deleted" ? (
-                        <span className="text-xs text-slate-400">Verwijderd</span>
-                      ) : (
-                        <select
-                          aria-label={`Status van ${user.email}`}
-                          value={user.status}
-                          onChange={(e) => patchUser(user, { status: e.target.value })}
-                          className="rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
-                        >
-                          {USER_STATUS_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      <select
+                        aria-label={`Status van ${user.email}`}
+                        value={user.status}
+                        onChange={(e) => patchUser(user, { status: e.target.value })}
+                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                      >
+                        {USER_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="py-2 pr-3">
-                      {user.status !== "deleted" && (
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          {user.status === "active" && (
-                            <button
-                              type="button"
-                              onClick={() => handleImpersonate(user)}
-                              className="font-medium text-blue-600 hover:text-blue-700"
-                            >
-                              Inloggen als
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleResetPassword(user)}
-                            className="font-medium text-blue-600 hover:text-blue-700"
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <IconButton
+                          title="Reset wachtwoord"
+                          onClick={() => handleResetPassword(user)}
+                        >
+                          <KeyIcon />
+                        </IconButton>
+                        {user.status === "archived" ? (
+                          <IconButton title="Herstellen" onClick={() => handleRestore(user)}>
+                            <RestoreIcon />
+                          </IconButton>
+                        ) : (
+                          <IconButton
+                            title="Archiveren"
+                            tone="danger"
+                            onClick={() => handleArchive(user)}
                           >
-                            Reset wachtwoord
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(user)}
-                            className="font-medium text-red-600 hover:text-red-700"
-                          >
-                            Verwijderen
-                          </button>
-                        </div>
-                      )}
+                            <ArchiveIcon />
+                          </IconButton>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

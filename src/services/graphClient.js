@@ -72,13 +72,26 @@ async function setAccountEnabled(entraObjectId, enabled) {
 // Vereist: User-PasswordProfile.ReadWrite.All. Bewuste, smalle fallback naast SSPR —
 // zie docs/entra-external-id-setup.md voor de afweging.
 async function resetPassword(entraObjectId, newPassword) {
-  await graphRequest("PATCH", `/users/${encodeURIComponent(entraObjectId)}`, {
+  const body = {
     passwordProfile: {
       password: newPassword,
       // Zie createEntraUser: DPP dwingt de wijziging zelf af (must_change_password).
       forceChangePasswordNextSignIn: false
     }
-  });
+  };
+  try {
+    await graphRequest("PATCH", `/users/${encodeURIComponent(entraObjectId)}`, body);
+  } catch (error) {
+    // Graph throttelt snel opeenvolgende wachtwoord-operaties (429) en heeft af en
+    // toe een transiente 5xx - één keer kort wachten en opnieuw proberen voorkomt
+    // dat dat als kale fout bij de gebruiker belandt.
+    if (/\((429|50[234])\)/.test(error.message || "")) {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await graphRequest("PATCH", `/users/${encodeURIComponent(entraObjectId)}`, body);
+      return;
+    }
+    throw error;
+  }
 }
 
 // Vereist: User.DeleteRestore.All (of User.ReadWrite.All). Verwijdert het Entra-account

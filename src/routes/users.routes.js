@@ -138,6 +138,13 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
       return;
     }
 
+    // Definitief verwijderen is voorbehouden aan de Platform Owner; Company Admins
+    // archiveren (omkeerbaar, QR- en audit-historie blijft intact).
+    if (req.body.status === "deleted" && !isPlatformOwner(req.user.role)) {
+      next(new HttpError(403, "Alleen de Platform Owner kan definitief verwijderen. Gebruik Archiveren."));
+      return;
+    }
+
     const id = Number(req.params.id);
     const existing = await usersRepo.getUserById(id);
     if (!existing) {
