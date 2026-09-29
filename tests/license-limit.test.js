@@ -38,11 +38,23 @@ test("license limit: nieuwe gebruiker boven max_users geeft LICENSE_LIMIT_REACHE
   const admin = await createTestUser({ companyId, role: "company_admin" });
   const userIds = [admin.id];
   let createdUserId;
+  let createdEntraObjectId;
 
   t.after(async () => {
     if (createdUserId) userIds.push(createdUserId);
     await cleanupTestData({ companyIds: [companyId], userIds });
     await pool.request().input("planId", sql.Int, planId).query("DELETE FROM dbo.Plans WHERE id = @planId");
+    // Met Entra-provisioning geconfigureerd maakt de succesvolle aanmaak een ECHT
+    // Entra-account aan - dat moet mee opgeruimd worden, anders slibt de tenant
+    // dicht met testaccounts (scripts/cleanup-test-data.js veegt achterblijvers).
+    if (createdEntraObjectId) {
+      try {
+        const graphClient = require("../src/services/graphClient");
+        await graphClient.deleteEntraUser(createdEntraObjectId);
+      } catch (error) {
+        console.error("Entra-testaccount opruimen mislukt:", error.message);
+      }
+    }
     await stopTestServer(server);
     await sql.close();
   });
@@ -79,5 +91,6 @@ test("license limit: nieuwe gebruiker boven max_users geeft LICENSE_LIMIT_REACHE
 
     assert.equal(res.status, 201);
     createdUserId = res.data.id;
+    createdEntraObjectId = res.data.entra_object_id || null;
   });
 });

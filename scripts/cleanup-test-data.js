@@ -1,12 +1,39 @@
 // Ruimt restanten van geautomatiseerde testruns op die crashten vóór hun eigen
-// cleanup: gebruikers test-<hex>@example.com en bedrijven met slug test-<hex>.
-// Bewust strak patroon (8 hex-tekens) zodat echte data nooit kan matchen.
+// cleanup: alle @example.com-gebruikers (fixtures gebruiken uitsluitend dat
+// gereserveerde domein - echte data kan nooit matchen), bedrijven met slug
+// test-<hex>, en achtergebleven @example.com-accounts in de Entra-tenant.
 // Gebruik: node scripts/cleanup-test-data.js
 require("dotenv").config();
 const { getPool, sql } = require("../src/config/db");
+const { getDaemonConfidentialClient } = require("../src/services/msalClients");
 
-const USER_PATTERN = "test-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]@example.com";
+const USER_PATTERN = "%@example.com";
 const SLUG_PATTERN = "test-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]";
+
+async function cleanupEntraTestAccounts() {
+  try {
+    const client = await getDaemonConfidentialClient();
+    const t = await client.acquireTokenByClientCredential({ scopes: ["https://graph.microsoft.com/.default"] });
+    const r = await fetch("https://graph.microsoft.com/v1.0/users?$select=id,displayName&$top=999", {
+      headers: { Authorization: `Bearer ${t.accessToken}` }
+    });
+    const body = await r.json();
+    let removed = 0;
+    for (const u of body.value || []) {
+      if (/@example\.com$/i.test(u.displayName || "")) {
+        const del = await fetch(`https://graph.microsoft.com/v1.0/users/${u.id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${t.accessToken}` }
+        });
+        if (del.ok) removed += 1;
+        console.log(`  Entra verwijderd: ${u.displayName} (${del.status})`);
+      }
+    }
+    console.log(`Entra-veegronde klaar: ${removed} testaccount(s) verwijderd`);
+  } catch (error) {
+    console.log("Entra-veegronde overgeslagen:", error.message);
+  }
+}
 
 async function run() {
   const pool = await getPool();
@@ -54,8 +81,11 @@ async function run() {
     }
   }
 
+  await cleanupEntraTestAccounts();
+
   const left = await pool.request().query("SELECT COUNT(*) AS n FROM dbo.Users");
-  console.log(`Klaar. Gebruikers over: ${left.recordset[0].n}`);
+  const owners = await pool.request().query("SELECT email FROM dbo.Users WHERE role = 'platform_owner'");
+  console.log(`Klaar. Gebruikers over: ${left.recordset[0].n}; platform owner(s): ${owners.recordset.map((o) => o.email).join(", ")}`);
   await sql.close();
 }
 
