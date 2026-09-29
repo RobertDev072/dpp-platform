@@ -29,7 +29,11 @@ router.post("/start", validateBody(startResetSchema), async (req, res, next) => 
     const challenged = await nativeAuth.requestPasswordResetCode({
       continuationToken: started.continuationToken
     });
-    res.json({ continuationToken: challenged.continuationToken });
+    res.json({
+      continuationToken: challenged.continuationToken,
+      codeLength: challenged.codeLength,
+      targetLabel: challenged.targetLabel
+    });
   } catch (error) {
     if (error instanceof nativeAuth.NativeAuthError && error.code === "USER_NOT_FOUND") {
       // Bewust geen 404: niet verklappen of een e-mailadres bestaat. De gebruiker ziet

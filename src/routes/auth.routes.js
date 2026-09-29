@@ -103,7 +103,11 @@ router.post("/login", validateBody(loginSchema), async (req, res, next) => {
           continuationToken,
           methodId: methods[0].id
         });
-        res.json({ mfaRequired: true, continuationToken: challenged.continuationToken });
+        res.json({
+          mfaRequired: true,
+          continuationToken: challenged.continuationToken,
+          codeLength: challenged.codeLength
+        });
         return;
       }
       if (err instanceof nativeAuth.NativeAuthError || err instanceof EntraLoginError) {

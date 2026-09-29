@@ -21,7 +21,9 @@ export async function apiRequest(method, url, body) {
 
   if (!response.ok) {
     const message = (data && data.error && data.error.message) || `Fout (${response.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.code = data && data.error && data.error.code;
+    throw error;
   }
 
   return data;

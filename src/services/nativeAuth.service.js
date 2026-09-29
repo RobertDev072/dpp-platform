@@ -86,10 +86,13 @@ async function callNativeAuth(path, params) {
         continuationToken: data.continuation_token
       });
     }
-    // Tijdelijk: log de rauwe Entra-respons zodat een nog niet afgevangen fout-vorm
-    // zichtbaar wordt in de Log stream i.p.v. alleen een generieke melding te tonen.
+    // Log de rauwe Entra-respons voor onszelf (Log stream), maar toon de gebruiker
+    // nooit deze interne foutcode/-tekst - een vriendelijke, actiegerichte melding.
     console.error("Onbekende native-auth-respons van Entra:", path, JSON.stringify(data));
-    throw new NativeAuthError(data.error || "UNKNOWN", data.error_description || "Onbekende fout bij Entra");
+    throw new NativeAuthError(
+      data.error || "UNKNOWN",
+      "Er ging iets mis. Probeer het over een moment opnieuw."
+    );
   }
 
   if (data.challenge_type === "redirect") {
@@ -164,7 +167,7 @@ async function requestMfaCode({ continuationToken, methodId }) {
     challenge_type: "oob redirect",
     id: methodId
   });
-  return { continuationToken: result.continuation_token };
+  return { continuationToken: result.continuation_token, codeLength: result.code_length || null };
 }
 
 async function submitMfaCode({ continuationToken, code }) {
@@ -192,7 +195,11 @@ async function requestPasswordResetCode({ continuationToken }) {
     continuation_token: continuationToken,
     challenge_type: "oob redirect"
   });
-  return { continuationToken: result.continuation_token };
+  return {
+    continuationToken: result.continuation_token,
+    codeLength: result.code_length || null,
+    targetLabel: result.challenge_target_label || null
+  };
 }
 
 async function submitPasswordResetCode({ continuationToken, code }) {

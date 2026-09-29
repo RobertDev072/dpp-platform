@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mfaCode, setMfaCode] = useState("");
+  const [mfaCodeLength, setMfaCodeLength] = useState(null);
   const [continuationToken, setContinuationToken] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -25,6 +26,7 @@ export default function LoginPage() {
       const result = await api.post("/api/auth/login", { email, password });
       if (result.mfaRequired) {
         setContinuationToken(result.continuationToken);
+        setMfaCodeLength(result.codeLength || null);
       } else {
         goToApp(result);
       }
@@ -44,7 +46,13 @@ export default function LoginPage() {
       const result = await api.post("/api/auth/login/mfa", { continuationToken, code: mfaCode });
       goToApp(result);
     } catch (err) {
-      setError(err.message);
+      if (err.code === "EXPIRED") {
+        setContinuationToken("");
+        setMfaCode("");
+        setError("Deze verificatiecode is verlopen. Log opnieuw in om een nieuwe code te ontvangen.");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -60,11 +68,13 @@ export default function LoginPage() {
         {!continuationToken && (
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             <label className="block text-sm font-medium text-slate-700">
-              E-mail
+              E-mail <span className="text-red-500">*</span>
               <input
                 type="email"
                 required
                 autoFocus
+                autoComplete="username"
+                placeholder="naam@bedrijf.nl"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
@@ -72,10 +82,12 @@ export default function LoginPage() {
             </label>
 
             <label className="block text-sm font-medium text-slate-700">
-              Wachtwoord
+              Wachtwoord <span className="text-red-500">*</span>
               <input
                 type="password"
                 required
+                autoComplete="current-password"
+                placeholder="Je wachtwoord"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
@@ -89,7 +101,7 @@ export default function LoginPage() {
               disabled={submitting}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
             >
-              Inloggen
+              {submitting ? "Bezig..." : "Inloggen"}
             </button>
 
             <a href="/wachtwoord-vergeten" className="block text-center text-sm text-blue-600 hover:underline">
@@ -101,16 +113,21 @@ export default function LoginPage() {
         {continuationToken && (
           <form className="mt-6 space-y-4" onSubmit={handleMfaSubmit}>
             <p className="text-sm text-slate-600">
-              Voer de verificatiecode in die naar je e-mailadres is gestuurd.
+              Voer de {mfaCodeLength ? `${mfaCodeLength}-cijferige ` : ""}verificatiecode in die naar je
+              e-mailadres is gestuurd. Controleer ook je spam-map.
             </p>
             <label className="block text-sm font-medium text-slate-700">
-              Verificatiecode
+              Verificatiecode <span className="text-red-500">*</span>
               <input
                 required
                 autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder={mfaCodeLength ? "0".repeat(mfaCodeLength) : "Bijv. 12345678"}
+                maxLength={mfaCodeLength || undefined}
                 value={mfaCode}
                 onChange={(event) => setMfaCode(event.target.value)}
-                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm tracking-widest focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
               />
             </label>
 
@@ -121,7 +138,7 @@ export default function LoginPage() {
               disabled={submitting}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
             >
-              Bevestigen
+              {submitting ? "Bezig..." : "Bevestigen"}
             </button>
           </form>
         )}
