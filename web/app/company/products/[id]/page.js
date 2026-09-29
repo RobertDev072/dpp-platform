@@ -60,10 +60,10 @@ export default function ProductDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">{product.name}</h1>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <Badge variant={product.status === "published" ? "success" : "neutral"}>
               {product.status}
             </Badge>
@@ -72,7 +72,7 @@ export default function ProductDetailPage() {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {product.status !== "published" && (
             <Button onClick={handlePublish}>Publiceren</Button>
           )}
@@ -84,7 +84,9 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <div className="overflow-x-auto">
+        <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      </div>
 
       {tab === "overview" && <OverviewTab product={product} onSaved={loadProduct} />}
       {tab === "sustainability" && <SustainabilityTab productId={id} />}
@@ -125,7 +127,7 @@ function OverviewTab({ product, onSaved }) {
   return (
     <Card className="space-y-4">
       {error && <div className="text-sm text-red-700">{error}</div>}
-      <form onSubmit={handleSave} className="grid grid-cols-2 gap-4">
+      <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Naam" value={fields.name} onChange={(v) => set("name", v)} />
         <Field label="Merk" value={fields.brand} onChange={(v) => set("brand", v)} />
         <Field label="Model" value={fields.model} onChange={(v) => set("model", v)} />
@@ -141,7 +143,7 @@ function OverviewTab({ product, onSaved }) {
           value={fields.countryOfOrigin}
           onChange={(v) => set("countryOfOrigin", v)}
         />
-        <label className="col-span-2 flex flex-col gap-1 text-sm text-slate-600">
+        <label className="flex flex-col gap-1 text-sm text-slate-600 sm:col-span-2">
           Omschrijving
           <textarea
             value={fields.description}
@@ -150,7 +152,7 @@ function OverviewTab({ product, onSaved }) {
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
           />
         </label>
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <Button type="submit">Opslaan</Button>
         </div>
       </form>
@@ -227,7 +229,7 @@ function SustainabilityTab({ productId }) {
   return (
     <Card className="space-y-4">
       {error && <div className="text-sm text-red-700">{error}</div>}
-      <form onSubmit={handleSave} className="grid grid-cols-2 gap-4">
+      <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field
           label="CO2-voetafdruk (kg)"
           value={fields.co2FootprintKg}
@@ -253,7 +255,7 @@ function SustainabilityTab({ productId }) {
           value={fields.epdUrl}
           onChange={(v) => setFields((c) => ({ ...c, epdUrl: v }))}
         />
-        <div className="col-span-2 flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-4 sm:col-span-2">
           <Checkbox
             label="Recyclebaar"
             checked={fields.recyclable}
@@ -270,7 +272,7 @@ function SustainabilityTab({ productId }) {
             onChange={(v) => setFields((c) => ({ ...c, rohsConform: v }))}
           />
         </div>
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <Button type="submit">Opslaan</Button>
         </div>
       </form>
@@ -405,41 +407,43 @@ function DocumentsTab({ productId }) {
       </Card>
 
       <Card>
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="py-2 pr-3">Titel</th>
-              <th className="py-2 pr-3">Type</th>
-              <th className="py-2 pr-3">Publiek</th>
-              <th className="py-2 pr-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {documents.map((doc) => (
-              <tr key={doc.id} className="border-b border-slate-100">
-                <td className="py-2 pr-3">
-                  <a href={doc.storage_url} target="_blank" rel="noreferrer" className="text-blue-600">
-                    {doc.title}
-                  </a>
-                </td>
-                <td className="py-2 pr-3">{doc.type}</td>
-                <td className="py-2 pr-3">{doc.is_public ? "ja" : "nee"}</td>
-                <td className="py-2 pr-3">
-                  <Button variant="outline" onClick={() => handleDelete(doc.id)}>
-                    Verwijderen
-                  </Button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500">
+                <th className="py-2 pr-3">Titel</th>
+                <th className="py-2 pr-3">Type</th>
+                <th className="py-2 pr-3">Publiek</th>
+                <th className="py-2 pr-3"></th>
               </tr>
-            ))}
-            {documents.length === 0 && (
-              <tr>
-                <td colSpan={4} className="py-4 text-center text-slate-500">
-                  Nog geen documenten.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {documents.map((doc) => (
+                <tr key={doc.id} className="border-b border-slate-100">
+                  <td className="py-2 pr-3">
+                    <a href={doc.storage_url} target="_blank" rel="noreferrer" className="text-blue-600">
+                      {doc.title}
+                    </a>
+                  </td>
+                  <td className="py-2 pr-3">{doc.type}</td>
+                  <td className="py-2 pr-3">{doc.is_public ? "ja" : "nee"}</td>
+                  <td className="py-2 pr-3">
+                    <Button variant="outline" onClick={() => handleDelete(doc.id)}>
+                      Verwijderen
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {documents.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-4 text-center text-slate-500">
+                    Nog geen documenten.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );
@@ -463,7 +467,7 @@ function QrTab({ productId, published }) {
         alt="QR-code"
         className="h-48 w-48 rounded-lg border border-slate-200"
       />
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <a href={`/api/products/${productId}/qr.svg`} target="_blank" rel="noreferrer">
           <Button variant="outline">SVG downloaden</Button>
         </a>

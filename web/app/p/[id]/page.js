@@ -33,19 +33,19 @@ export default async function ProductPassportPage({ params }) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-6 py-10">
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6 sm:py-10">
       <Logo />
 
       <Card className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-slate-900">{product.name}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{product.name}</h1>
           {product.categoryLabel && <Badge variant="info">{product.categoryLabel}</Badge>}
         </div>
         <p className="text-sm text-slate-600">
           {[product.brand, product.model].filter(Boolean).join(" — ")}
         </p>
         {product.description && <p className="text-sm text-slate-700">{product.description}</p>}
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
           {product.sku && (
             <div>
               <dt className="text-slate-500">SKU</dt>
@@ -83,7 +83,7 @@ export default async function ProductPassportPage({ params }) {
       {product.sustainability && (
         <Card className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-900">Duurzaamheid</h2>
-          <dl className="grid grid-cols-2 gap-3 text-sm">
+          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
             {product.sustainability.co2_footprint_kg != null && (
               <div>
                 <dt className="text-slate-500">CO2-voetafdruk</dt>

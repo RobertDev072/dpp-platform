@@ -86,26 +86,28 @@ export default function LicensesPage() {
       </Card>
 
       <Card>
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="py-2 pr-3">ID</th>
-              <th className="py-2 pr-3">Naam</th>
-              <th className="py-2 pr-3">Max. gebruikers</th>
-              <th className="py-2 pr-3">Max. producten</th>
-            </tr>
-          </thead>
-          <tbody>
-            {plans.map((plan) => (
-              <tr key={plan.id} className="border-b border-slate-100">
-                <td className="py-2 pr-3">{plan.id}</td>
-                <td className="py-2 pr-3">{plan.name}</td>
-                <td className="py-2 pr-3">{plan.max_users}</td>
-                <td className="py-2 pr-3">{plan.max_products}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500">
+                <th className="py-2 pr-3">ID</th>
+                <th className="py-2 pr-3">Naam</th>
+                <th className="py-2 pr-3">Max. gebruikers</th>
+                <th className="py-2 pr-3">Max. producten</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {plans.map((plan) => (
+                <tr key={plan.id} className="border-b border-slate-100">
+                  <td className="py-2 pr-3">{plan.id}</td>
+                  <td className="py-2 pr-3">{plan.name}</td>
+                  <td className="py-2 pr-3">{plan.max_users}</td>
+                  <td className="py-2 pr-3">{plan.max_products}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

@@ -53,7 +53,7 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-slate-900">Auditlog</h1>
         <label className="flex items-center gap-2 text-sm text-slate-600">
           Actie
@@ -91,39 +91,41 @@ export default function AuditPage() {
         ) : data && data.items.length === 0 ? (
           <EmptyState title="Geen auditregels" description="Er zijn geen regels die aan de filters voldoen." />
         ) : data ? (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 pr-4">Tijdstip</th>
-                <th className="py-2 pr-4">Actie</th>
-                <th className="py-2 pr-4">Entiteit</th>
-                <th className="py-2 pr-4">Gebruiker</th>
-                <th className="py-2 pr-4">Bedrijf</th>
-                <th className="py-2">Impersonator</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((row) => (
-                <tr key={row.id} className="border-b border-slate-100">
-                  <td className="py-2 pr-4 whitespace-nowrap text-slate-600">{formatTimestamp(row.timestamp)}</td>
-                  <td className="py-2 pr-4">
-                    <Badge variant={ACTION_VARIANTS[row.action] || "default"}>{row.action}</Badge>
-                  </td>
-                  <td className="py-2 pr-4 text-slate-700">
-                    {row.entity_type}
-                    {row.entity_id ? ` #${row.entity_id}` : ""}
-                  </td>
-                  <td className="py-2 pr-4 text-slate-700">{row.user_email || "—"}</td>
-                  <td className="py-2 pr-4 text-slate-700">{row.company_name || "—"}</td>
-                  <td className="py-2 text-amber-700">{row.impersonator_email || "—"}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-500">
+                  <th className="py-2 pr-4">Tijdstip</th>
+                  <th className="py-2 pr-4">Actie</th>
+                  <th className="py-2 pr-4">Entiteit</th>
+                  <th className="py-2 pr-4">Gebruiker</th>
+                  <th className="py-2 pr-4">Bedrijf</th>
+                  <th className="py-2">Impersonator</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.items.map((row) => (
+                  <tr key={row.id} className="border-b border-slate-100">
+                    <td className="py-2 pr-4 whitespace-nowrap text-slate-600">{formatTimestamp(row.timestamp)}</td>
+                    <td className="py-2 pr-4">
+                      <Badge variant={ACTION_VARIANTS[row.action] || "default"}>{row.action}</Badge>
+                    </td>
+                    <td className="py-2 pr-4 text-slate-700">
+                      {row.entity_type}
+                      {row.entity_id ? ` #${row.entity_id}` : ""}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-700">{row.user_email || "—"}</td>
+                    <td className="py-2 pr-4 text-slate-700">{row.company_name || "—"}</td>
+                    <td className="py-2 text-amber-700">{row.impersonator_email || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
 
         {data && data.total > PAGE_SIZE && (
-          <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
             <span>
               Pagina {page} van {totalPages} ({data.total} regels)
             </span>

@@ -87,43 +87,45 @@ export default function ProductsPage() {
       </Card>
 
       <Card>
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th className="py-2 pr-3">Naam</th>
-              <th className="py-2 pr-3">Merk</th>
-              <th className="py-2 pr-3">SKU</th>
-              <th className="py-2 pr-3">Status</th>
-              <th className="py-2 pr-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((product) => (
-              <tr key={product.id} className="border-b border-slate-100">
-                <td className="py-2 pr-3">{product.name}</td>
-                <td className="py-2 pr-3">{product.brand || "—"}</td>
-                <td className="py-2 pr-3">{product.sku || "—"}</td>
-                <td className="py-2 pr-3">
-                  <Badge variant={STATUS_VARIANT[product.status] || "neutral"}>
-                    {product.status}
-                  </Badge>
-                </td>
-                <td className="py-2 pr-3">
-                  <Link href={`/company/products/${product.id}`}>
-                    <Button variant="outline">Openen</Button>
-                  </Link>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500">
+                <th className="py-2 pr-3">Naam</th>
+                <th className="py-2 pr-3">Merk</th>
+                <th className="py-2 pr-3">SKU</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3"></th>
               </tr>
-            ))}
-            {products.length === 0 && (
-              <tr>
-                <td colSpan={5} className="py-4 text-center text-slate-500">
-                  Nog geen producten.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {products.map((product) => (
+                <tr key={product.id} className="border-b border-slate-100">
+                  <td className="py-2 pr-3">{product.name}</td>
+                  <td className="py-2 pr-3">{product.brand || "—"}</td>
+                  <td className="py-2 pr-3">{product.sku || "—"}</td>
+                  <td className="py-2 pr-3">
+                    <Badge variant={STATUS_VARIANT[product.status] || "neutral"}>
+                      {product.status}
+                    </Badge>
+                  </td>
+                  <td className="py-2 pr-3">
+                    <Link href={`/company/products/${product.id}`}>
+                      <Button variant="outline">Openen</Button>
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {products.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-4 text-center text-slate-500">
+                    Nog geen producten.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );
