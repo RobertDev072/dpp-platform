@@ -37,6 +37,12 @@ export default async function ProductPassportPage({ params }) {
       <Logo />
 
       <Card className="space-y-2">
+        {product.archived && (
+          <p className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600">
+            Dit product is gearchiveerd. De onderstaande gegevens blijven beschikbaar als
+            naslag, maar worden niet meer actief bijgewerkt.
+          </p>
+        )}
         {product.photoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img

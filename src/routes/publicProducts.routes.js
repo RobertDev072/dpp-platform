@@ -77,13 +77,17 @@ router.get("/:publicId", async (req, res, next) => {
       description: product.description,
       manufacturer: product.manufacturer,
       countryOfOrigin: product.country_of_origin,
-      // Stabiele, eigen link i.p.v. de rauwe photo_url/blobnaam: bij een upload gaat dit
-      // achter de schermen via een kortlevende SAS (de container is prive), bij een
-      // geplakte externe URL redirect dezelfde route er gewoon naartoe. De frontend hoeft
-      // dat onderscheid niet te kennen.
+      // Stabiele, eigen link i.p.v. de rauwe photo_url/blobnaam: bij een upload streamt dit
+      // media-endpoint de prive blob zelf door (Managed Identity), bij een geplakte externe
+      // URL redirect dezelfde route er gewoon naartoe. De frontend hoeft dat onderscheid
+      // niet te kennen.
       photoUrl: product.photo_blob_name || product.photo_url
         ? `/api/public/products/${req.params.publicId}/photo`
         : null,
+      // Een gedrukte QR-code moet permanent blijven werken, ook na archiveren - de
+      // frontend kan hiermee een neutrale "gearchiveerd"-melding tonen i.p.v. te doen
+      // alsof dit nog een actief product is.
+      archived: product.status === "archived",
       highlights,
       publishedAt: product.published_at,
       sustainability,

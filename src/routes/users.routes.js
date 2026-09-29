@@ -185,9 +185,13 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
     // Entra-account uit; terugzetten naar active schakelt het weer in.
     if (req.body.status !== undefined && existing.entra_object_id) {
       try {
-        await graphClient.setAccountEnabled(existing.entra_object_id, req.body.status === "active");
+        if (req.body.status === "deleted") {
+          await graphClient.deleteEntraUser(existing.entra_object_id);
+        } else {
+          await graphClient.setAccountEnabled(existing.entra_object_id, req.body.status === "active");
+        }
       } catch (error) {
-        console.error("Entra account in-/uitschakelen mislukt:", error.message);
+        console.error("Entra account bijwerken/verwijderen mislukt:", error.message);
       }
     }
 

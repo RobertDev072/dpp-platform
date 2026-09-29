@@ -77,4 +77,11 @@ async function resetPassword(entraObjectId, newTempPassword) {
   });
 }
 
-module.exports = { createEntraUser, setAccountEnabled, resetPassword };
+// Vereist: User.DeleteRestore.All (of User.ReadWrite.All). Verwijdert het Entra-account
+// definitief - status "deleted" in de SaaS is dus niet zomaar terug te draaien zoals
+// blocked/suspended/archived dat wel zijn (die schakelen alleen accountEnabled om).
+async function deleteEntraUser(entraObjectId) {
+  await graphRequest("DELETE", `/users/${encodeURIComponent(entraObjectId)}`);
+}
+
+module.exports = { createEntraUser, setAccountEnabled, resetPassword, deleteEntraUser };

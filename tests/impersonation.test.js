@@ -5,9 +5,10 @@ const { sql, getPool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
-// Impersonatie ("inloggen als"): alleen de Platform Owner, alleen op actieve
-// company_admin/company_user-accounts, nooit genest, volledig audit-gelogd met
-// beide id's, en de eigen sessie is via de stop-route te herstellen.
+// Impersonatie ("inloggen als"): de Platform Owner mag iedereen impersoneren, een
+// company_admin alleen actieve company_admin/company_user-accounts binnen het eigen
+// bedrijf. Nooit genest, volledig audit-gelogd met beide id's, en de eigen sessie is via
+// de stop-route te herstellen.
 
 function cookiesFrom(res, raw) {
   // request() geeft alleen de eerste Set-Cookie terug; voor impersonatie hebben we
@@ -20,12 +21,17 @@ test("impersonatie: volledige start/stop-cyclus met audit-logging", async (t) =>
   const { server, baseUrl } = await startTestServer();
 
   const companyId = await createTestCompany("Impersonatie Co");
+  const otherCompanyId = await createTestCompany("Andere Co");
   const owner = await createTestUser({ companyId: null, role: "platform_owner" });
   const admin = await createTestUser({ companyId, role: "company_admin" });
   const medewerker = await createTestUser({ companyId, role: "company_user" });
+  const otherCompanyUser = await createTestUser({ companyId: otherCompanyId, role: "company_user" });
 
   t.after(async () => {
-    await cleanupTestData({ companyIds: [companyId], userIds: [owner.id, admin.id, medewerker.id] });
+    await cleanupTestData({
+      companyIds: [companyId, otherCompanyId],
+      userIds: [owner.id, admin.id, medewerker.id, otherCompanyUser.id]
+    });
     await stopTestServer(server);
   });
 
@@ -120,7 +126,7 @@ test("impersonatie: volledige start/stop-cyclus met audit-logging", async (t) =>
     assert.equal(stopRaw.status, 403);
   });
 
-  await t.test("company_admin mag niet impersoneren", async () => {
+  await t.test("company_admin mag een medewerker uit het eigen bedrijf impersoneren", async () => {
     const adminLogin = await request(baseUrl, "POST", "/api/auth/login", {
       body: { email: admin.email, password: admin.password }
     });
@@ -128,7 +134,30 @@ test("impersonatie: volledige start/stop-cyclus met audit-logging", async (t) =>
     const res = await request(baseUrl, "POST", `/api/admin/impersonate/${medewerker.id}`, {
       cookie: adminLogin.cookie
     });
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 200);
+    assert.equal(res.data.impersonating.id, medewerker.id);
+  });
+
+  await t.test("company_admin mag geen gebruiker van een ander bedrijf impersoneren (404, niet 403)", async () => {
+    const adminLogin = await request(baseUrl, "POST", "/api/auth/login", {
+      body: { email: admin.email, password: admin.password }
+    });
+    assert.equal(adminLogin.status, 200);
+    const res = await request(baseUrl, "POST", `/api/admin/impersonate/${otherCompanyUser.id}`, {
+      cookie: adminLogin.cookie
+    });
+    assert.equal(res.status, 404);
+  });
+
+  await t.test("company_admin mag de Platform Owner niet impersoneren", async () => {
+    const adminLogin = await request(baseUrl, "POST", "/api/auth/login", {
+      body: { email: admin.email, password: admin.password }
+    });
+    assert.equal(adminLogin.status, 200);
+    const res = await request(baseUrl, "POST", `/api/admin/impersonate/${owner.id}`, {
+      cookie: adminLogin.cookie
+    });
+    assert.equal(res.status, 404);
   });
 });
 

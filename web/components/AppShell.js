@@ -42,6 +42,11 @@ export default function AppShell({ menu, children }) {
     window.location.href = "/login";
   }
 
+  async function handleStopImpersonation() {
+    const { restored } = await api.post("/api/admin/impersonate/stop");
+    window.location.href = restored.role === "platform_owner" ? "/admin" : "/company";
+  }
+
   if (loading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-500">
@@ -101,6 +106,21 @@ export default function AppShell({ menu, children }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {user.impersonator && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-500 px-4 py-2 text-sm text-white sm:px-6">
+            <span>
+              Je bekijkt de omgeving als <strong>{user.email}</strong>, ingelogd door{" "}
+              {user.impersonator.email}.
+            </span>
+            <button
+              type="button"
+              onClick={handleStopImpersonation}
+              className="shrink-0 rounded-lg bg-white/20 px-3 py-1 font-medium hover:bg-white/30"
+            >
+              Stop impersoneren
+            </button>
+          </div>
+        )}
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button

@@ -145,8 +145,12 @@ async function getProductByPublicId(publicId) {
     .query(`
       SELECT ${PUBLIC_COLUMNS}
       FROM dbo.Products
-      WHERE public_id = @publicId AND status = 'published'
+      WHERE public_id = @publicId AND status IN ('published', 'archived')
     `);
+  // 'archived' hoort hierbij: een gedrukte/gegraveerde QR-code verwijst permanent naar
+  // deze public_id en mag nooit stoppen met werken, ook niet nadat het product intern is
+  // gearchiveerd. Alleen 'draft' (nooit gepubliceerd, heeft sowieso geen public_id) blijft
+  // buiten beeld.
   return result.recordset[0] || null;
 }
 

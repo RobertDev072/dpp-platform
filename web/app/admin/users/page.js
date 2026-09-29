@@ -25,6 +25,8 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
+  const [resetInfo, setResetInfo] = useState(null);
+  const [actionError, setActionError] = useState("");
 
   const companiesById = useMemo(
     () => Object.fromEntries(companies.map((company) => [company.id, company])),
@@ -73,11 +75,57 @@ export default function UsersPage() {
     }
   }
 
+  async function handleDelete(user) {
+    const sure = window.confirm(
+      `Weet je zeker dat je ${user.email} wilt verwijderen? Dit verwijdert ook het account in ` +
+        "Microsoft Entra en kan niet ongedaan gemaakt worden."
+    );
+    if (!sure) return;
+    await patchUser(user, { status: "deleted" });
+  }
+
+  async function handleResetPassword(user) {
+    setActionError("");
+    setResetInfo(null);
+    try {
+      const { tempPassword } = await api.post(`/api/users/${user.id}/reset-password`);
+      setResetInfo({ email: user.email, tempPassword });
+    } catch (err) {
+      setActionError(err.message);
+    }
+  }
+
+  async function handleImpersonate(user) {
+    setActionError("");
+    try {
+      const { impersonating } = await api.post(`/api/admin/impersonate/${user.id}`);
+      window.location.href = impersonating.role === "platform_owner" ? "/admin" : "/company";
+    } catch (err) {
+      setActionError(err.message);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-slate-900">Gebruikers</h1>
 
       {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
+      {actionError && <Card className="border-red-200 bg-red-50 text-red-700">{actionError}</Card>}
+
+      {resetInfo && (
+        <Card className="border-amber-200 bg-amber-50 text-amber-800">
+          <p className="mb-2 text-sm font-medium">
+            Nieuw tijdelijk wachtwoord voor {resetInfo.email} (wordt maar één keer getoond, deel dit
+            zelf veilig met de gebruiker):
+          </p>
+          <input
+            readOnly
+            value={resetInfo.tempPassword}
+            onClick={(e) => e.target.select()}
+            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm text-slate-900"
+          />
+        </Card>
+      )}
 
       <Card className="border-blue-200 bg-blue-50 text-blue-800">
         <p className="text-sm">
@@ -129,6 +177,7 @@ export default function UsersPage() {
                     <th className="py-2 pr-3">Rol</th>
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2 pr-3">Status wijzigen</th>
+                    <th className="py-2 pr-3">Acties</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -165,6 +214,8 @@ export default function UsersPage() {
                         <td className="py-2 pr-3">
                           {isPlatformOwner ? (
                             <span className="text-xs text-slate-400">Niet wijzigbaar</span>
+                          ) : user.status === "deleted" ? (
+                            <span className="text-xs text-slate-400">Verwijderd</span>
                           ) : (
                             <select
                               aria-label={`Status van ${user.email}`}
@@ -178,6 +229,35 @@ export default function UsersPage() {
                                 </option>
                               ))}
                             </select>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {!isPlatformOwner && user.status !== "deleted" && (
+                            <div className="flex flex-wrap gap-2 text-xs">
+                              {user.status === "active" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleImpersonate(user)}
+                                  className="font-medium text-blue-600 hover:text-blue-700"
+                                >
+                                  Inloggen als
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleResetPassword(user)}
+                                className="font-medium text-blue-600 hover:text-blue-700"
+                              >
+                                Reset wachtwoord
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(user)}
+                                className="font-medium text-red-600 hover:text-red-700"
+                              >
+                                Verwijderen
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>

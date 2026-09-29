@@ -3,7 +3,7 @@ const { ASSIGNABLE_ROLES } = require("../utils/roles");
 
 // platform_owner staat bewust niet in dit enum: die rol is via de API nooit toe te
 // kennen (er is er precies één, beheerd via het seed-script).
-const USER_STATUSES = ["active", "blocked", "suspended", "archived"];
+const USER_STATUSES = ["active", "blocked", "suspended", "archived", "deleted"];
 
 const createUserSchema = z.object({
   companyId: z.number().int().positive().nullable().optional(),

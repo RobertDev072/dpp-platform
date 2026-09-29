@@ -16,9 +16,13 @@ export const USER_STATUS_LABELS = {
   active: "Actief",
   blocked: "Geblokkeerd",
   suspended: "Opgeschort",
-  archived: "Gearchiveerd"
+  archived: "Gearchiveerd",
+  deleted: "Verwijderd"
 };
 
+// "deleted" staat hier bewust niet bij: dat is geen omkeerbare statuswijziging zoals de
+// rest (het verwijdert ook definitief het Entra-account), dus dat heeft een eigen
+// bevestigde "Verwijderen"-actie nodig, niet een losse optie in deze dropdown.
 export const USER_STATUS_OPTIONS = [
   { value: "active", label: "Actief" },
   { value: "blocked", label: "Geblokkeerd" },
@@ -30,7 +34,8 @@ export const USER_STATUS_BADGE_VARIANTS = {
   active: "success",
   blocked: "danger",
   suspended: "warning",
-  archived: "neutral"
+  archived: "neutral",
+  deleted: "danger"
 };
 
 export function roleLabel(role) {
