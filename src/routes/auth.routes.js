@@ -249,6 +249,17 @@ router.post(
         try {
           await graphClient.resetPassword(authInfo.entraObjectId, newPassword);
         } catch (err) {
+          if (/\(403\)/.test(err.message || "")) {
+            // Configuratiefout aan onze kant, niet die van de gebruiker: de Graph-app
+            // mist User-PasswordProfile.ReadWrite.All. Meld het eerlijk.
+            next(
+              new HttpError(
+                502,
+                "Wachtwoord instellen is tijdelijk niet mogelijk door een serverconfiguratie-probleem. Neem contact op met de beheerder."
+              )
+            );
+            return;
+          }
           if (/\(400\)/.test(err.message || "")) {
             next(
               new HttpError(400, "Ongeldige invoer", {

@@ -239,7 +239,20 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
     const tempPassword = generateTempPassword();
 
     if (authInfo?.entraObjectId) {
-      await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
+      try {
+        await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
+      } catch (error) {
+        if (/\(403\)/.test(error.message || "")) {
+          next(
+            new HttpError(
+              502,
+              "Entra weigert de wachtwoordreset: de Graph-app mist de permissie User-PasswordProfile.ReadWrite.All (met admin consent). Voeg die toe in Entra en probeer opnieuw."
+            )
+          );
+          return;
+        }
+        throw error;
+      }
     } else if (authInfo?.hasLocalPassword) {
       await usersRepo.updatePasswordHash(id, await hashPassword(tempPassword));
     } else {
