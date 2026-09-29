@@ -39,7 +39,14 @@ async function padFailedLogin(startedAt) {
 // DPP-sessie: hergebruikt exact dezelfde JIT-koppeling en sessie-opzet als de
 // bestaande browser-redirect-flow in entraAuth.routes.js.
 async function finishEntraLogin(res, claims, via) {
-  const user = await resolveEntraLogin({ sub: claims.sub, email: claims.email });
+  // Het ID-token van via-Graph-aangemaakte accounts bevat GEEN email-claim (empirisch
+  // vastgesteld): het e-mailadres zit daar in preferred_username. Zonder deze fallback
+  // mislukte de allereerste JIT-koppeling (en dus de eerste login) van elk door een
+  // beheerder aangemaakt account.
+  const user = await resolveEntraLogin({
+    sub: claims.sub,
+    email: claims.email || claims.preferred_username
+  });
   const { token, expiresAt } = await createSession(user.id);
   setSessionCookie(res, token, expiresAt);
 
