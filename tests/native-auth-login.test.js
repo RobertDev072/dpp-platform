@@ -156,7 +156,7 @@ test(
     await t.test("3b: company_admin B (native-auth) ziet product A ook niet terug in de lijst", async () => {
       const res = await request(baseUrl, "GET", "/api/products", { cookie: sessionCookie });
       assert.equal(res.status, 200);
-      assert.ok(!res.data.some((p) => p.id === productA));
+      assert.ok(!res.data.items.some((p) => p.id === productA));
     });
   }
 );

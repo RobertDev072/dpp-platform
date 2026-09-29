@@ -30,6 +30,33 @@ async function getUserById(id) {
   return result.recordset[0] || null;
 }
 
+// Alleen voor de admin-wachtwoordreset: welke wachtwoordmethode heeft dit account
+// (zonder ooit de hash zelf uit de repository te laten lekken).
+async function getUserAuthInfo(id) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input("id", sql.Int, id)
+    .query(`
+      SELECT entra_object_id,
+             CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password
+      FROM dbo.Users WHERE id = @id
+    `);
+  const row = result.recordset[0];
+  return row
+    ? { entraObjectId: row.entra_object_id, hasLocalPassword: Boolean(row.has_local_password) }
+    : null;
+}
+
+async function updatePasswordHash(id, passwordHash) {
+  const pool = await getPool();
+  await pool
+    .request()
+    .input("id", sql.Int, id)
+    .input("passwordHash", sql.NVarChar(255), passwordHash)
+    .query("UPDATE dbo.Users SET password_hash = @passwordHash, updated_at = SYSUTCDATETIME() WHERE id = @id");
+}
+
 async function getUserByEmail(email) {
   const pool = await getPool();
   const result = await pool
@@ -217,5 +244,7 @@ module.exports = {
   countOtherActiveCompanyAdmins,
   countAllActiveUsers,
   createUserWithSeatLimit,
-  updateUser
+  updateUser,
+  getUserAuthInfo,
+  updatePasswordHash
 };

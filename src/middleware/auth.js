@@ -49,7 +49,7 @@ async function getUserForToken(token) {
     .query(`
       SELECT u.id, u.company_id, u.email, u.role, u.status, u.first_name, u.last_name,
              CASE WHEN u.password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password,
-             c.name AS company_name, c.logo AS company_logo,
+             c.name AS company_name, c.logo AS company_logo, c.status AS company_status,
              s.expires_at, s.impersonator_user_id,
              imp.email AS impersonator_email
       FROM dbo.Sessions s
@@ -61,6 +61,13 @@ async function getUserForToken(token) {
 
   const row = result.recordset[0];
   if (!row || row.status !== "active" || new Date(row.expires_at) < new Date()) {
+    return null;
+  }
+
+  // Een geblokkeerd/opgeschort/gearchiveerd bedrijf sluit al zijn gebruikers per
+  // direct buiten (bestaande sessies incluis). De Platform Owner heeft geen bedrijf
+  // (company_id NULL) en valt hier dus nooit onder.
+  if (row.company_id != null && row.company_status !== "active") {
     return null;
   }
 

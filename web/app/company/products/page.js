@@ -1,132 +1,103 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
 import { api } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
-import Badge from "@/components/ui/Badge";
-
-const STATUS_VARIANT = {
-  draft: "neutral",
-  published: "success",
-  archived: "warning"
-};
+import Field from "@/components/ui/Field";
+import SubmitButton from "@/components/ui/SubmitButton";
+import FormError from "@/components/ui/FormError";
+import { useToast } from "@/components/ui/Toast";
+import ProductsTable from "@/components/ProductsTable";
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState([]);
-  const [error, setError] = useState("");
+  const toast = useToast();
+
+  const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [sku, setSku] = useState("");
-
-  async function loadProducts() {
-    const data = await api.get("/api/products");
-    setProducts(data);
-  }
-
-  useEffect(() => {
-    loadProducts().catch((err) => setError(err.message));
-  }, []);
+  const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState(null);
+  // Wisselt van waarde na elk aangemaakt product, zodat de tabel opnieuw laadt.
+  const [reloadToken, setReloadToken] = useState(0);
 
   async function handleCreate(event) {
     event.preventDefault();
+    setFormError(null);
+    setCreating(true);
     try {
       await api.post("/api/products", {
         name,
         brand: brand || undefined,
         sku: sku || undefined
       });
+      toast.success(`Product ${name} aangemaakt`);
       setName("");
       setBrand("");
       setSku("");
-      await loadProducts();
+      setShowCreate(false);
+      setReloadToken((prev) => prev + 1);
     } catch (err) {
-      setError(err.message);
+      setFormError(err);
+    } finally {
+      setCreating(false);
     }
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Producten</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold text-slate-900">Producten</h1>
+        <Button type="button" onClick={() => setShowCreate((prev) => !prev)}>
+          {showCreate ? "Sluiten" : "Nieuw product"}
+        </Button>
+      </div>
 
-      {error && (
-        <Card className="border-red-200 bg-red-50 text-red-700">{error}</Card>
+      {showCreate && (
+        <Card>
+          <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuw product</h2>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <FormError error={formError} />
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field
+                label="Naam"
+                name="name"
+                required
+                autoComplete="off"
+                placeholder="Bijv. Hoekbank Oslo"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Field
+                label="Merk"
+                name="brand"
+                autoComplete="off"
+                placeholder="Bijv. VeriPasso Home"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+              />
+              <Field
+                label="SKU"
+                name="sku"
+                autoComplete="off"
+                placeholder="Bijv. HB-OSLO-01"
+                value={sku}
+                onChange={(e) => setSku(e.target.value)}
+              />
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Foto, categorie en overige gegevens voeg je na het aanmaken toe op de productpagina.
+            </p>
+
+            <SubmitButton loading={creating}>Aanmaken</SubmitButton>
+          </form>
+        </Card>
       )}
 
-      <Card>
-        <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuw product</h2>
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Naam
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            Merk
-            <input
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-slate-600">
-            SKU
-            <input
-              value={sku}
-              onChange={(e) => setSku(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-            />
-          </label>
-          <Button type="submit">Aanmaken</Button>
-        </form>
-      </Card>
-
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 pr-3">Naam</th>
-                <th className="py-2 pr-3">Merk</th>
-                <th className="py-2 pr-3">SKU</th>
-                <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((product) => (
-                <tr key={product.id} className="border-b border-slate-100">
-                  <td className="py-2 pr-3">{product.name}</td>
-                  <td className="py-2 pr-3">{product.brand || "—"}</td>
-                  <td className="py-2 pr-3">{product.sku || "—"}</td>
-                  <td className="py-2 pr-3">
-                    <Badge variant={STATUS_VARIANT[product.status] || "neutral"}>
-                      {product.status}
-                    </Badge>
-                  </td>
-                  <td className="py-2 pr-3">
-                    <Link href={`/company/products/${product.id}`}>
-                      <Button variant="outline">Openen</Button>
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {products.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-4 text-center text-slate-500">
-                    Nog geen producten.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <ProductsTable reloadToken={reloadToken} />
     </div>
   );
 }

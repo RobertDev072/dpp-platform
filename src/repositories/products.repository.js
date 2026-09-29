@@ -4,26 +4,90 @@ const { getPool, sql } = require("../config/db");
 const PUBLIC_COLUMNS = `
   id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
   manufacturer, country_of_origin, photo_url, photo_blob_name, status, highlights, public_id,
-  published_at, created_at, updated_at
+  published_at, created_by, created_at, updated_at
 `;
 
-async function listProducts({ companyId } = {}) {
+// Whitelist: voorkomt dat sort/order ooit rauw in de SQL belanden.
+const SORTABLE_COLUMNS = {
+  name: "p.name",
+  created_at: "p.created_at",
+  status: "p.status",
+  category: "p.category_label"
+};
+
+function escapeLike(value) {
+  return value.replace(/[\\%_\[]/g, (m) => `\\${m}`);
+}
+
+async function listProducts({
+  companyId,
+  q,
+  status,
+  category,
+  sort = "name",
+  order = "asc",
+  page = 1,
+  pageSize = 25
+} = {}) {
   const pool = await getPool();
   const request = pool.request();
 
-  let where = "";
+  const where = [];
   if (companyId !== undefined) {
     request.input("companyId", sql.Int, companyId);
-    where = "WHERE company_id = @companyId";
+    where.push("p.company_id = @companyId");
+  }
+  if (q) {
+    request.input("q", sql.NVarChar(220), `%${escapeLike(q)}%`);
+    where.push("(p.name LIKE @q ESCAPE '\\' OR p.sku LIKE @q ESCAPE '\\' OR p.gtin LIKE @q ESCAPE '\\' OR p.brand LIKE @q ESCAPE '\\')");
+  }
+  if (status) {
+    request.input("status", sql.NVarChar(20), status);
+    where.push("p.status = @status");
+  }
+  if (category) {
+    request.input("category", sql.NVarChar(100), category);
+    where.push("p.category_label = @category");
   }
 
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const sortSql = SORTABLE_COLUMNS[sort] || SORTABLE_COLUMNS.name;
+  const orderSql = order === "desc" ? "DESC" : "ASC";
+  request.input("offset", sql.Int, (page - 1) * pageSize);
+  request.input("limit", sql.Int, pageSize);
+
+  const selectColumns = PUBLIC_COLUMNS.split(",").map((c) => `p.${c.trim()}`).join(", ");
+
   const result = await request.query(`
-    SELECT ${PUBLIC_COLUMNS}
-    FROM dbo.Products
-    ${where}
-    ORDER BY name
+    SELECT ${selectColumns},
+           creator.email AS created_by_email,
+           COUNT(*) OVER() AS total
+    FROM dbo.Products p
+    LEFT JOIN dbo.Users creator ON creator.id = p.created_by
+    ${whereSql}
+    ORDER BY ${sortSql} ${orderSql}, p.id ASC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
   `);
-  return result.recordset;
+
+  const rows = result.recordset;
+  const total = rows.length ? rows[0].total : 0;
+  const items = rows.map(({ total: _ignored, ...row }) => row);
+  return { items, total, page, pageSize };
+}
+
+// Onderscheiden categorielabels voor het filter in het productoverzicht.
+async function listCategories({ companyId } = {}) {
+  const pool = await getPool();
+  const request = pool.request();
+  let where = "WHERE category_label IS NOT NULL AND category_label <> ''";
+  if (companyId !== undefined) {
+    request.input("companyId", sql.Int, companyId);
+    where += " AND company_id = @companyId";
+  }
+  const result = await request.query(`
+    SELECT DISTINCT category_label FROM dbo.Products ${where} ORDER BY category_label
+  `);
+  return result.recordset.map((r) => r.category_label);
 }
 
 async function getProductById(id) {
@@ -45,12 +109,14 @@ async function createProduct({
   description,
   manufacturer,
   countryOfOrigin,
-  photoUrl
+  photoUrl,
+  createdBy
 }) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input("companyId", sql.Int, companyId)
+    .input("createdBy", sql.Int, createdBy ?? null)
     .input("name", sql.NVarChar(200), name)
     .input("brand", sql.NVarChar(150), brand ?? null)
     .input("model", sql.NVarChar(150), model ?? null)
@@ -62,10 +128,10 @@ async function createProduct({
     .input("photoUrl", sql.NVarChar(1000), photoUrl ?? null)
     .query(`
       INSERT INTO dbo.Products
-        (company_id, name, brand, model, sku, gtin, description, manufacturer, country_of_origin, photo_url, status)
+        (company_id, name, brand, model, sku, gtin, description, manufacturer, country_of_origin, photo_url, created_by, status)
       OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
       VALUES
-        (@companyId, @name, @brand, @model, @sku, @gtin, @description, @manufacturer, @countryOfOrigin, @photoUrl, 'draft')
+        (@companyId, @name, @brand, @model, @sku, @gtin, @description, @manufacturer, @countryOfOrigin, @photoUrl, @createdBy, 'draft')
     `);
   return result.recordset[0];
 }
@@ -206,6 +272,7 @@ async function countProductsByStatus({ companyId } = {}) {
 
 module.exports = {
   listProducts,
+  listCategories,
   getProductById,
   createProduct,
   updateProduct,

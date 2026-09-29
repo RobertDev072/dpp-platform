@@ -13,7 +13,7 @@ const updateCompanySchema = z
     name: z.string().min(1).max(200).optional(),
     slug: z.string().min(1).max(100).regex(slugPattern).optional(),
     planId: z.number().int().positive().nullable().optional(),
-    status: z.enum(["active", "suspended", "archived"]).optional()
+    status: z.enum(["active", "blocked", "suspended", "archived"]).optional()
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
 

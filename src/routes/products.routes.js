@@ -1,7 +1,8 @@
 const express = require("express");
 const multer = require("multer");
 const { requireAuth, requireRole } = require("../middleware/auth");
-const { validateBody } = require("../middleware/validate");
+const { validateBody, validateQuery } = require("../middleware/validate");
+const { listProductsQuerySchema } = require("../schemas/productsQuery.schema");
 const { createProductSchema, updateProductSchema } = require("../schemas/products.schema");
 const { createPartSchema } = require("../schemas/parts.schema");
 const { updateSustainabilitySchema } = require("../schemas/sustainability.schema");
@@ -50,15 +51,26 @@ const EDITOR_ROLES = ["company_admin", "company_user"];
 
 router.use(requireAuth);
 
-router.get("/", requireRole(...ALL_ROLES), async (req, res, next) => {
+router.get("/", requireRole(...ALL_ROLES), validateQuery(listProductsQuerySchema), async (req, res, next) => {
   try {
-    if (isPlatformOwner(req.user.role)) {
-      const companyId = req.query.companyId !== undefined ? Number(req.query.companyId) : undefined;
-      res.json(await productsRepo.listProducts({ companyId }));
-      return;
+    const params = { ...req.validatedQuery };
+    // Alleen de Platform Owner mag over bedrijven heen kijken; iedereen anders is
+    // hard aan het eigen bedrijf gebonden, ongeacht wat er in de query staat.
+    if (!isPlatformOwner(req.user.role)) {
+      params.companyId = req.user.companyId;
     }
+    res.json(await productsRepo.listProducts(params));
+  } catch (error) {
+    next(error);
+  }
+});
 
-    res.json(await productsRepo.listProducts({ companyId: req.user.companyId }));
+router.get("/categories", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const companyId = isPlatformOwner(req.user.role)
+      ? (req.query.companyId !== undefined ? Number(req.query.companyId) : undefined)
+      : req.user.companyId;
+    res.json(await productsRepo.listCategories({ companyId }));
   } catch (error) {
     next(error);
   }
@@ -68,7 +80,8 @@ router.post("/", requireRole(...EDITOR_ROLES), validateBody(createProductSchema)
   try {
     const product = await productsRepo.createProduct({
       ...req.body,
-      companyId: req.user.companyId
+      companyId: req.user.companyId,
+      createdBy: req.user.id
     });
 
     await logAudit({

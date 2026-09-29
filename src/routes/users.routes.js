@@ -77,11 +77,15 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
       });
       entraObjectId = created.entraObjectId;
     } else {
+      // Legacy-modus (Entra-provisioning niet geconfigureerd): genereer zelf een
+      // tijdelijk wachtwoord i.p.v. de aanmaak te blokkeren - het nieuwe
+      // aanmaakformulier heeft bewust geen wachtwoordveld meer.
       if (!body.password) {
-        next(new HttpError(400, "password is verplicht zolang Entra niet is geconfigureerd"));
-        return;
+        tempPassword = generateTempPassword();
+        passwordHash = await hashPassword(tempPassword);
+      } else {
+        passwordHash = await hashPassword(body.password);
       }
-      passwordHash = await hashPassword(body.password);
     }
 
     const { limitReached, user } = await usersRepo.createUserWithSeatLimit({
@@ -223,20 +227,22 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
       assertCompanyAccess(req.user, existing.company_id);
     }
 
-    if (!existing.entra_object_id) {
-      next(
-        new HttpError(
-          400,
-          "Deze gebruiker heeft geen Entra-account; gebruik zelfbedienings-wachtwoordherstel niet van toepassing"
-        )
-      );
+    // Drie soorten accounts: Entra-beheerd (reset via Graph), lokaal/bcrypt (de
+    // Platform Owner en gebruikers van vóór de Entra-koppeling - reset lokaal), en
+    // in theorie geen van beide (kan niet bestaan door CHK_Users_HasAuthMethod).
+    const authInfo = await usersRepo.getUserAuthInfo(id);
+    const tempPassword = generateTempPassword();
+
+    if (authInfo?.entraObjectId) {
+      // Bewuste, smalle fallback naast Entra's self-service reset (SSPR) — zie
+      // docs/entra-external-id-setup.md voor de afweging tussen SSPR en admin-reset.
+      await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
+    } else if (authInfo?.hasLocalPassword) {
+      await usersRepo.updatePasswordHash(id, await hashPassword(tempPassword));
+    } else {
+      next(new HttpError(409, "Dit account heeft geen wachtwoordmethode; neem contact op met de beheerder"));
       return;
     }
-
-    // Bewuste, smalle fallback naast Entra's self-service reset (SSPR) — zie
-    // docs/entra-external-id-setup.md voor de afweging tussen SSPR en admin-reset.
-    const tempPassword = generateTempPassword();
-    await graphClient.resetPassword(existing.entra_object_id, tempPassword);
 
     await logAudit({
       companyId: existing.company_id,

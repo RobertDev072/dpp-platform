@@ -1,6 +1,7 @@
 export const ADMIN_MENU = [
   { label: "Dashboard", href: "/admin" },
   { label: "Bedrijven", href: "/admin/companies" },
+  { label: "Producten", href: "/admin/products" },
   { label: "Gebruikers", href: "/admin/users" },
   { label: "Licenties", href: "/admin/licenses" },
   { label: "Audit Log", href: "/admin/audit" }

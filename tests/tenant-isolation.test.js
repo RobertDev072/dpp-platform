@@ -67,7 +67,7 @@ test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", 
   await t.test("company_admin B ziet product van company A niet in de lijst", async () => {
     const res = await request(baseUrl, "GET", "/api/products", { cookie: adminBCookie });
     assert.equal(res.status, 200);
-    assert.ok(!res.data.some((p) => p.id === productA));
+    assert.ok(!res.data.items.some((p) => p.id === productA));
   });
 
   await t.test("company_admin B krijgt 404 (niet 403) bij direct opvragen van product A", async () => {
