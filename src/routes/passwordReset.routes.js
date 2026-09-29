@@ -8,6 +8,7 @@ const {
 const nativeAuth = require("../services/nativeAuth.service");
 const { HttpError } = require("../middleware/errorHandler");
 const { resetLimiter } = require("../middleware/rateLimit");
+const usersRepo = require("../repositories/users.repository");
 
 const router = express.Router();
 
@@ -81,6 +82,12 @@ router.post("/submit", validateBody(submitPasswordSchema), async (req, res, next
       if (status === "pending") {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
+    }
+
+    if (["succeeded", "completed"].includes(status) && req.body.email) {
+      // Best-effort UX (geen beveiligingsgrens): na een geslaagde reset hoeft de
+      // eerstvolgende login geen wijziging meer af te dwingen.
+      await usersRepo.clearMustChangePasswordByEmail(req.body.email).catch(() => {});
     }
 
     res.json({ status });

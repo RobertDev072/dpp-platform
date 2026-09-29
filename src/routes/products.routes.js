@@ -65,6 +65,17 @@ router.get("/", requireRole(...ALL_ROLES), validateQuery(listProductsQuerySchema
   }
 });
 
+router.get("/stats", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const companyId = isPlatformOwner(req.user.role)
+      ? (req.query.companyId !== undefined ? Number(req.query.companyId) : undefined)
+      : req.user.companyId;
+    res.json(await productsRepo.getProductStats({ companyId }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/categories", requireRole(...ALL_ROLES), async (req, res, next) => {
   try {
     const companyId = isPlatformOwner(req.user.role)

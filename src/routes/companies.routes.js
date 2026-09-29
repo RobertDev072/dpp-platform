@@ -15,7 +15,7 @@ router.use(requireAuth, requireRole(...require("../utils/roles").PLATFORM_OWNER_
 
 router.get("/", async (req, res, next) => {
   try {
-    res.json(await companiesRepo.listCompanies());
+    res.json(await companiesRepo.listCompaniesWithStats());
   } catch (error) {
     next(error);
   }

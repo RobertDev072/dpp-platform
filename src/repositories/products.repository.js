@@ -19,19 +19,19 @@ function escapeLike(value) {
   return value.replace(/[\\%_\[]/g, (m) => `\\${m}`);
 }
 
-async function listProducts({
-  companyId,
-  q,
-  status,
-  category,
-  sort = "name",
-  order = "asc",
-  page = 1,
-  pageSize = 25
-} = {}) {
-  const pool = await getPool();
-  const request = pool.request();
+// Compleetheid van een productpaspoort: zes gelijkwaardige criteria (foto,
+// omschrijving, categorie, duurzaamheidsdata, compliance-data, minimaal één
+// document). Berekend in SQL zodat er ook op gefilterd/geteld kan worden.
+const COMPLETENESS_SQL = `(
+  (CASE WHEN p.photo_url IS NOT NULL OR p.photo_blob_name IS NOT NULL THEN 1 ELSE 0 END) +
+  (CASE WHEN p.description IS NOT NULL AND LEN(p.description) > 0 THEN 1 ELSE 0 END) +
+  (CASE WHEN p.category_label IS NOT NULL AND LEN(p.category_label) > 0 THEN 1 ELSE 0 END) +
+  (CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductSustainability ps WHERE ps.product_id = p.id) THEN 1 ELSE 0 END) +
+  (CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductCompliance pc WHERE pc.product_id = p.id) THEN 1 ELSE 0 END) +
+  (CASE WHEN EXISTS (SELECT 1 FROM dbo.Documents d WHERE d.product_id = p.id) THEN 1 ELSE 0 END)
+) * 100 / 6`;
 
+function buildProductFilters({ companyId, q, status, category, doc }, request) {
   const where = [];
   if (companyId !== undefined) {
     request.input("companyId", sql.Int, companyId);
@@ -49,8 +49,29 @@ async function listProducts({
     request.input("category", sql.NVarChar(100), category);
     where.push("p.category_label = @category");
   }
+  if (doc === "compleet") {
+    where.push(`${COMPLETENESS_SQL} = 100`);
+  } else if (doc === "incompleet") {
+    where.push(`${COMPLETENESS_SQL} < 100`);
+  }
+  return where.length ? `WHERE ${where.join(" AND ")}` : "";
+}
 
-  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+async function listProducts({
+  companyId,
+  q,
+  status,
+  category,
+  doc,
+  sort = "name",
+  order = "asc",
+  page = 1,
+  pageSize = 25
+} = {}) {
+  const pool = await getPool();
+  const request = pool.request();
+
+  const whereSql = buildProductFilters({ companyId, q, status, category, doc }, request);
   const sortSql = SORTABLE_COLUMNS[sort] || SORTABLE_COLUMNS.name;
   const orderSql = order === "desc" ? "DESC" : "ASC";
   request.input("offset", sql.Int, (page - 1) * pageSize);
@@ -61,6 +82,7 @@ async function listProducts({
   const result = await request.query(`
     SELECT ${selectColumns},
            creator.email AS created_by_email,
+           ${COMPLETENESS_SQL} AS completeness,
            COUNT(*) OVER() AS total
     FROM dbo.Products p
     LEFT JOIN dbo.Users creator ON creator.id = p.created_by
@@ -71,8 +93,44 @@ async function listProducts({
 
   const rows = result.recordset;
   const total = rows.length ? rows[0].total : 0;
-  const items = rows.map(({ total: _ignored, ...row }) => row);
+  const items = rows.map(({ total: _ignored, ...row }) => ({
+    ...row,
+    action_required: row.completeness < 100
+  }));
   return { items, total, page, pageSize };
+}
+
+// Statistieken voor de dashboard-tegels van het productoverzicht.
+async function getProductStats({ companyId } = {}) {
+  const pool = await getPool();
+  const request = pool.request();
+  let where = "";
+  if (companyId !== undefined) {
+    request.input("companyId", sql.Int, companyId);
+    where = "WHERE p.company_id = @companyId";
+  }
+
+  const result = await request.query(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN p.status = 'published' THEN 1 ELSE 0 END) AS published,
+      SUM(CASE WHEN p.status = 'draft' THEN 1 ELSE 0 END) AS drafts,
+      SUM(CASE WHEN ${COMPLETENESS_SQL} < 100 THEN 1 ELSE 0 END) AS action_required,
+      SUM(CASE WHEN p.created_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS created_this_month,
+      SUM(CASE WHEN p.published_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS published_this_month
+    FROM dbo.Products p
+    ${where}
+  `);
+
+  const row = result.recordset[0];
+  return {
+    total: row.total || 0,
+    published: row.published || 0,
+    drafts: row.drafts || 0,
+    actionRequired: row.action_required || 0,
+    createdThisMonth: row.created_this_month || 0,
+    publishedThisMonth: row.published_this_month || 0
+  };
 }
 
 // Onderscheiden categorielabels voor het filter in het productoverzicht.
@@ -273,6 +331,7 @@ async function countProductsByStatus({ companyId } = {}) {
 module.exports = {
   listProducts,
   listCategories,
+  getProductStats,
   getProductById,
   createProduct,
   updateProduct,

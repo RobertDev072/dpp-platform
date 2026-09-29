@@ -51,7 +51,10 @@ async function createEntraUser({ email, displayName, tempPassword }) {
     ],
     passwordProfile: {
       password: tempPassword,
-      forceChangePasswordNextSignIn: true
+      // Bewust false: Entra's eigen gedwongen-wijziging is onbruikbaar met de
+      // native-login-API. DPP dwingt de wijziging zelf af via de
+      // must_change_password-vlag (zie auth.routes.js / change-password).
+      forceChangePasswordNextSignIn: false
     },
     passwordPolicies: "DisablePasswordExpiration"
   });
@@ -68,11 +71,12 @@ async function setAccountEnabled(entraObjectId, enabled) {
 
 // Vereist: User-PasswordProfile.ReadWrite.All. Bewuste, smalle fallback naast SSPR —
 // zie docs/entra-external-id-setup.md voor de afweging.
-async function resetPassword(entraObjectId, newTempPassword) {
+async function resetPassword(entraObjectId, newPassword) {
   await graphRequest("PATCH", `/users/${encodeURIComponent(entraObjectId)}`, {
     passwordProfile: {
-      password: newTempPassword,
-      forceChangePasswordNextSignIn: true
+      password: newPassword,
+      // Zie createEntraUser: DPP dwingt de wijziging zelf af (must_change_password).
+      forceChangePasswordNextSignIn: false
     }
   });
 }

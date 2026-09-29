@@ -19,4 +19,14 @@ const updateMeSchema = z
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
 
-module.exports = { loginSchema, mfaSchema, updateMeSchema };
+// Gedwongen wachtwoordwijziging bij eerste login met een tijdelijk wachtwoord.
+const changePasswordSchema = z.object({
+  email: z.string().email(),
+  currentPassword: z.string().min(1),
+  newPassword: z
+    .string()
+    .min(12, "Wachtwoord moet minimaal 12 tekens zijn")
+    .max(256, "Wachtwoord mag maximaal 256 tekens zijn")
+});
+
+module.exports = { loginSchema, mfaSchema, updateMeSchema, changePasswordSchema };

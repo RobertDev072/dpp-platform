@@ -16,7 +16,7 @@ async function getCompanyById(id) {
     .request()
     .input("id", sql.Int, id)
     .query(`
-      SELECT id, name, slug, status, plan_id, created_at, updated_at
+      SELECT id, name, slug, status, plan_id, logo, created_at, updated_at
       FROM dbo.Companies
       WHERE id = @id
     `);
@@ -40,8 +40,29 @@ async function createCompany({ name, slug, planId, status }) {
   return result.recordset[0];
 }
 
-const UPDATABLE_FIELDS = ["name", "slug", "status", "planId"];
-const FIELD_TO_COLUMN = { name: "name", slug: "slug", status: "status", planId: "plan_id" };
+const UPDATABLE_FIELDS = ["name", "slug", "status", "planId", "logo"];
+const FIELD_TO_COLUMN = { name: "name", slug: "slug", status: "status", planId: "plan_id", logo: "logo" };
+
+// Verrijkte lijst voor het platformbeheer-overzicht: aantallen, beheerder en
+// laatste activiteit per bedrijf in één query (schaal is hier beperkt: bedrijven,
+// niet producten).
+async function listCompaniesWithStats() {
+  const pool = await getPool();
+  const result = await pool.request().query(`
+    SELECT c.id, c.name, c.slug, c.status, c.plan_id, c.logo, c.created_at, c.updated_at,
+           pl.name AS plan_name,
+           (SELECT COUNT(*) FROM dbo.Products p WHERE p.company_id = c.id) AS product_count,
+           (SELECT COUNT(*) FROM dbo.Users u WHERE u.company_id = c.id AND u.status = 'active') AS active_user_count,
+           (SELECT TOP 1 u.email FROM dbo.Users u
+             WHERE u.company_id = c.id AND u.role = 'company_admin' AND u.status = 'active'
+             ORDER BY u.id) AS admin_email,
+           (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.company_id = c.id) AS last_activity
+    FROM dbo.Companies c
+    LEFT JOIN dbo.Plans pl ON pl.id = c.plan_id
+    ORDER BY c.name
+  `);
+  return result.recordset;
+}
 
 async function updateCompany(id, fields) {
   const pool = await getPool();
@@ -57,6 +78,8 @@ async function updateCompany(id, fields) {
       request.input(field, sql.Int, fields[field] ?? null);
     } else if (field === "status") {
       request.input(field, sql.NVarChar(20), fields[field]);
+    } else if (field === "logo") {
+      request.input(field, sql.NVarChar(sql.MAX), fields[field] ?? null);
     } else {
       request.input(field, sql.NVarChar(field === "name" ? 200 : 100), fields[field]);
     }
@@ -95,6 +118,7 @@ async function countActiveCompanies() {
 
 module.exports = {
   listCompanies,
+  listCompaniesWithStats,
   getCompanyById,
   createCompany,
   updateCompany,

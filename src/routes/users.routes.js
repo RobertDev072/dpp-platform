@@ -118,6 +118,11 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
       metadata: { via: entraObjectId ? "entra" : "local" }
     });
 
+    // Bij een gegenereerd tijdelijk wachtwoord: gedwongen wijziging bij eerste login.
+    if (tempPassword) {
+      await usersRepo.setMustChangePassword(user.id, true);
+    }
+
     res.status(201).json(tempPassword ? { ...user, tempPassword } : user);
   } catch (error) {
     next(error);
@@ -227,15 +232,13 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
       assertCompanyAccess(req.user, existing.company_id);
     }
 
-    // Drie soorten accounts: Entra-beheerd (reset via Graph), lokaal/bcrypt (de
-    // Platform Owner en gebruikers van vóór de Entra-koppeling - reset lokaal), en
-    // in theorie geen van beide (kan niet bestaan door CHK_Users_HasAuthMethod).
+    // Reset geeft een tijdelijk wachtwoord dat direct werkt op de loginpagina; de
+    // login dwingt daarna (via must_change_password) af dat er meteen een nieuw,
+    // eigen wachtwoord wordt ingesteld voordat er een sessie ontstaat.
     const authInfo = await usersRepo.getUserAuthInfo(id);
     const tempPassword = generateTempPassword();
 
     if (authInfo?.entraObjectId) {
-      // Bewuste, smalle fallback naast Entra's self-service reset (SSPR) — zie
-      // docs/entra-external-id-setup.md voor de afweging tussen SSPR en admin-reset.
       await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
     } else if (authInfo?.hasLocalPassword) {
       await usersRepo.updatePasswordHash(id, await hashPassword(tempPassword));
@@ -244,12 +247,15 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
       return;
     }
 
+    await usersRepo.setMustChangePassword(id, true);
+
     await logAudit({
       companyId: existing.company_id,
       userId: req.user.id,
       action: "reset_password",
       entityType: "User",
-      entityId: id
+      entityId: id,
+      metadata: { via: authInfo.entraObjectId ? "entra" : "lokaal" }
     });
 
     res.json({ tempPassword });

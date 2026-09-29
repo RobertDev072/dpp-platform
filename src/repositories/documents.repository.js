@@ -57,4 +57,22 @@ async function deleteDocument(id) {
   return result.recordset[0] || null;
 }
 
-module.exports = { listDocumentsForProduct, createDocument, deleteDocument };
+// Alle documenten van een bedrijf, met productnaam - voor de documentenpagina.
+async function listDocumentsForCompany(companyId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input("companyId", sql.Int, companyId)
+    .query(`
+      SELECT d.id, d.product_id, d.type, d.category, d.title, d.language,
+             d.storage_url, d.is_public, d.created_at,
+             p.name AS product_name
+      FROM dbo.Documents d
+      JOIN dbo.Products p ON p.id = d.product_id
+      WHERE d.company_id = @companyId
+      ORDER BY d.created_at DESC
+    `);
+  return result.recordset;
+}
+
+module.exports = { listDocumentsForProduct, listDocumentsForCompany, createDocument, deleteDocument };

@@ -101,6 +101,15 @@ async function callNativeAuth(path, params) {
       throw new NativeAuthError("EXPIRED", "Deze aanvraag is verlopen, begin opnieuw");
     }
     if (data.error === "invalid_grant") {
+      // AADSTS50055 = wachtwoord verlopen of "wijzigen bij eerstvolgende login"
+      // (bv. door Entra gemarkeerd bij provisioning). De native-login-API kent geen
+      // wijzigingsceremonie, dus de enige route is onze eigen SSPR-flow.
+      if (/AADSTS50055/.test(data.error_description || "")) {
+        throw new NativeAuthError(
+          "PASSWORD_RESET_REQUIRED",
+          "Je wachtwoord moet opnieuw worden ingesteld. Gebruik 'Wachtwoord vergeten' op de loginpagina."
+        );
+      }
       throw new NativeAuthError("INVALID_CREDENTIALS", "Ongeldige inloggegevens", {
         continuationToken: data.continuation_token
       });

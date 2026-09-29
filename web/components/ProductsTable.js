@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import Card from "@/components/ui/Card";
@@ -10,6 +11,9 @@ import Field from "@/components/ui/Field";
 import Select from "@/components/ui/Select";
 import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
+import ProductStats from "@/components/products/ProductStats";
+import IncompleteDocsBanner from "@/components/products/IncompleteDocsBanner";
+import CompletenessBar from "@/components/products/CompletenessBar";
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = "created_at";
@@ -33,12 +37,26 @@ const STATUS_FILTER_OPTIONS = [
   { value: "archived", label: "Gearchiveerd" }
 ];
 
-const SORTABLE_COLUMNS = [
+const DOC_FILTER_OPTIONS = [
+  { value: "compleet", label: "Compleet" },
+  { value: "incompleet", label: "Incompleet" }
+];
+
+// Sorteerkeuzes in de werkbalk; spiegelen de sorteerbare kolomkoppen.
+const SORT_SELECT_OPTIONS = [
+  { value: "name:asc", label: "Naam A-Z" },
+  { value: "name:desc", label: "Naam Z-A" },
+  { value: "created_at:desc", label: "Laatst toegevoegd" },
+  { value: "status:asc", label: "Status" }
+];
+
+const NAME_COLUMNS = [
   { field: "name", label: "Naam" },
   { field: "category", label: "Categorie" },
-  { field: "status", label: "Status" },
-  { field: "created_at", label: "Aangemaakt" }
+  { field: "status", label: "Status" }
 ];
+
+const CREATED_COLUMN = { field: "created_at", label: "Aangemaakt" };
 
 function formatDate(value) {
   if (!value) {
@@ -98,37 +116,81 @@ function PhotoThumb({ product }) {
   );
 }
 
-function QrCell({ product }) {
-  if (product.status !== "published" || !product.public_id) {
-    return <span className="text-xs text-slate-400">na publicatie</span>;
-  }
-  const base = `/api/products/${product.id}`;
-  const links = [
-    { label: "PNG", href: `${base}/qr.png` },
-    { label: "SVG", href: `${base}/qr.svg` },
-    { label: "PDF", href: `${base}/qr-label.pdf` }
-  ];
+// Klein amber driehoekje naast de statusbadge wanneer documentatie ontbreekt.
+function ActionRequiredIcon() {
   return (
-    <span className="whitespace-nowrap text-xs">
-      {links.map((link, index) => (
-        <span key={link.label}>
-          {index > 0 && <span className="text-slate-300"> · </span>}
-          <a
-            href={link.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="font-medium text-blue-600 hover:text-blue-700 hover:underline"
-          >
-            {link.label}
-          </a>
-        </span>
-      ))}
+    <span title="Documentatie onvolledig" className="text-amber-500">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M10.3 4.3 3.4 17a2 2 0 0 0 1.7 3h13.8a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        <path d="M12 9v4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="12" cy="16.75" r="1.1" fill="currentColor" />
+      </svg>
+      <span className="sr-only">Documentatie onvolledig</span>
     </span>
   );
 }
 
-function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloadToken = 0 }) {
+const ACTION_LINK_CLASSES =
+  "rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50";
+
+// Snelacties per rij. In readOnly-modus (admin-overzicht) alleen de QR-link:
+// er is geen detailroute over bedrijfsgrenzen heen.
+function RowActions({ product, readOnly }) {
+  const qrButton = product.public_id ? (
+    <a
+      href={`/api/products/${product.id}/qr.png`}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className={ACTION_LINK_CLASSES}
+    >
+      QR-code
+    </a>
+  ) : (
+    <button
+      type="button"
+      disabled
+      title="na publicatie"
+      onClick={(e) => e.stopPropagation()}
+      className="cursor-not-allowed rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-400"
+    >
+      QR-code
+    </button>
+  );
+
+  if (readOnly) {
+    return qrButton;
+  }
+
+  const detailHref = `/company/products/${product.id}`;
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap">
+      <Link href={detailHref} onClick={(e) => e.stopPropagation()} className={ACTION_LINK_CLASSES}>
+        Bekijken
+      </Link>
+      {qrButton}
+      <Link
+        href={detailHref}
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+      >
+        Bewerken
+      </Link>
+    </span>
+  );
+}
+
+function ProductsTableInner({
+  readOnly = false,
+  showCompanyFilter = false,
+  showStats = false,
+  reloadToken = 0
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -138,6 +200,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
     q: searchParams.get("q") || "",
     status: searchParams.get("status") || "",
     category: searchParams.get("category") || "",
+    doc: searchParams.get("doc") || "",
     companyId: searchParams.get("companyId") || "",
     sort: searchParams.get("sort") || DEFAULT_SORT,
     order: searchParams.get("order") || DEFAULT_ORDER,
@@ -151,6 +214,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
   const [loadError, setLoadError] = useState("");
   const [categories, setCategories] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [stats, setStats] = useState(null);
 
   // Zoekveld met 300ms debounce; elke nieuwe zoekterm springt terug naar pagina 1.
   useEffect(() => {
@@ -166,6 +230,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
     if (filters.q) params.set("q", filters.q);
     if (filters.status) params.set("status", filters.status);
     if (filters.category) params.set("category", filters.category);
+    if (filters.doc) params.set("doc", filters.doc);
     if (showCompanyFilter && filters.companyId) params.set("companyId", filters.companyId);
     if (filters.sort !== DEFAULT_SORT) params.set("sort", filters.sort);
     if (filters.order !== DEFAULT_ORDER) params.set("order", filters.order);
@@ -189,6 +254,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
     if (filters.q) params.set("q", filters.q);
     if (filters.status) params.set("status", filters.status);
     if (filters.category) params.set("category", filters.category);
+    if (filters.doc) params.set("doc", filters.doc);
     if (showCompanyFilter && filters.companyId) params.set("companyId", filters.companyId);
 
     api
@@ -237,6 +303,34 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
       .catch(() => setCompanies([]));
   }, [showCompanyFilter]);
 
+  // Statistieken voor de KPI-tegels en de waarschuwingsbanner. Op de adminpagina
+  // volgen ze het gekozen bedrijfsfilter; na een nieuw product (reloadToken) verversen ze mee.
+  useEffect(() => {
+    if (!showStats) {
+      return undefined;
+    }
+    let cancelled = false;
+    const url =
+      showCompanyFilter && filters.companyId
+        ? `/api/products/stats?companyId=${encodeURIComponent(filters.companyId)}`
+        : "/api/products/stats";
+    api
+      .get(url)
+      .then((data) => {
+        if (!cancelled) {
+          setStats(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setStats(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showStats, showCompanyFilter, filters.companyId, reloadToken]);
+
   const categoryOptions = useMemo(() => {
     const list = [...categories];
     // Een categorie uit een gedeelde URL blijft zichtbaar, ook als de lijst hem (nog) niet kent.
@@ -271,6 +365,43 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
     });
   }
 
+  // Welke KPI-tegel "actief" is, afgeleid van de huidige filterstand.
+  const activeStat =
+    filters.doc === "incompleet" && !filters.status
+      ? "actionRequired"
+      : filters.status === "published" && !filters.doc
+        ? "published"
+        : filters.status === "draft" && !filters.doc
+          ? "drafts"
+          : !filters.status && !filters.doc && !filters.q && !filters.category
+            ? "total"
+            : null;
+
+  function handleStatSelect(key) {
+    if (key === "total") {
+      setSearchInput("");
+      setFilters((prev) => ({ ...prev, q: "", status: "", category: "", doc: "", page: 1 }));
+    } else if (key === "published") {
+      setFilters((prev) => ({ ...prev, status: "published", doc: "", page: 1 }));
+    } else if (key === "drafts") {
+      setFilters((prev) => ({ ...prev, status: "draft", doc: "", page: 1 }));
+    } else if (key === "actionRequired") {
+      setFilters((prev) => ({ ...prev, status: "", doc: "incompleet", page: 1 }));
+    }
+  }
+
+  // Werkbalk-sortering spiegelt de kolomkoppen; alleen bekende combinaties tonen een waarde.
+  const sortValue = `${filters.sort}:${filters.order}`;
+  const sortMatch = SORT_SELECT_OPTIONS.some((option) => option.value === sortValue);
+
+  function handleSortSelect(value) {
+    if (!value) {
+      return;
+    }
+    const [sort, order] = value.split(":");
+    setFilters((prev) => ({ ...prev, sort, order, page: 1 }));
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   function handleRowClick(product) {
@@ -282,8 +413,18 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
 
   return (
     <div className="space-y-4">
+      {showStats && <ProductStats stats={stats} active={activeStat} onSelect={handleStatSelect} />}
+
+      {showStats && stats?.actionRequired > 0 && (
+        <IncompleteDocsBanner
+          key={filters.companyId || "all"}
+          count={stats.actionRequired}
+          onView={() => handleStatSelect("actionRequired")}
+        />
+      )}
+
       <Card className="sticky top-0 z-10">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
           <Field
             label="Zoeken"
             name="products-search"
@@ -292,7 +433,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
             autoComplete="off"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="min-w-0 flex-1"
+            className="min-w-0 flex-1 lg:min-w-56"
           />
           <Select
             label="Status"
@@ -301,7 +442,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
             options={STATUS_FILTER_OPTIONS}
             value={filters.status}
             onChange={(e) => handleFilterChange("status", e.target.value)}
-            className="w-full lg:w-48"
+            className="w-full lg:w-44"
           />
           <Select
             label="Categorie"
@@ -310,7 +451,16 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
             options={categoryOptions}
             value={filters.category}
             onChange={(e) => handleFilterChange("category", e.target.value)}
-            className="w-full lg:w-56"
+            className="w-full lg:w-52"
+          />
+          <Select
+            label="Documentatie"
+            name="products-doc"
+            placeholder="Alle"
+            options={DOC_FILTER_OPTIONS}
+            value={filters.doc}
+            onChange={(e) => handleFilterChange("doc", e.target.value)}
+            className="w-full lg:w-44"
           />
           {showCompanyFilter && (
             <Select
@@ -320,9 +470,18 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
               options={companyOptions}
               value={filters.companyId}
               onChange={(e) => handleFilterChange("companyId", e.target.value)}
-              className="w-full lg:w-56"
+              className="w-full lg:w-52"
             />
           )}
+          <Select
+            label="Sorteren"
+            name="products-sort"
+            {...(sortMatch ? {} : { placeholder: "Aangepast" })}
+            options={SORT_SELECT_OPTIONS}
+            value={sortMatch ? sortValue : ""}
+            onChange={(e) => handleSortSelect(e.target.value)}
+            className="w-full lg:w-48"
+          />
         </div>
       </Card>
 
@@ -342,7 +501,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
                   <th className="w-14 py-2 pr-3">
                     <span className="sr-only">Foto</span>
                   </th>
-                  {SORTABLE_COLUMNS.map((column) => (
+                  {NAME_COLUMNS.map((column) => (
                     <SortableHeader
                       key={column.field}
                       column={column}
@@ -351,7 +510,14 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
                       onSort={handleSort}
                     />
                   ))}
-                  <th className="py-2 pr-3 font-medium">QR</th>
+                  <th className="py-2 pr-3 font-medium">Compleetheid</th>
+                  <SortableHeader
+                    column={CREATED_COLUMN}
+                    sort={filters.sort}
+                    order={filters.order}
+                    onSort={handleSort}
+                  />
+                  <th className="py-2 pr-3 font-medium">Acties</th>
                 </tr>
               </thead>
               <tbody>
@@ -361,7 +527,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
                         <td className="py-2.5 pr-3">
                           <Skeleton className="h-10 w-10" />
                         </td>
-                        {Array.from({ length: 5 }).map((__, cell) => (
+                        {Array.from({ length: 6 }).map((__, cell) => (
                           <td key={cell} className="py-2.5 pr-3">
                             <Skeleton className="h-5 w-full max-w-40" />
                           </td>
@@ -389,9 +555,17 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
                         </td>
                         <td className="py-2.5 pr-3 text-slate-600">{product.category_label || "—"}</td>
                         <td className="py-2.5 pr-3">
-                          <Badge variant={PRODUCT_STATUS_BADGE_VARIANTS[product.status] || "neutral"}>
-                            {PRODUCT_STATUS_LABELS[product.status] || product.status}
-                          </Badge>
+                          <span className="inline-flex items-center gap-1.5">
+                            <Badge variant={PRODUCT_STATUS_BADGE_VARIANTS[product.status] || "neutral"}>
+                              {PRODUCT_STATUS_LABELS[product.status] || product.status}
+                            </Badge>
+                            {product.action_required && product.status !== "archived" && (
+                              <ActionRequiredIcon />
+                            )}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          <CompletenessBar value={product.completeness} />
                         </td>
                         <td className="py-2.5 pr-3">
                           <p className="whitespace-nowrap text-slate-600">{formatDate(product.created_at)}</p>
@@ -400,7 +574,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, reloa
                           )}
                         </td>
                         <td className="py-2.5 pr-3">
-                          <QrCell product={product} />
+                          <RowActions product={product} readOnly={readOnly} />
                         </td>
                       </tr>
                     ))}

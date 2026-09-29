@@ -9,14 +9,19 @@ async function listUsers({ companyId } = {}) {
   let where = "";
   if (companyId !== undefined) {
     request.input("companyId", sql.Int, companyId);
-    where = "WHERE company_id = @companyId";
+    where = "WHERE u.company_id = @companyId";
   }
 
+  const columns = PUBLIC_COLUMNS.split(", ").map((c) => `u.${c}`).join(", ");
   const result = await request.query(`
-    SELECT ${PUBLIC_COLUMNS}
-    FROM dbo.Users
+    SELECT ${columns},
+           c.name AS company_name,
+           CASE WHEN u.password_hash IS NULL THEN 'entra' ELSE 'local' END AS auth_provider,
+           (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.user_id = u.id) AS last_activity
+    FROM dbo.Users u
+    LEFT JOIN dbo.Companies c ON c.id = u.company_id
     ${where}
-    ORDER BY email
+    ORDER BY u.email
   `);
   return result.recordset;
 }
@@ -39,13 +44,35 @@ async function getUserAuthInfo(id) {
     .input("id", sql.Int, id)
     .query(`
       SELECT entra_object_id,
-             CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password
+             CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password,
+             must_change_password
       FROM dbo.Users WHERE id = @id
     `);
   const row = result.recordset[0];
   return row
-    ? { entraObjectId: row.entra_object_id, hasLocalPassword: Boolean(row.has_local_password) }
+    ? {
+        entraObjectId: row.entra_object_id,
+        hasLocalPassword: Boolean(row.has_local_password),
+        mustChangePassword: Boolean(row.must_change_password)
+      }
     : null;
+}
+
+async function setMustChangePassword(id, value) {
+  const pool = await getPool();
+  await pool
+    .request()
+    .input("id", sql.Int, id)
+    .input("value", sql.Bit, value ? 1 : 0)
+    .query("UPDATE dbo.Users SET must_change_password = @value, updated_at = SYSUTCDATETIME() WHERE id = @id");
+}
+
+async function clearMustChangePasswordByEmail(email) {
+  const pool = await getPool();
+  await pool
+    .request()
+    .input("email", sql.NVarChar(256), email)
+    .query("UPDATE dbo.Users SET must_change_password = 0, updated_at = SYSUTCDATETIME() WHERE email = @email");
 }
 
 async function updatePasswordHash(id, passwordHash) {
@@ -62,7 +89,7 @@ async function getUserByEmail(email) {
   const result = await pool
     .request()
     .input("email", sql.NVarChar(256), email)
-    .query(`SELECT id, company_id, email, password_hash, role, status FROM dbo.Users WHERE email = @email`);
+    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password FROM dbo.Users WHERE email = @email`);
   return result.recordset[0] || null;
 }
 
@@ -246,5 +273,7 @@ module.exports = {
   createUserWithSeatLimit,
   updateUser,
   getUserAuthInfo,
-  updatePasswordHash
+  updatePasswordHash,
+  setMustChangePassword,
+  clearMustChangePasswordByEmail
 };

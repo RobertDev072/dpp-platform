@@ -1,6 +1,9 @@
 const express = require("express");
-const { loginSchema, mfaSchema, updateMeSchema } = require("../schemas/auth.schema");
-const { updateUser } = require("../repositories/users.repository");
+const { loginSchema, mfaSchema, updateMeSchema, changePasswordSchema } = require("../schemas/auth.schema");
+const usersRepo = require("../repositories/users.repository");
+const { updateUser } = usersRepo;
+const { hashPassword } = require("../utils/password");
+const graphClient = require("../services/graphClient");
 const { validateBody } = require("../middleware/validate");
 const { getUserByEmail } = require("../repositories/users.repository");
 const { verifyPassword, DUMMY_HASH } = require("../utils/password");
@@ -73,6 +76,13 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
         return;
       }
 
+      if (user.must_change_password) {
+        // Wachtwoord klopt, maar het is een tijdelijk wachtwoord: eerst een eigen
+        // wachtwoord instellen (via /change-password), pas daarna een sessie.
+        res.json({ mustChangePassword: true });
+        return;
+      }
+
       const { token, expiresAt } = await createSession(user.id);
       setSessionCookie(res, token, expiresAt);
 
@@ -107,12 +117,26 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
     try {
       const { continuationToken } = await nativeAuth.startPasswordSignIn({ email });
       const { claims } = await nativeAuth.submitPassword({ continuationToken, password });
+
+      if (user.must_change_password) {
+        // Tijdelijk wachtwoord geverifieerd bij Entra: eerst een eigen wachtwoord
+        // instellen (via /change-password), pas daarna een sessie.
+        res.json({ mustChangePassword: true });
+        return;
+      }
+
       await finishEntraLogin(res, claims, "native-entra");
     } catch (err) {
       // Bewuste keuze: MFA_REQUIRED kan hier alleen uit submitPassword komen, dus
       // {mfaRequired:true} is uitsluitend bereikbaar mét een geldig wachtwoord -
       // dit is geen enumeratie-orakel (geverifieerd in de security-audit).
       if (err instanceof nativeAuth.NativeAuthError && err.code === "MFA_REQUIRED") {
+        if (user.must_change_password) {
+          // MFA_REQUIRED impliceert een correct wachtwoord: eerst wijzigen, dan pas
+          // de MFA-stap (die volgt vanzelf bij de login met het nieuwe wachtwoord).
+          res.json({ mustChangePassword: true });
+          return;
+        }
         const { continuationToken, methods } = await nativeAuth.listMfaMethods({
           continuationToken: err.continuationToken
         });
@@ -130,6 +154,13 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
           continuationToken: challenged.continuationToken,
           codeLength: challenged.codeLength
         });
+        return;
+      }
+      if (err instanceof nativeAuth.NativeAuthError && err.code === "PASSWORD_RESET_REQUIRED") {
+        // Alleen bereikbaar mét een geldig account (Entra herkende de gebruiker),
+        // dus deze specifieke melding lekt geen accountbestaan.
+        await padFailedLogin(startedAt);
+        next(new HttpError(401, err.message, undefined, "PASSWORD_RESET_REQUIRED"));
         return;
       }
       if (err instanceof nativeAuth.NativeAuthError || err instanceof EntraLoginError) {
@@ -161,6 +192,105 @@ router.post("/login/mfa", mfaLimiter, validateBody(mfaSchema), async (req, res, 
     next(error);
   }
 });
+
+// Gedwongen wachtwoordwijziging: geverifieerd met het (tijdelijke) huidige wachtwoord,
+// daarna direct ingelogd met het nieuwe. Geen sessie nodig - dit is precies de stap
+// tussen "tijdelijk wachtwoord klopt" en "sessie aanmaken" in.
+router.post(
+  "/change-password",
+  loginIpLimiter,
+  loginEmailLimiter,
+  validateBody(changePasswordSchema),
+  async (req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const { email, currentPassword, newPassword } = req.body;
+      const user = await getUserByEmail(email);
+
+      if (!user || user.status !== "active") {
+        await verifyPassword(currentPassword, DUMMY_HASH);
+        await padFailedLogin(startedAt);
+        next(new HttpError(401, "Ongeldige inloggegevens"));
+        return;
+      }
+
+      if (user.password_hash) {
+        // Lokaal account: huidig wachtwoord verifiëren en hash vervangen.
+        const matches = await verifyPassword(currentPassword, user.password_hash);
+        if (!matches) {
+          await padFailedLogin(startedAt);
+          next(new HttpError(401, "Ongeldige inloggegevens"));
+          return;
+        }
+        await usersRepo.updatePasswordHash(user.id, await hashPassword(newPassword));
+      } else {
+        // Entra-account: huidig (tijdelijk) wachtwoord bij Entra verifiëren, daarna
+        // het nieuwe wachtwoord via Graph zetten. MFA_REQUIRED impliceert ook een
+        // correct wachtwoord.
+        try {
+          const { continuationToken } = await nativeAuth.startPasswordSignIn({ email });
+          await nativeAuth.submitPassword({ continuationToken, password: currentPassword });
+        } catch (err) {
+          if (!(err instanceof nativeAuth.NativeAuthError && err.code === "MFA_REQUIRED")) {
+            if (err instanceof nativeAuth.NativeAuthError) {
+              await padFailedLogin(startedAt);
+              next(new HttpError(401, "Ongeldige inloggegevens"));
+              return;
+            }
+            throw err;
+          }
+        }
+
+        const authInfo = await usersRepo.getUserAuthInfo(user.id);
+        if (!authInfo?.entraObjectId) {
+          next(new HttpError(409, "Dit account heeft geen wachtwoordmethode; neem contact op met de beheerder"));
+          return;
+        }
+        try {
+          await graphClient.resetPassword(authInfo.entraObjectId, newPassword);
+        } catch (err) {
+          if (/\(400\)/.test(err.message || "")) {
+            next(
+              new HttpError(400, "Ongeldige invoer", {
+                formErrors: [],
+                fieldErrors: {
+                  newPassword: [
+                    "Dit wachtwoord voldoet niet aan de eisen. Gebruik minimaal 12 tekens met hoofdletters, kleine letters, cijfers en leestekens."
+                  ]
+                }
+              })
+            );
+            return;
+          }
+          throw err;
+        }
+      }
+
+      await usersRepo.setMustChangePassword(user.id, false);
+
+      const { token, expiresAt } = await createSession(user.id);
+      setSessionCookie(res, token, expiresAt);
+
+      await logAudit({
+        companyId: user.company_id,
+        userId: user.id,
+        action: "change_password",
+        entityType: "User",
+        entityId: user.id,
+        metadata: { via: user.password_hash ? "lokaal" : "entra" }
+      });
+
+      res.json({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        companyId: user.company_id
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 router.post("/logout", requireAuth, async (req, res, next) => {
   try {

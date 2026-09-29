@@ -121,8 +121,14 @@ export default function OrganisatiePage() {
     setActionError("");
     setResetInfo(null);
     try {
-      const { tempPassword } = await api.post(`/api/users/${user.id}/reset-password`);
-      setResetInfo({ email: user.email, tempPassword });
+      const result = await api.post(`/api/users/${user.id}/reset-password`);
+      if (result.selfService) {
+        // Entra-account: geen tijdelijk wachtwoord (onbruikbaar bij native login);
+        // de gebruiker herstelt zelf via "Wachtwoord vergeten".
+        setResetInfo({ email: user.email, selfServiceMessage: result.message });
+      } else {
+        setResetInfo({ email: user.email, tempPassword: result.tempPassword });
+      }
     } catch (err) {
       setActionError(err.message);
     }
@@ -145,7 +151,13 @@ export default function OrganisatiePage() {
       {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
       {actionError && <Card className="border-red-200 bg-red-50 text-red-700">{actionError}</Card>}
 
-      {resetInfo && (
+      {resetInfo && resetInfo.selfServiceMessage && (
+        <Card className="border-blue-200 bg-blue-50 text-blue-800">
+          <p className="text-sm">{resetInfo.selfServiceMessage}</p>
+        </Card>
+      )}
+
+      {resetInfo && resetInfo.tempPassword && (
         <Card className="border-amber-200 bg-amber-50 text-amber-800">
           <p className="mb-2 text-sm font-medium">
             Nieuw tijdelijk wachtwoord voor {resetInfo.email} (wordt maar één keer getoond, deel dit

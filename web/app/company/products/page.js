@@ -3,12 +3,12 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import Card from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import SubmitButton from "@/components/ui/SubmitButton";
 import FormError from "@/components/ui/FormError";
 import { useToast } from "@/components/ui/Toast";
 import ProductsTable from "@/components/ProductsTable";
+import ProductsPageHeader from "@/components/products/ProductsPageHeader";
 
 export default function ProductsPage() {
   const toast = useToast();
@@ -47,12 +47,23 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-slate-900">Producten</h1>
-        <Button type="button" onClick={() => setShowCreate((prev) => !prev)}>
-          {showCreate ? "Sluiten" : "Nieuw product"}
-        </Button>
-      </div>
+      <ProductsPageHeader>
+        <button
+          type="button"
+          disabled
+          title="Binnenkort beschikbaar"
+          className="cursor-not-allowed rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-400"
+        >
+          Importeren
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowCreate((prev) => !prev)}
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+        >
+          {showCreate ? "Sluiten" : "+ Nieuw product"}
+        </button>
+      </ProductsPageHeader>
 
       {showCreate && (
         <Card>
@@ -97,7 +108,7 @@ export default function ProductsPage() {
         </Card>
       )}
 
-      <ProductsTable reloadToken={reloadToken} />
+      <ProductsTable reloadToken={reloadToken} showStats />
     </div>
   );
 }
