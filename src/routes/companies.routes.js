@@ -7,6 +7,7 @@ const companiesRepo = require("../repositories/companies.repository");
 const invitesRepo = require("../repositories/invites.repository");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
+const { getAppBaseUrl } = require("../utils/baseUrl");
 
 const router = express.Router();
 
@@ -125,7 +126,7 @@ router.post("/:id/invites", validateBody(createInviteSchema), async (req, res, n
     });
 
     // Token zit alleen in dít antwoord — wordt nergens anders (log, DB) in plaintext bewaard.
-    const activationUrl = `${req.protocol}://${req.get("host")}/activate?token=${token}`;
+    const activationUrl = `${getAppBaseUrl(req)}/activate?token=${token}`;
     res.status(201).json({ ...invite, activationUrl });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {

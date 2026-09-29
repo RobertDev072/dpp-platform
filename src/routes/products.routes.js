@@ -16,6 +16,7 @@ const documentsRepo = require("../repositories/documents.repository");
 const { assertCompanyAccess } = require("../utils/tenant");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
+const { getQrBaseUrl } = require("../utils/baseUrl");
 const {
   generateQrPngBuffer,
   generateQrSvgString,
@@ -455,7 +456,7 @@ router.get("/:id/qr.png", requireRole(...ALL_ROLES), async (req, res, next) => {
       return;
     }
 
-    const url = `${req.protocol}://${req.get("host")}/p/${product.public_id}`;
+    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
     const buffer = await generateQrPngBuffer(url);
 
     res.set("Content-Type", "image/png");
@@ -479,7 +480,7 @@ router.get("/:id/qr.svg", requireRole(...ALL_ROLES), async (req, res, next) => {
       return;
     }
 
-    const url = `${req.protocol}://${req.get("host")}/p/${product.public_id}`;
+    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
     const svg = await generateQrSvgString(url);
 
     res.set("Content-Type", "image/svg+xml");
@@ -503,7 +504,7 @@ router.get("/:id/qr-label.pdf", requireRole(...ALL_ROLES), async (req, res, next
       return;
     }
 
-    const url = `${req.protocol}://${req.get("host")}/p/${product.public_id}`;
+    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
     const qrPngBuffer = await generateQrPngBuffer(url);
     const pdfBuffer = await generateLabelPdfBuffer({ product, qrPngBuffer });
 

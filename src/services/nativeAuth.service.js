@@ -62,12 +62,16 @@ async function callNativeAuth(path, params) {
   }
 
   if (!response.ok) {
+    // Bewust géén rauwe body loggen: Entra's foutantwoorden bevatten een live,
+    // hervatbaar continuation_token - dat hoort nooit in Log Stream terecht te komen.
     console.error(
       "Native-auth-antwoord niet ok:",
       path,
       "status=" + response.status,
-      "content-type=" + response.headers.get("content-type"),
-      "body=" + rawText.slice(0, 500)
+      "error=" + (data.error || "-"),
+      "suberror=" + (data.suberror || "-"),
+      "trace_id=" + (data.trace_id || "-"),
+      "correlation_id=" + (data.correlation_id || "-")
     );
     if (data.error === "user_not_found") {
       throw new NativeAuthError("USER_NOT_FOUND", "Geen account gevonden voor dit e-mailadres");
@@ -101,9 +105,17 @@ async function callNativeAuth(path, params) {
         continuationToken: data.continuation_token
       });
     }
-    // Log de rauwe Entra-respons voor onszelf (Log stream), maar toon de gebruiker
-    // nooit deze interne foutcode/-tekst - een vriendelijke, actiegerichte melding.
-    console.error("Onbekende native-auth-respons van Entra:", path, JSON.stringify(data));
+    // Alleen de identificerende velden loggen (nooit de volledige respons: die kan
+    // een live continuation_token bevatten); de gebruiker krijgt een vriendelijke,
+    // actiegerichte melding.
+    console.error(
+      "Onbekende native-auth-respons van Entra:",
+      path,
+      "error=" + (data.error || "-"),
+      "suberror=" + (data.suberror || "-"),
+      "trace_id=" + (data.trace_id || "-"),
+      "correlation_id=" + (data.correlation_id || "-")
+    );
     throw new NativeAuthError(
       data.error || "UNKNOWN",
       "Er ging iets mis. Probeer het over een moment opnieuw."

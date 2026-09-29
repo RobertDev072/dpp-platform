@@ -14,8 +14,22 @@ const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const nativeAuth = require("../services/nativeAuth.service");
 const { resolveEntraLogin, EntraLoginError } = require("../services/entraLogin.service");
+const { loginIpLimiter, loginEmailLimiter, mfaLimiter } = require("../middleware/rateLimit");
 
 const router = express.Router();
+
+// Vloer voor de responstijd van mislukte logins: het lokale bcrypt-pad (~230ms) en
+// het Entra-pad (2-3 netwerk-roundtrips) verschillen anders meetbaar in duur,
+// waarmee een aanvaller zou kunnen aftasten welke e-mailadressen een Entra-account
+// hebben. Met een vaste ondergrens is dat timingkanaal in de praktijk dichtgedrukt.
+const FAILED_LOGIN_MIN_MS = 1200;
+
+async function padFailedLogin(startedAt) {
+  const remaining = FAILED_LOGIN_MIN_MS - (Date.now() - startedAt);
+  if (remaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remaining));
+  }
+}
 
 // Rondt een geslaagde Entra-native-auth-aanmelding (eerste factor of MFA) af tot een
 // DPP-sessie: hergebruikt exact dezelfde JIT-koppeling en sessie-opzet als de
@@ -42,7 +56,8 @@ async function finishEntraLogin(res, claims, via) {
   });
 }
 
-router.post("/login", validateBody(loginSchema), async (req, res, next) => {
+router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchema), async (req, res, next) => {
+  const startedAt = Date.now();
   try {
     const { email, password } = req.body;
     const user = await getUserByEmail(email);
@@ -52,6 +67,7 @@ router.post("/login", validateBody(loginSchema), async (req, res, next) => {
       const passwordMatches = await verifyPassword(password, user.password_hash);
 
       if (user.status !== "active" || !passwordMatches) {
+        await padFailedLogin(startedAt);
         next(new HttpError(401, "Ongeldige inloggegevens"));
         return;
       }
@@ -80,6 +96,7 @@ router.post("/login", validateBody(loginSchema), async (req, res, next) => {
       // Draai alsnog een bcrypt-vergelijking tegen een dummy-hash: voorkomt dat de
       // afwezigheid van deze stap zelf al een (grof) timing-enumeratielek wordt.
       await verifyPassword(password, DUMMY_HASH);
+      await padFailedLogin(startedAt);
       next(new HttpError(401, "Ongeldige inloggegevens"));
       return;
     }
@@ -91,11 +108,15 @@ router.post("/login", validateBody(loginSchema), async (req, res, next) => {
       const { claims } = await nativeAuth.submitPassword({ continuationToken, password });
       await finishEntraLogin(res, claims, "native-entra");
     } catch (err) {
+      // Bewuste keuze: MFA_REQUIRED kan hier alleen uit submitPassword komen, dus
+      // {mfaRequired:true} is uitsluitend bereikbaar mét een geldig wachtwoord -
+      // dit is geen enumeratie-orakel (geverifieerd in de security-audit).
       if (err instanceof nativeAuth.NativeAuthError && err.code === "MFA_REQUIRED") {
         const { continuationToken, methods } = await nativeAuth.listMfaMethods({
           continuationToken: err.continuationToken
         });
         if (!methods.length) {
+          await padFailedLogin(startedAt);
           next(new HttpError(401, "Geen MFA-methode geregistreerd voor dit account"));
           return;
         }
@@ -111,6 +132,7 @@ router.post("/login", validateBody(loginSchema), async (req, res, next) => {
         return;
       }
       if (err instanceof nativeAuth.NativeAuthError || err instanceof EntraLoginError) {
+        await padFailedLogin(startedAt);
         next(new HttpError(401, "Ongeldige inloggegevens"));
         return;
       }
@@ -121,7 +143,7 @@ router.post("/login", validateBody(loginSchema), async (req, res, next) => {
   }
 });
 
-router.post("/login/mfa", validateBody(mfaSchema), async (req, res, next) => {
+router.post("/login/mfa", mfaLimiter, validateBody(mfaSchema), async (req, res, next) => {
   try {
     const { continuationToken, code } = req.body;
     const { claims } = await nativeAuth.submitMfaCode({ continuationToken, code });

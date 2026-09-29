@@ -7,8 +7,11 @@ const {
 } = require("../schemas/passwordReset.schema");
 const nativeAuth = require("../services/nativeAuth.service");
 const { HttpError } = require("../middleware/errorHandler");
+const { resetLimiter } = require("../middleware/rateLimit");
 
 const router = express.Router();
+
+router.use(resetLimiter);
 
 // Volledig publiek (geen requireAuth), zelfde stijl als inviteActivation.routes.js:
 // dit is precies de "wachtwoord vergeten"-/eerste-wachtwoord-flow, die per definitie

@@ -14,6 +14,11 @@ const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
 
+// Azure App Service termineert TLS vóór onze Node-server; zonder deze instelling is
+// req.protocol "http" (verkeerde QR-/activatielinks) en req.ip het proxy-adres
+// (waardoor rate-limiting per bezoeker niet zou werken).
+app.set("trust proxy", 1);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser(process.env.COOKIE_SECRET));
