@@ -20,47 +20,46 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Node.js version
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '22.x'
+          cache: 'npm'
 
       # De testsuite (tests/) heeft een live Azure SQL-verbinding nodig en draait bewust
       # niet hier: die DB-secrets staan niet in GitHub Actions. Tests draaien lokaal
-      # (npm test) vóór elke push. Zonder timeout-minutes hierboven zou een verbindings-
-      # poging zonder DB-credentials tot 6 uur kunnen blijven hangen i.p.v. snel falen.
+      # (npm test) vóór elke push.
       #
-      # Dit is bewust alleen een BUILD-VALIDATIE (fail-fast als de Next.js-build breekt),
-      # geen artefact dat naar Azure gaat. Azure App Service (Linux) comprimeert
-      # node_modules bij elke deploy automatisch naar node_modules.tar.gz en genereert
-      # daarbij oryx-manifest.toml (platform-eigen optimalisatie, gedocumenteerd op
-      # https://azure.github.io/AppService/2025/07/09/node-optimization.html) - als wij
-      # zelf een kant-en-klare node_modules/.next meesturen vanuit deze ubuntu-runner,
-      # botst dat met die platform-optimalisatie en verdwijnt .next (vandaar de eerdere
-      # "Could not find a production build in the '.next' directory"-fout op Azure).
-      # In plaats daarvan sturen we alleen broncode; Azure (Oryx, via de
-      # SCM_DO_BUILD_DURING_DEPLOYMENT=true App Setting) bouwt zelf npm install +
-      # npm run build, in exact dezelfde omgeving als waar de app ook draait.
-      - name: npm install and build (validatie, wordt niet gedeployed)
+      # Deploy-model: "Run from package". Deze job bouwt het VOLLEDIGE, kant-en-klare
+      # pakket (npm ci + next build, inclusief node_modules en web/.next) en levert één
+      # zip af. Azure mount die zip read-only als /home/site/wwwroot - er draait op
+      # Azure geen Oryx-build en geen node_modules-uitpakstap meer. Dat maakt deploys
+      # snel (~2-3 min i.p.v. ~15) en atomair: een halve/kapotte wwwroot zoals bij de
+      # storing van 2026-09-29 kan in dit model niet meer bestaan. De ubuntu-runner en
+      # de App Service draaien allebei Linux + Node 22 en er zijn geen native modules,
+      # dus het pakket is 1-op-1 overdraagbaar.
+      - name: npm ci en productie-build
         run: |
-          npm install
-          npm run build --if-present
+          npm ci
+          npm run build
 
-      - name: Verwijder build-artefacten vóór upload (Azure bouwt zelf via Oryx)
-        run: rm -rf node_modules web/.next web/node_modules
+      # De Turbopack/webpack-build-cache is honderden MB's en is op de server nutteloos
+      # (er wordt daar nooit meer gebouwd). De lege map blijft bestaan zodat next start
+      # bij het opstarten geen map hoeft aan te maken op het read-only bestandssysteem.
+      - name: Slank het pakket af (build-cache hoeft niet mee)
+        run: rm -rf web/.next/cache && mkdir -p web/.next/cache
+
+      - name: Maak deploy-zip
+        run: zip -r -q release.zip . -x ".git/*" -x ".github/*" -x "tests/*" -x "docs/*"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: release.zip
 
   deploy:
     runs-on: ubuntu-latest
-    # Was 10: Oryx bouwt de app nu zelf op Azure (npm install + next build) in plaats
-    # van een kant-en-klaar pakket te ontvangen, en kwam al een keer boven de 10
-    # minuten uit (build #17 werd afgebroken). Ruimer gezet zodat een normale, iets
-    # tragere build niet halverwege wordt gekilld.
-    timeout-minutes: 20
+    timeout-minutes: 10
     needs: build
     permissions:
       id-token: write #This is required for requesting the JWT
@@ -71,7 +70,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
-      
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -79,11 +78,23 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_EC8DCA4F35AE4CCFB235E2F89E942F66 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_C7969EB9ED5842B3B86EEA44AB000568 }}
 
+      # Idempotent: zet het run-from-package-model aan en schakelt de Oryx-build op de
+      # server uit. --output none is essentieel: az zou anders ALLE app settings
+      # (inclusief secrets zoals DB_PASSWORD) in het publieke CI-log printen.
+      - name: Schakel Run-From-Package in
+        run: |
+          az webapp config appsettings set \
+            --resource-group dpp-platform-dev_group \
+            --name dpp-platform-dev \
+            --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            --output none
+
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'dpp-platform-dev'
-          slot-name: 'Production'
-          package: .
-          
+        run: |
+          az webapp deploy \
+            --resource-group dpp-platform-dev_group \
+            --name dpp-platform-dev \
+            --src-path release.zip \
+            --type zip \
+            --output none
