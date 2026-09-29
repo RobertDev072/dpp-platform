@@ -90,12 +90,81 @@ function SortableHeader({ column, sort, order, onSort }) {
   );
 }
 
+const CHECK_LABELS = {
+  photo: "Productfoto",
+  description: "Omschrijving",
+  category: "Categorie",
+  sustainability: "Duurzaamheidsgegevens",
+  compliance: "Compliancegegevens",
+  documents: "Minimaal één document"
+};
+
+// Klikbare compleetheid: toont per criterium wat al ingevuld is en wat nog ontbreekt.
+function CompletenessPopover({ product }) {
+  const [open, setOpen] = useState(false);
+  const checks = product.checks || {};
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        title="Klik om te zien wat er nog ontbreekt"
+        aria-expanded={open}
+        className="block w-full cursor-pointer rounded-lg p-1 text-left transition-colors hover:bg-slate-100"
+      >
+        <CompletenessBar value={product.completeness} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setOpen(false); }} />
+          <div
+            className="absolute left-0 top-full z-20 mt-1 w-60 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Paspoort-compleetheid
+            </p>
+            <ul className="space-y-1.5 text-sm">
+              {Object.entries(CHECK_LABELS).map(([key, label]) => (
+                <li key={key} className="flex items-center gap-2">
+                  {checks[key] ? (
+                    <span className="text-emerald-600" aria-hidden="true">
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                        <path d="M4 10.5L8 14.5L16 5.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  ) : (
+                    <span className="text-amber-500" aria-hidden="true">
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                        <circle cx="10" cy="10" r="7.25" stroke="currentColor" strokeWidth="1.5" />
+                        <path d="M10 6.5V10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        <circle cx="10" cy="13.5" r="0.9" fill="currentColor" />
+                      </svg>
+                    </span>
+                  )}
+                  <span className={checks[key] ? "text-slate-600" : "font-medium text-slate-900"}>{label}</span>
+                  {!checks[key] && <span className="ml-auto text-xs text-amber-600">ontbreekt</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PhotoThumb({ product }) {
-  if (product.photo_url) {
+  // Geüploade foto's staan in blob-opslag en zijn alleen via ons eigen (ingelogde)
+  // endpoint bereikbaar; dat endpoint redirect zelf naar photo_url als die is gezet.
+  if (product.photo_blob_name || product.photo_url) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={product.photo_url}
+        src={`/api/products/${product.id}/photo`}
         alt=""
         loading="lazy"
         className="h-10 w-10 rounded-lg border border-slate-200 bg-slate-50 object-cover"
@@ -565,7 +634,7 @@ function ProductsTableInner({
                           </span>
                         </td>
                         <td className="py-2.5 pr-3">
-                          <CompletenessBar value={product.completeness} />
+                          <CompletenessPopover product={product} />
                         </td>
                         <td className="py-2.5 pr-3">
                           <p className="whitespace-nowrap text-slate-600">{formatDate(product.created_at)}</p>

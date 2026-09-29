@@ -21,15 +21,20 @@ function escapeLike(value) {
 
 // Compleetheid van een productpaspoort: zes gelijkwaardige criteria (foto,
 // omschrijving, categorie, duurzaamheidsdata, compliance-data, minimaal één
-// document). Berekend in SQL zodat er ook op gefilterd/geteld kan worden.
-const COMPLETENESS_SQL = `(
-  (CASE WHEN p.photo_url IS NOT NULL OR p.photo_blob_name IS NOT NULL THEN 1 ELSE 0 END) +
-  (CASE WHEN p.description IS NOT NULL AND LEN(p.description) > 0 THEN 1 ELSE 0 END) +
-  (CASE WHEN p.category_label IS NOT NULL AND LEN(p.category_label) > 0 THEN 1 ELSE 0 END) +
-  (CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductSustainability ps WHERE ps.product_id = p.id) THEN 1 ELSE 0 END) +
-  (CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductCompliance pc WHERE pc.product_id = p.id) THEN 1 ELSE 0 END) +
-  (CASE WHEN EXISTS (SELECT 1 FROM dbo.Documents d WHERE d.product_id = p.id) THEN 1 ELSE 0 END)
-) * 100 / 6`;
+// document). Als CROSS APPLY berekend zodat de losse vlaggen teruggegeven kunnen
+// worden ("wat ontbreekt er nog?") én er in WHERE en aggregaties op gefilterd/geteld
+// kan worden - subqueries mogen in SQL Server niet rechtstreeks binnen een SUM().
+const CHECKS_APPLY = `CROSS APPLY (SELECT
+  CASE WHEN (p.photo_url IS NOT NULL AND LEN(p.photo_url) > 0) OR p.photo_blob_name IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
+  CASE WHEN p.description IS NOT NULL AND LEN(p.description) > 0 THEN 1 ELSE 0 END AS has_description,
+  CASE WHEN p.category_label IS NOT NULL AND LEN(p.category_label) > 0 THEN 1 ELSE 0 END AS has_category,
+  CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductSustainability ps WHERE ps.product_id = p.id) THEN 1 ELSE 0 END AS has_sustainability,
+  CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductCompliance pc WHERE pc.product_id = p.id) THEN 1 ELSE 0 END AS has_compliance,
+  CASE WHEN EXISTS (SELECT 1 FROM dbo.Documents d WHERE d.product_id = p.id) THEN 1 ELSE 0 END AS has_documents
+) checks`;
+
+const COMPLETENESS_EXPR =
+  "(checks.has_photo + checks.has_description + checks.has_category + checks.has_sustainability + checks.has_compliance + checks.has_documents) * 100 / 6";
 
 function buildProductFilters({ companyId, q, status, category, doc }, request) {
   const where = [];
@@ -50,9 +55,9 @@ function buildProductFilters({ companyId, q, status, category, doc }, request) {
     where.push("p.category_label = @category");
   }
   if (doc === "compleet") {
-    where.push(`${COMPLETENESS_SQL} = 100`);
+    where.push(`${COMPLETENESS_EXPR} = 100`);
   } else if (doc === "incompleet") {
-    where.push(`${COMPLETENESS_SQL} < 100`);
+    where.push(`${COMPLETENESS_EXPR} < 100`);
   }
   return where.length ? `WHERE ${where.join(" AND ")}` : "";
 }
@@ -82,9 +87,12 @@ async function listProducts({
   const result = await request.query(`
     SELECT ${selectColumns},
            creator.email AS created_by_email,
-           ${COMPLETENESS_SQL} AS completeness,
+           checks.has_photo, checks.has_description, checks.has_category,
+           checks.has_sustainability, checks.has_compliance, checks.has_documents,
+           ${COMPLETENESS_EXPR} AS completeness,
            COUNT(*) OVER() AS total
     FROM dbo.Products p
+    ${CHECKS_APPLY}
     LEFT JOIN dbo.Users creator ON creator.id = p.created_by
     ${whereSql}
     ORDER BY ${sortSql} ${orderSql}, p.id ASC
@@ -95,7 +103,16 @@ async function listProducts({
   const total = rows.length ? rows[0].total : 0;
   const items = rows.map(({ total: _ignored, ...row }) => ({
     ...row,
-    action_required: row.completeness < 100
+    action_required: row.completeness < 100,
+    // "Wat ontbreekt nog?" - direct bruikbaar voor de UI.
+    checks: {
+      photo: Boolean(row.has_photo),
+      description: Boolean(row.has_description),
+      category: Boolean(row.has_category),
+      sustainability: Boolean(row.has_sustainability),
+      compliance: Boolean(row.has_compliance),
+      documents: Boolean(row.has_documents)
+    }
   }));
   return { items, total, page, pageSize };
 }
@@ -115,10 +132,11 @@ async function getProductStats({ companyId } = {}) {
       COUNT(*) AS total,
       SUM(CASE WHEN p.status = 'published' THEN 1 ELSE 0 END) AS published,
       SUM(CASE WHEN p.status = 'draft' THEN 1 ELSE 0 END) AS drafts,
-      SUM(CASE WHEN ${COMPLETENESS_SQL} < 100 THEN 1 ELSE 0 END) AS action_required,
+      SUM(CASE WHEN ${COMPLETENESS_EXPR} < 100 THEN 1 ELSE 0 END) AS action_required,
       SUM(CASE WHEN p.created_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS created_this_month,
       SUM(CASE WHEN p.published_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS published_this_month
     FROM dbo.Products p
+    ${CHECKS_APPLY}
     ${where}
   `);
 
