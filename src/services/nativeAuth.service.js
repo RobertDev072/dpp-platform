@@ -38,9 +38,19 @@ async function callNativeAuth(path, params) {
     body
   });
 
-  const data = await response.json().catch(() => ({}));
+  const rawText = await response.text();
+  let data = {};
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    data = {};
+  }
 
   if (!response.ok) {
+    if (Object.keys(data).length === 0 && rawText) {
+      // Respons was geen (geldige) JSON - log de rauwe body, anders is dit onzichtbaar.
+      console.error("Niet-JSON native-auth-respons van Entra:", path, response.status, rawText.slice(0, 500));
+    }
     if (data.error === "user_not_found") {
       throw new NativeAuthError("USER_NOT_FOUND", "Geen account gevonden voor dit e-mailadres");
     }
@@ -73,6 +83,9 @@ async function callNativeAuth(path, params) {
         continuationToken: data.continuation_token
       });
     }
+    // Tijdelijk: log de rauwe Entra-respons zodat een nog niet afgevangen fout-vorm
+    // zichtbaar wordt in de Log stream i.p.v. alleen een generieke melding te tonen.
+    console.error("Onbekende native-auth-respons van Entra:", path, JSON.stringify(data));
     throw new NativeAuthError(data.error || "UNKNOWN", data.error_description || "Onbekende fout bij Entra");
   }
 
