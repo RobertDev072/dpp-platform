@@ -138,3 +138,108 @@ docs/
 tests/                        Geautomatiseerde tests (node --test): auth, tenant-isolatie,
                                Entra just-in-time linking, license-limits
 ```
+
+## Azure-infrastructuur en deploy-proces
+
+Geen van onderstaande gegevens is een secret (geen keys/wachtwoorden) - dit is puur zodat je
+zonder mijn sessie-geheugen weet hoe de live omgeving in elkaar zit.
+
+- **App Service**: `dpp-platform-dev` (resource group `dpp-platform-dev_group`, regio Central
+  US, B1 Basic-tier). Ondanks de naam "dev" is dit op dit moment de enige/live omgeving.
+- **Live URL**: `https://dpp-platform-dev-h2dag0asawh9eyhg.centralus-01.azurewebsites.net` -
+  gebruik altijd deze volledige hostname. De korte vorm
+  `dpp-platform-dev.azurewebsites.net` bestaat niet en breekt elke QR-/activatielink die
+  ermee gegenereerd wordt. Deze hostname moet voor altijd blijven werken: oudere gedrukte
+  QR-codes verwijzen er permanent naar (App Service dus nooit verwijderen/hernoemen).
+- **Custom domains** (veripasso.com, gekocht bij TransIP, gratis App Service Managed
+  Certificates): `app.veripasso.com` (inloggen/dashboard, Application Setting
+  `APP_BASE_URL`), `qr.veripasso.com` (publieke QR-paspoortlinks, Application Setting
+  `QR_BASE_URL`), apex `veripasso.com` (marketing-landingspagina).
+- **Deploy**: elke push naar `main` triggert GitHub Actions (workflow
+  `main_dpp-platform-dev.yml`), via **Run-From-Package**: CI bouwt de volledige zip
+  (`npm ci` + `next build`), zet `WEBSITE_RUN_FROM_PACKAGE=1` /
+  `SCM_DO_BUILD_DURING_DEPLOYMENT=false` en deployt met `az webapp deploy --type zip`.
+  Duurt ~3 minuten en is atomisch. **`wwwroot` is read-only na deploy** - dit is precies
+  waarom productfoto-uploads naar Blob Storage gaan en niet naar lokale schijf. CI draait
+  bewust geen testsuite: de tests hebben live Azure SQL-credentials nodig die niet als
+  GitHub secret zijn opgeslagen.
+- **Database**: Azure SQL. Migraties worden **handmatig lokaal** uitgevoerd via
+  `npm run migrate` tegen de live database - er is geen aparte staging/testdatabase (zie
+  TODO hieronder), dus `npm test` draait ook tegen de live data.
+- **Blob Storage**: storage account `stveripassodev01`, containers `product-images` en
+  `product-documents` (beide privé, geen anonieme toegang). Authenticatie via de
+  system-assigned Managed Identity van de App Service - zie de env-var-uitleg hierboven
+  voor de benodigde RBAC-rol. Geen connection string of accountkey ergens opgeslagen.
+- **Identity provider**: Microsoft Entra External ID-tenant `DPPPlatform` (authority host
+  `dppplatform.ciamlogin.com`). Zie
+  [docs/entra-external-id-setup.md](docs/entra-external-id-setup.md).
+- **Bekende valkuilen**:
+  - Application Settings opslaan herstart de App Service. Doe dat nooit terwijl een
+    GitHub Actions-deploy loopt (de deploy hangt dan vast) - herstel via Portal → Restart,
+    daarna in Actions "Re-run failed jobs". Laat nooit twee deploys tegelijk lopen.
+  - Het zakelijke netwerk (Zscaler-proxy) her-signeert TLS en kan nieuw-geregistreerde
+    domeinen zoals veripasso.com blokkeren/onbetrouwbaar maken tijdens tests - test die
+    domeinen liever via mobiele data.
+
+## TODO / openstaand werk
+
+Bijgewerkt 2026-09-29. Vink dingen hier af of verwijder ze zodra ze klaar zijn, zodat dit
+overzicht blijft kloppen.
+
+### Productcatalogus - schaal (verwacht: tot 10.000+ producten)
+
+- [ ] Paginering + server-side filters op de productenlijst. `listProducts` haalt nu altijd
+      **alle** rijen in één keer op, zonder limiet - dit breekt bij grote aantallen.
+- [ ] Zelf-beheerde categorieën. Nu is er alleen het vrije-tekstveld `category_label` en een
+      ongebruikte `category_id`-kolom zonder bijbehorende tabel. Nodig: een echte
+      `Categories`-tabel die company admins zelf kunnen beheren (aanmaken/hernoemen), plus
+      filteren op categorie in de productenlijst.
+- [ ] Uitbreidbare productvelden ("zo breed mogelijk"): versie, model, kleuren, en generieke
+      "advanced info"-velden voor input van derde partijen. **Architectuurkeuze nog te
+      maken** (vaste kolommen vs. één JSON-attribuutveld vs. een aparte EAV-tabel) - dit is
+      een fundamentele datamodel-beslissing, eerst samen bepalen voordat dit gebouwd wordt.
+
+### Document-upload
+
+- [ ] PDF/certificaat-upload net als bij productfoto's (nu alleen een URL-veld in de
+      DocumentsTab van een product). De container `product-documents` in Blob Storage
+      bestaat al en is privé, maar is nog nergens aan de code gekoppeld.
+
+### Geschiedenis & audit
+
+- [ ] "Geschiedenis"-tab per product (AuditLogs filteren op `entityType='Product'` en
+      `entityId`) - de data staat er al in, alleen de UI ontbreekt nog. Voorgesteld, nog
+      niet bevestigd of dit gewenst is.
+- [ ] Eventueel een retentiebeleid voor audit-logs (bijv. login/logout na 90-180 dagen
+      opruimen, create/update/publish altijd bewaren). Nog geen besluit - data wordt hier
+      niet automatisch verwijderd zonder expliciet akkoord.
+
+### Betrouwbaarheid / infra (Azure Portal-acties, niet vanuit code te doen)
+
+- [ ] "Always On" aanzetten op de App Service (voorkomt cold-start-vertraging op de
+      B1-tier).
+- [ ] Monitoring/alerts instellen (Azure Monitor / Application Insights), zodat downtime
+      opvalt vóór een klant een dode QR-code scant.
+- [ ] Bevestigen dat point-in-time-restore (automatische back-up) actief staat op de Azure
+      SQL-database en de retentieperiode kennen.
+- [ ] Een losse staging/testdatabase overwegen - de testsuite draait nu tegen dezelfde
+      database als productie.
+- [ ] Bepalen of `stveripassodev01` ook de productie-storage wordt, of dat daar een apart
+      storage-account voor komt.
+
+### Optioneel
+
+- [ ] De RBAC-rol "Storage Blob Delegator" toevoegen aan de Managed Identity als je ooit
+      van het huidige streaming-media-endpoint naar user-delegation SAS-links wilt
+      overstappen (bijv. voor grote documenten). Nu niet nodig: het media-endpoint werkt
+      met alleen "Storage Blob Data Contributor".
+
+### Voordat je ergens de toegang toe verliest: back-up dit ZELF, buiten git
+
+`.env` wordt nooit gecommit (zie "Lokale setup" hierboven voor waarom) - dus dit moet jij
+zelf ergens veilig bewaren, bijvoorbeeld in een wachtwoordmanager:
+
+- [ ] De volledige inhoud van je lokale `.env` (DB-credentials, Entra-secrets,
+      `COOKIE_SECRET`, evt. `AZURE_STORAGE_ACCOUNT_NAME`).
+- [ ] Welke Application Settings al in Azure App Service staan - de namen staan in de
+      env-var-lijst hierboven onder "Lokale setup" (namen zijn geen secret, de waarden wel).
