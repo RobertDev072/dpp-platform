@@ -9,7 +9,7 @@ const { getEntraConfig } = require("../config/entra");
 // Endpoint-vorm nog empirisch te bevestigen tegen de echte tenant bij eerste gebruik
 // (opgehaald via Microsoft Learn, maar dat antwoord bevatte verdachte, niet-officieel
 // ogende tekst naast de technische inhoud - zie gesprek. De structuur hieronder
-// (initiate/challenge/token/introspect, sspr start/challenge/continue/poll_completion,
+// (initiate/challenge/token/introspect, resetpassword start/challenge/continue/poll_completion,
 // continuation_token dat elke stap doorgegeven wordt) is wel consistent met eerdere,
 // onafhankelijke bronnen en met het bestaande `authority`-patroon in config/entra.js).
 class NativeAuthError extends Error {
@@ -180,7 +180,7 @@ async function submitMfaCode({ continuationToken, code }) {
 // --- SSPR (wachtwoord vergeten / eerste wachtwoord instellen) ---
 
 async function startPasswordReset({ email }) {
-  const result = await callNativeAuth("/sspr/v1.0/start", {
+  const result = await callNativeAuth("/resetpassword/v1.0/start", {
     username: email,
     challenge_type: "oob redirect"
   });
@@ -188,7 +188,7 @@ async function startPasswordReset({ email }) {
 }
 
 async function requestPasswordResetCode({ continuationToken }) {
-  const result = await callNativeAuth("/sspr/v1.0/challenge", {
+  const result = await callNativeAuth("/resetpassword/v1.0/challenge", {
     continuation_token: continuationToken,
     challenge_type: "oob redirect"
   });
@@ -196,7 +196,7 @@ async function requestPasswordResetCode({ continuationToken }) {
 }
 
 async function submitPasswordResetCode({ continuationToken, code }) {
-  const result = await callNativeAuth("/sspr/v1.0/continue", {
+  const result = await callNativeAuth("/resetpassword/v1.0/continue", {
     continuation_token: continuationToken,
     grant_type: "oob",
     oob: code
@@ -205,7 +205,7 @@ async function submitPasswordResetCode({ continuationToken, code }) {
 }
 
 async function submitNewPassword({ continuationToken, password }) {
-  const result = await callNativeAuth("/sspr/v1.0/continue", {
+  const result = await callNativeAuth("/resetpassword/v1.0/continue", {
     continuation_token: continuationToken,
     grant_type: "password",
     password
@@ -214,7 +214,7 @@ async function submitNewPassword({ continuationToken, password }) {
 }
 
 async function pollPasswordResetCompletion({ continuationToken }) {
-  const result = await callNativeAuth("/sspr/v1.0/poll_completion", {
+  const result = await callNativeAuth("/resetpassword/v1.0/poll_completion", {
     continuation_token: continuationToken
   });
   return { status: result.status, continuationToken: result.continuation_token };
