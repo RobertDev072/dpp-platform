@@ -21,7 +21,16 @@ let poolPromise;
 
 function getPool() {
   if (!poolPromise) {
-    poolPromise = sql.connect(config);
+    // Als deze verbindingspoging mislukt (bijv. een serverless Azure SQL-database die
+    // nog aan het ontwaken is), mag dat niet blijvend gecachet worden - anders blijft
+    // elke volgende aanvraag dezelfde mislukte poging hergebruiken, ook lang nadat de
+    // database allang weer bereikbaar is. Zonder deze reset was dat precies wat er
+    // gebeurde: een enkele ETIMEOUT maakte de hele instance blijvend onbruikbaar tot
+    // een herstart.
+    poolPromise = sql.connect(config).catch((err) => {
+      poolPromise = undefined;
+      throw err;
+    });
   }
   return poolPromise;
 }
