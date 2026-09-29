@@ -3,7 +3,7 @@ const { getPool, sql } = require("../config/db");
 
 const PUBLIC_COLUMNS = `
   id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
-  manufacturer, country_of_origin, status, highlights, public_id, published_at, created_at, updated_at
+  manufacturer, country_of_origin, photo_url, status, highlights, public_id, published_at, created_at, updated_at
 `;
 
 async function listProducts({ companyId } = {}) {
@@ -43,7 +43,8 @@ async function createProduct({
   gtin,
   description,
   manufacturer,
-  countryOfOrigin
+  countryOfOrigin,
+  photoUrl
 }) {
   const pool = await getPool();
   const result = await pool
@@ -57,12 +58,13 @@ async function createProduct({
     .input("description", sql.NVarChar(sql.MAX), description ?? null)
     .input("manufacturer", sql.NVarChar(200), manufacturer ?? null)
     .input("countryOfOrigin", sql.NVarChar(100), countryOfOrigin ?? null)
+    .input("photoUrl", sql.NVarChar(1000), photoUrl ?? null)
     .query(`
       INSERT INTO dbo.Products
-        (company_id, name, brand, model, sku, gtin, description, manufacturer, country_of_origin, status)
+        (company_id, name, brand, model, sku, gtin, description, manufacturer, country_of_origin, photo_url, status)
       OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
       VALUES
-        (@companyId, @name, @brand, @model, @sku, @gtin, @description, @manufacturer, @countryOfOrigin, 'draft')
+        (@companyId, @name, @brand, @model, @sku, @gtin, @description, @manufacturer, @countryOfOrigin, @photoUrl, 'draft')
     `);
   return result.recordset[0];
 }
@@ -76,6 +78,7 @@ const UPDATABLE_FIELDS = [
   "description",
   "manufacturer",
   "countryOfOrigin",
+  "photoUrl",
   "status"
 ];
 const FIELD_TO_COLUMN = {
@@ -87,6 +90,7 @@ const FIELD_TO_COLUMN = {
   description: "description",
   manufacturer: "manufacturer",
   countryOfOrigin: "country_of_origin",
+  photoUrl: "photo_url",
   status: "status"
 };
 const FIELD_TO_SQL_TYPE = {
@@ -98,6 +102,7 @@ const FIELD_TO_SQL_TYPE = {
   description: () => sql.NVarChar(sql.MAX),
   manufacturer: () => sql.NVarChar(200),
   countryOfOrigin: () => sql.NVarChar(100),
+  photoUrl: () => sql.NVarChar(1000),
   status: () => sql.NVarChar(20)
 };
 

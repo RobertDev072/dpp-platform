@@ -76,6 +76,7 @@ router.get("/:publicId", async (req, res, next) => {
       description: product.description,
       manufacturer: product.manufacturer,
       countryOfOrigin: product.country_of_origin,
+      photoUrl: product.photo_url,
       highlights,
       publishedAt: product.published_at,
       sustainability,

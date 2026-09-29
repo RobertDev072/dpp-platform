@@ -1,11 +1,4 @@
-export async function apiRequest(method, url, body) {
-  const response = await fetch(url, {
-    method,
-    credentials: "same-origin",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined
-  });
-
+async function handleResponse(response, url) {
   if (response.status === 401 && !url.endsWith("/api/auth/login")) {
     if (typeof window !== "undefined") {
       window.location.href = "/login";
@@ -33,10 +26,34 @@ export async function apiRequest(method, url, body) {
   return data;
 }
 
+export async function apiRequest(method, url, body) {
+  const response = await fetch(url, {
+    method,
+    credentials: "same-origin",
+    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined
+  });
+
+  return handleResponse(response, url);
+}
+
+// Voor multipart file-uploads: geen Content-Type header zetten, de browser voegt zelf de
+// juiste multipart boundary toe op basis van de FormData.
+export async function apiUpload(url, formData) {
+  const response = await fetch(url, {
+    method: "POST",
+    credentials: "same-origin",
+    body: formData
+  });
+
+  return handleResponse(response, url);
+}
+
 export const api = {
   get: (url) => apiRequest("GET", url),
   post: (url, body) => apiRequest("POST", url, body),
   patch: (url, body) => apiRequest("PATCH", url, body),
   put: (url, body) => apiRequest("PUT", url, body),
-  delete: (url) => apiRequest("DELETE", url)
+  delete: (url) => apiRequest("DELETE", url),
+  upload: (url, formData) => apiUpload(url, formData)
 };

@@ -1,4 +1,5 @@
 const express = require("express");
+const multer = require("multer");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateBody } = require("../middleware/validate");
 const { createProductSchema, updateProductSchema } = require("../schemas/products.schema");
@@ -22,8 +23,21 @@ const {
   generateQrSvgString,
   generateLabelPdfBuffer
 } = require("../services/qrCode.service");
+const { uploadProductPhoto, ALLOWED_MIME_TYPES } = require("../services/blobStorage.service");
 
 const router = express.Router();
+
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_MIME_TYPES[file.mimetype]) {
+      cb(new HttpError(400, "Alleen JPEG, PNG, WEBP of GIF-afbeeldingen zijn toegestaan."));
+      return;
+    }
+    cb(null, true);
+  }
+});
 
 const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
 
@@ -104,6 +118,60 @@ router.patch(
         entityType: "Product",
         entityId: id,
         metadata: req.body
+      });
+
+      res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post(
+  "/:id/photo",
+  requireRole(...EDITOR_ROLES),
+  (req, res, next) => {
+    photoUpload.single("photo")(req, res, (err) => {
+      if (!err) {
+        next();
+        return;
+      }
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        next(new HttpError(400, "De afbeelding is te groot (max 5 MB)."));
+        return;
+      }
+      next(err);
+    });
+  },
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const existing = await productsRepo.getProductById(id);
+      if (!existing) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+      assertCompanyAccess(req.user, existing.company_id);
+
+      if (!req.file) {
+        next(new HttpError(400, "Geen bestand ontvangen."));
+        return;
+      }
+
+      const photoUrl = await uploadProductPhoto({
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype
+      });
+
+      const updated = await productsRepo.updateProduct(id, { photoUrl });
+
+      await logAudit({
+        companyId: existing.company_id,
+        userId: req.user.id,
+        action: "update",
+        entityType: "Product",
+        entityId: id,
+        metadata: { photoUrl }
       });
 
       res.json(updated);

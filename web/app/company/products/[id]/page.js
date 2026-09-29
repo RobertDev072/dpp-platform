@@ -106,7 +106,8 @@ function OverviewTab({ product, onSaved }) {
     gtin: product.gtin || "",
     manufacturer: product.manufacturer || "",
     countryOfOrigin: product.country_of_origin || "",
-    description: product.description || ""
+    description: product.description || "",
+    photoUrl: product.photo_url || ""
   });
   const [error, setError] = useState("");
 
@@ -128,6 +129,17 @@ function OverviewTab({ product, onSaved }) {
     <Card className="space-y-4">
       {error && <div className="text-sm text-red-700">{error}</div>}
       <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <ProductPhotoField
+            productId={product.id}
+            photoUrl={fields.photoUrl}
+            onChangeUrl={(v) => set("photoUrl", v)}
+            onUploaded={async (url) => {
+              set("photoUrl", url);
+              await onSaved();
+            }}
+          />
+        </div>
         <Field label="Naam" value={fields.name} onChange={(v) => set("name", v)} />
         <Field label="Merk" value={fields.brand} onChange={(v) => set("brand", v)} />
         <Field label="Model" value={fields.model} onChange={(v) => set("model", v)} />
@@ -157,6 +169,88 @@ function OverviewTab({ product, onSaved }) {
         </div>
       </form>
     </Card>
+  );
+}
+
+function ProductPhotoField({ productId, photoUrl, onChangeUrl, onUploaded }) {
+  const [mode, setMode] = useState("url");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setUploading(true);
+    setUploadError("");
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const updated = await api.upload(`/api/products/${productId}/photo`, formData);
+      await onUploaded(updated.photo_url);
+    } catch (err) {
+      setUploadError(err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 sm:flex-row sm:items-start">
+      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+        {photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="text-xs text-slate-400">Geen foto</span>
+        )}
+      </div>
+
+      <div className="flex-1 space-y-2">
+        <div className="flex gap-1 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode("url")}
+            className={`rounded-md px-2 py-1 font-medium ${
+              mode === "url" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            URL
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("upload")}
+            className={`rounded-md px-2 py-1 font-medium ${
+              mode === "upload" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            Upload afbeelding
+          </button>
+        </div>
+
+        {mode === "url" ? (
+          <input
+            value={photoUrl}
+            onChange={(e) => onChangeUrl(e.target.value)}
+            placeholder="https://..."
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+          />
+        ) : (
+          <div>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleFileChange}
+              disabled={uploading}
+              className="text-sm"
+            />
+            {uploading && <p className="mt-1 text-xs text-slate-500">Uploaden...</p>}
+            {uploadError && <p className="mt-1 text-xs text-red-700">{uploadError}</p>}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

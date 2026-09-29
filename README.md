@@ -42,6 +42,20 @@ Multi-tenant SaaS-platform voor Digital Product Passport (DPP) implementatie in 
    ENTRA_REDIRECT_URI=
    ENTRA_POST_LOGOUT_REDIRECT_URI=
    COOKIE_SECRET=
+
+   # Optioneel: Azure Blob Storage voor productfoto-uploads (naast de bestaande optie om
+   # een externe URL te plakken). Zolang AZURE_STORAGE_CONNECTION_STRING niet is gezet,
+   # geeft de upload-knop een duidelijke foutmelding i.p.v. stil te falen; de URL-optie
+   # blijft altijd werken. Haal de connection string op via Azure Portal > het storage
+   # account > "Access keys". De container ("product-images") wordt automatisch
+   # aangemaakt als hij nog niet bestaat, met publieke lees-toegang per blob (nodig omdat
+   # productfoto's zonder login zichtbaar moeten zijn op de publieke DPP-paspoortpagina).
+   # Bestaat de container al (bijv. handmatig aangemaakt in de Portal), controleer dan
+   # zelf of het toegangsniveau "Blob" (anonieme leestoegang per blob) is - dat wordt
+   # alleen bij het aanmaken automatisch gezet, niet achteraf. Zet ook "Allow Blob public
+   # access" aan op het storage account zelf (Configuration-blad), anders werkt dit niet.
+   AZURE_STORAGE_CONNECTION_STRING=
+   AZURE_STORAGE_CONTAINER=product-images
    ```
 3. Test de databaseverbinding:
    ```
@@ -62,8 +76,9 @@ Multi-tenant SaaS-platform voor Digital Product Passport (DPP) implementatie in 
 
 ## Voor Azure App Service
 
-Dezelfde variabelen (`DB_SERVER`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`, `PORT`) worden ingesteld als
-Application Settings in de Azure Portal, niet in een `.env`-bestand. Er worden nooit secrets gecommit
+Dezelfde variabelen (`DB_SERVER`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`, `PORT`, en indien gebruikt
+`AZURE_STORAGE_CONNECTION_STRING`/`AZURE_STORAGE_CONTAINER`) worden ingesteld als Application Settings
+in de Azure Portal, niet in een `.env`-bestand. Er worden nooit secrets gecommit
 naar GitHub. Zet `NODE_ENV=development` **niet** als Application Setting op Azure — de sessie-cookie
 staat dan onterecht op `secure=false`. Zet in de Azure Portal onder "TLS/SSL settings" ook "HTTPS Only"
 aan, zodat de sessie-cookie nooit onversleuteld over het netwerk kan gaan.

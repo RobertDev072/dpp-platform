@@ -37,6 +37,14 @@ export default async function ProductPassportPage({ params }) {
       <Logo />
 
       <Card className="space-y-2">
+        {product.photoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={product.photoUrl}
+            alt={product.name}
+            className="mb-2 max-h-80 w-full rounded-lg object-cover"
+          />
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{product.name}</h1>
           {product.categoryLabel && <Badge variant="info">{product.categoryLabel}</Badge>}

@@ -8,7 +8,8 @@ const createProductSchema = z.object({
   gtin: z.string().max(50).optional(),
   description: z.string().optional(),
   manufacturer: z.string().max(200).optional(),
-  countryOfOrigin: z.string().max(100).optional()
+  countryOfOrigin: z.string().max(100).optional(),
+  photoUrl: z.string().max(1000).optional()
 });
 
 const updateProductSchema = z
@@ -21,6 +22,7 @@ const updateProductSchema = z
     description: z.string().optional(),
     manufacturer: z.string().max(200).optional(),
     countryOfOrigin: z.string().max(100).optional(),
+    photoUrl: z.string().max(1000).optional(),
     status: z.enum(["draft", "archived"]).optional()
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
