@@ -125,9 +125,12 @@ async function callNativeAuth(path, params) {
       "trace_id=" + (data.trace_id || "-"),
       "correlation_id=" + (data.correlation_id || "-")
     );
+    // De technische code hoort in de melding: foutcodes zijn geen geheimen, en
+    // zonder code is een storing voor niemand te diagnosticeren of te melden.
+    const technischeCode = [data.error, data.suberror].filter(Boolean).join("/") || "onbekend";
     throw new NativeAuthError(
       data.error || "UNKNOWN",
-      "Er ging iets mis. Probeer het over een moment opnieuw."
+      `Er ging iets mis (code: ${technischeCode}). Probeer het opnieuw of meld deze code aan de beheerder.`
     );
   }
 
