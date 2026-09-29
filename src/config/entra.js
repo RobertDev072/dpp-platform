@@ -66,4 +66,28 @@ function getEntraConfig() {
   };
 }
 
-module.exports = { isEntraConfigured, isEntraLoginConfigured, isEntraGraphConfigured, getEntraConfig };
+// Voor het config-diagnose-endpoint: alleen NIET-geheime identifiers (tenant-naam/-id
+// en client-id's zijn publieke identifiers; secrets worden alleen als aanwezig/afwezig
+// gerapporteerd, nooit als waarde).
+function getEntraConfigDiagnostics() {
+  return {
+    loginConfigured: isEntraLoginConfigured(),
+    graphConfigured: isEntraGraphConfigured(),
+    missingLoginVars: missing(LOGIN_VARS),
+    missingGraphVars: missing(GRAPH_VARS),
+    tenantName: process.env.ENTRA_TENANT_NAME || null,
+    tenantId: process.env.ENTRA_TENANT_ID || null,
+    webClientId: process.env.ENTRA_WEB_CLIENT_ID || null,
+    graphClientId: process.env.ENTRA_GRAPH_CLIENT_ID || null,
+    webClientSecretSet: Boolean(process.env.ENTRA_WEB_CLIENT_SECRET),
+    graphClientSecretSet: Boolean(process.env.ENTRA_GRAPH_CLIENT_SECRET)
+  };
+}
+
+module.exports = {
+  isEntraConfigured,
+  isEntraLoginConfigured,
+  isEntraGraphConfigured,
+  getEntraConfig,
+  getEntraConfigDiagnostics
+};

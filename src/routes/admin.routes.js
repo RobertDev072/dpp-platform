@@ -136,4 +136,16 @@ router.post(
   }
 });
 
+// Diagnose voor de Platform Owner: welke Entra-configuratie draait er op deze
+// omgeving. Alleen niet-geheime identifiers (tenant/client-id's); secrets worden
+// uitsluitend als aanwezig/afwezig gerapporteerd.
+router.get("/config-status", requireAuth, requireRole(...PLATFORM_OWNER_ROLES), (req, res) => {
+  const { getEntraConfigDiagnostics } = require("../config/entra");
+  res.json({
+    entra: getEntraConfigDiagnostics(),
+    appBaseUrl: process.env.APP_BASE_URL || null,
+    qrBaseUrl: process.env.QR_BASE_URL || null
+  });
+});
+
 module.exports = router;
