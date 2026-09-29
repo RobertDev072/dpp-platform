@@ -40,7 +40,7 @@ async function seedSystemOwner() {
         SET password_hash = @passwordHash,
             first_name = @firstName,
             last_name = @lastName,
-            role = 'system_owner',
+            role = 'platform_owner',
             status = 'active',
             updated_at = SYSUTCDATETIME()
         WHERE email = @email
@@ -57,7 +57,7 @@ async function seedSystemOwner() {
     .input("lastName", sql.NVarChar(100), lastName)
     .query(`
       INSERT INTO dbo.Users (company_id, email, password_hash, first_name, last_name, role, status)
-      VALUES (NULL, @email, @passwordHash, @firstName, @lastName, 'system_owner', 'active')
+      VALUES (NULL, @email, @passwordHash, @firstName, @lastName, 'platform_owner', 'active')
     `);
 
   console.log(`✅ System Owner aangemaakt: ${email}`);

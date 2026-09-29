@@ -64,7 +64,7 @@ test("entra login: just-in-time koppeling van sub aan bestaand DPP-account", asy
 
 test("entra login: gedeactiveerd account wordt geweigerd ondanks geldige koppeling", async (t) => {
   const companyId = await createTestCompany("Entra Inactive Co");
-  const user = await createTestUser({ companyId, role: "viewer" });
+  const user = await createTestUser({ companyId, role: "company_user" });
   const sub = fakeSub();
 
   t.after(async () => {
@@ -76,7 +76,7 @@ test("entra login: gedeactiveerd account wordt geweigerd ondanks geldige koppeli
     .request()
     .input("id", sql.Int, user.id)
     .input("sub", sql.NVarChar(255), sub)
-    .query("UPDATE dbo.Users SET entra_subject_id = @sub, status = 'inactive' WHERE id = @id");
+    .query("UPDATE dbo.Users SET entra_subject_id = @sub, status = 'blocked' WHERE id = @id");
 
   await assert.rejects(() => resolveEntraLogin({ sub, email: user.email }), EntraLoginError);
 });

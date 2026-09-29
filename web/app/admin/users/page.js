@@ -6,10 +6,8 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 
 const ROLE_OPTIONS = [
-  { value: "system_owner", label: "System Owner" },
   { value: "company_admin", label: "Company Admin" },
-  { value: "company_user", label: "Company User" },
-  { value: "viewer", label: "Viewer" }
+  { value: "company_user", label: "Productmedewerker" }
 ];
 
 export default function UsersPage() {
@@ -62,7 +60,7 @@ export default function UsersPage() {
         role
       };
 
-      body.companyId = role === "system_owner" ? null : companyId ? Number(companyId) : undefined;
+      body.companyId = companyId ? Number(companyId) : undefined;
 
       const created = await api.post("/api/users", body);
       // De nieuwe gebruiker direct in de lijst tonen i.p.v. alles opnieuw op te halen.
@@ -172,22 +170,20 @@ export default function UsersPage() {
               ))}
             </select>
           </label>
-          {role !== "system_owner" && (
-            <label className="flex flex-col gap-1 text-sm text-slate-600">
-              Bedrijf
-              <select
-                value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
-              >
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <label className="flex flex-col gap-1 text-sm text-slate-600">
+            Bedrijf
+            <select
+              value={companyId}
+              onChange={(e) => setCompanyId(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            >
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <Button type="submit" disabled={creating}>
             {creating ? "Bezig..." : "Aanmaken"}
           </Button>

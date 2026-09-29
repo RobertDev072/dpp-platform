@@ -23,17 +23,17 @@ test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", 
   const companyA = await createTestCompany("Company A");
   const companyB = await createTestCompany("Company B");
 
-  const owner = await createTestUser({ companyId: null, role: "system_owner" });
+  const owner = await createTestUser({ companyId: null, role: "platform_owner" });
   const adminA = await createTestUser({ companyId: companyA, role: "company_admin" });
   const adminB = await createTestUser({ companyId: companyB, role: "company_admin" });
-  const viewerA = await createTestUser({ companyId: companyA, role: "viewer" });
+  const medewerkerA = await createTestUser({ companyId: companyA, role: "company_user" });
 
   const productA = await createTestProduct({ companyId: companyA, name: "Product A" });
 
   t.after(async () => {
     await cleanupTestData({
       companyIds: [companyA, companyB],
-      userIds: [owner.id, adminA.id, adminB.id, viewerA.id],
+      userIds: [owner.id, adminA.id, adminB.id, medewerkerA.id],
       productIds: [productA]
     });
     await stopTestServer(server);
@@ -43,13 +43,13 @@ test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", 
   let ownerCookie;
   let adminACookie;
   let adminBCookie;
-  let viewerACookie;
+  let medewerkerACookie;
 
   await t.test("setup: alle testgebruikers kunnen inloggen", async () => {
     ownerCookie = await login(baseUrl, owner);
     adminACookie = await login(baseUrl, adminA);
     adminBCookie = await login(baseUrl, adminB);
-    viewerACookie = await login(baseUrl, viewerA);
+    medewerkerACookie = await login(baseUrl, medewerkerA);
   });
 
   await t.test("company_admin mag /api/admin/companies niet benaderen", async () => {
@@ -57,7 +57,7 @@ test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", 
     assert.equal(res.status, 403);
   });
 
-  await t.test("system_owner mag /api/admin/companies wel benaderen", async () => {
+  await t.test("platform_owner mag /api/admin/companies wel benaderen", async () => {
     const res = await request(baseUrl, "GET", "/api/admin/companies", { cookie: ownerCookie });
     assert.equal(res.status, 200);
     assert.ok(res.data.some((c) => c.id === companyA));
@@ -95,9 +95,18 @@ test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", 
     assert.equal(patchRes.data.name, "Bijgewerkt product A");
   });
 
-  await t.test("viewer mag geen product aanmaken", async () => {
+  await t.test("productmedewerker (company_user) mag wel een product aanmaken in eigen bedrijf", async () => {
     const res = await request(baseUrl, "POST", "/api/products", {
-      cookie: viewerACookie,
+      cookie: medewerkerACookie,
+      body: { name: "Nieuw product van medewerker" }
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.data.company_id, companyA);
+  });
+
+  await t.test("platform_owner mag geen product aanmaken (alleen-lezen toezicht)", async () => {
+    const res = await request(baseUrl, "POST", "/api/products", {
+      cookie: ownerCookie,
       body: { name: "Nieuw product" }
     });
     assert.equal(res.status, 403);
@@ -113,20 +122,40 @@ test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", 
   await t.test("company_admin A kan geen user van company B wijzigen", async () => {
     const res = await request(baseUrl, "PATCH", `/api/users/${adminB.id}`, {
       cookie: adminACookie,
-      body: { status: "inactive" }
+      body: { status: "blocked" }
     });
     assert.equal(res.status, 404);
   });
 
-  await t.test("company_admin kan geen system_owner aanmaken", async () => {
-    const res = await request(baseUrl, "POST", "/api/users", {
-      cookie: adminACookie,
-      body: {
-        email: `escalation-${Date.now()}@example.com`,
-        password: "SomePassword123!",
-        role: "system_owner"
-      }
+  await t.test("niemand kan een platform_owner aanmaken via de API (schema weigert de rol)", async () => {
+    for (const cookie of [adminACookie, ownerCookie]) {
+      const res = await request(baseUrl, "POST", "/api/users", {
+        cookie,
+        body: {
+          email: `escalation-${Date.now()}@example.com`,
+          password: "SomePassword123!",
+          role: "platform_owner"
+        }
+      });
+      assert.equal(res.status, 400);
+    }
+  });
+
+  await t.test("laatste actieve company_admin kan niet geblokkeerd worden", async () => {
+    // adminB is de enige actieve admin van company B.
+    const res = await request(baseUrl, "PATCH", `/api/users/${adminB.id}`, {
+      cookie: ownerCookie,
+      body: { status: "blocked" }
     });
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 409);
+    assert.equal(res.data.error.code, "LAST_COMPANY_ADMIN");
+  });
+
+  await t.test("platform_owner-account is voor een company_admin onzichtbaar (404)", async () => {
+    const res = await request(baseUrl, "PATCH", `/api/users/${owner.id}`, {
+      cookie: adminACookie,
+      body: { firstName: "Hack" }
+    });
+    assert.equal(res.status, 404);
   });
 });

@@ -98,6 +98,20 @@ async function countActiveUsers(companyId) {
   return result.recordset[0].activeCount;
 }
 
+async function countOtherActiveCompanyAdmins(companyId, excludeUserId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input("companyId", sql.Int, companyId)
+    .input("excludeUserId", sql.Int, excludeUserId)
+    .query(`
+      SELECT COUNT(*) AS adminCount FROM dbo.Users
+      WHERE company_id = @companyId AND role = 'company_admin'
+        AND status = 'active' AND id <> @excludeUserId
+    `);
+  return result.recordset[0].adminCount;
+}
+
 async function countAllActiveUsers() {
   const pool = await getPool();
   const result = await pool
@@ -200,6 +214,7 @@ module.exports = {
   getUnlinkedUserByEmail,
   linkEntraSubjectId,
   countActiveUsers,
+  countOtherActiveCompanyAdmins,
   countAllActiveUsers,
   createUserWithSeatLimit,
   updateUser

@@ -1,6 +1,9 @@
 const { z } = require("zod");
+const { ASSIGNABLE_ROLES } = require("../utils/roles");
 
-const ROLES = ["system_owner", "company_admin", "company_user", "viewer"];
+// platform_owner staat bewust niet in dit enum: die rol is via de API nooit toe te
+// kennen (er is er precies één, beheerd via het seed-script).
+const USER_STATUSES = ["active", "blocked", "suspended", "archived"];
 
 const createUserSchema = z.object({
   companyId: z.number().int().positive().nullable().optional(),
@@ -10,17 +13,17 @@ const createUserSchema = z.object({
   password: z.string().min(12, "Wachtwoord moet minimaal 12 tekens zijn").optional(),
   firstName: z.string().max(100).optional(),
   lastName: z.string().max(100).optional(),
-  role: z.enum(ROLES),
-  status: z.enum(["active", "inactive"]).optional()
+  role: z.enum(ASSIGNABLE_ROLES),
+  status: z.enum(USER_STATUSES).optional()
 });
 
 const updateUserSchema = z
   .object({
     firstName: z.string().max(100).optional(),
     lastName: z.string().max(100).optional(),
-    role: z.enum(ROLES).optional(),
-    status: z.enum(["active", "inactive"]).optional()
+    role: z.enum(ASSIGNABLE_ROLES).optional(),
+    status: z.enum(USER_STATUSES).optional()
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
 
-module.exports = { ROLES, createUserSchema, updateUserSchema };
+module.exports = { ROLES: ASSIGNABLE_ROLES, USER_STATUSES, createUserSchema, updateUserSchema };

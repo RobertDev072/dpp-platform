@@ -27,7 +27,7 @@ const router = express.Router();
 
 const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
 
-const ALL_ROLES = [...PLATFORM_OWNER_ROLES, "company_admin", "company_user", "viewer"];
+const ALL_ROLES = [...PLATFORM_OWNER_ROLES, "company_admin", "company_user"];
 const EDITOR_ROLES = ["company_admin", "company_user"];
 
 router.use(requireAuth);

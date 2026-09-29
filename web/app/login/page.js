@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   function goToApp(user) {
-    window.location.href = ["platform_owner", "system_owner"].includes(user.role) ? "/admin" : "/company";
+    window.location.href = user.role === "platform_owner" ? "/admin" : "/company";
   }
 
   async function handleSubmit(event) {

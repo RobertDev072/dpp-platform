@@ -35,14 +35,10 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
   try {
     const body = { ...req.body };
 
+    // platform_owner is nooit een toekenbare rol (schema dwingt dit al af); iedereen
+    // die hier komt maakt dus een company_admin of company_user aan.
     if (req.user.role === "company_admin") {
-      if (isPlatformOwner(body.role)) {
-        next(new HttpError(403, "Geen toegang"));
-        return;
-      }
       body.companyId = req.user.companyId;
-    } else if (isPlatformOwner(body.role)) {
-      body.companyId = null;
     } else if (body.companyId == null) {
       next(new HttpError(400, "companyId is verplicht voor deze rol"));
       return;
@@ -133,15 +129,43 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
       return;
     }
 
-    if (req.user.role === "company_admin") {
-      if (isPlatformOwner(existing.role)) {
+    // Het Platform Owner-account is voor iedereen behalve zichzelf onzichtbaar (404,
+    // geen 403: niet bevestigen dat het bestaat), en ook voor zichzelf zijn rol en
+    // status via de API onwijzigbaar.
+    if (isPlatformOwner(existing.role)) {
+      if (req.user.id !== existing.id) {
         next(new HttpError(404, "Niet gevonden"));
         return;
       }
-      assertCompanyAccess(req.user, existing.company_id);
+      if (req.body.role !== undefined || req.body.status !== undefined) {
+        next(new HttpError(403, "Rol en status van de Platform Owner zijn niet wijzigbaar"));
+        return;
+      }
+    }
 
-      if (isPlatformOwner(req.body.role)) {
-        next(new HttpError(403, "Geen toegang"));
+    if (req.user.role === "company_admin") {
+      assertCompanyAccess(req.user, existing.company_id);
+    }
+
+    // Er moet altijd minimaal één actieve Company Admin per bedrijf overblijven.
+    const losesAdminRole = req.body.role !== undefined && req.body.role !== "company_admin";
+    const losesActiveStatus = req.body.status !== undefined && req.body.status !== "active";
+    if (
+      existing.role === "company_admin" &&
+      existing.status === "active" &&
+      existing.company_id != null &&
+      (losesAdminRole || losesActiveStatus)
+    ) {
+      const otherAdmins = await usersRepo.countOtherActiveCompanyAdmins(existing.company_id, existing.id);
+      if (otherAdmins === 0) {
+        next(
+          new HttpError(
+            409,
+            "Er moet minimaal één actieve Company Admin overblijven voor dit bedrijf",
+            undefined,
+            "LAST_COMPANY_ADMIN"
+          )
+        );
         return;
       }
     }
@@ -149,12 +173,14 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
     const updated = await usersRepo.updateUser(id, req.body);
 
     // Best-effort: DPP's eigen status-check (in requireAuth) blokkeert toegang meteen en
-    // onafhankelijk hiervan. Een Graph-fout hier mag de DPP-deactivatie dus nooit blokkeren.
-    if (req.body.status === "inactive" && existing.entra_object_id) {
+    // onafhankelijk hiervan. Een Graph-fout hier mag de DPP-statuswijziging dus nooit
+    // blokkeren. Elke niet-actieve status (blocked/suspended/archived) schakelt het
+    // Entra-account uit; terugzetten naar active schakelt het weer in.
+    if (req.body.status !== undefined && existing.entra_object_id) {
       try {
-        await graphClient.setAccountEnabled(existing.entra_object_id, false);
+        await graphClient.setAccountEnabled(existing.entra_object_id, req.body.status === "active");
       } catch (error) {
-        console.error("Entra account uitschakelen mislukt:", error.message);
+        console.error("Entra account in-/uitschakelen mislukt:", error.message);
       }
     }
 

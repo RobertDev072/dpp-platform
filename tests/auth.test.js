@@ -6,7 +6,7 @@ const { createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
 test("auth: login, /me, logout", async (t) => {
   const { server, baseUrl } = await startTestServer();
-  const owner = await createTestUser({ companyId: null, role: "system_owner" });
+  const owner = await createTestUser({ companyId: null, role: "platform_owner" });
   const userIds = [owner.id];
 
   t.after(async () => {
@@ -42,7 +42,7 @@ test("auth: login, /me, logout", async (t) => {
     });
     assert.equal(res.status, 200);
     assert.equal(res.data.email, owner.email);
-    assert.equal(res.data.role, "system_owner");
+    assert.equal(res.data.role, "platform_owner");
     assert.ok(res.cookie, "verwacht een Set-Cookie header");
     sessionCookie = res.cookie;
   });

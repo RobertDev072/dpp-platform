@@ -1,12 +1,15 @@
-// Overgangslaag voor de hernoeming system_owner -> platform_owner (migratie 007).
-// Zolang de productie-database nog de oude rolnaam bevat, geven beide namen dezelfde
-// rechten - zo kan de code vóór de datamigratie live, en breekt de login op geen
-// enkel moment. Na migratie 007 + de opschoningscommit verdwijnt "system_owner"
-// hieruit definitief.
-const PLATFORM_OWNER_ROLES = ["platform_owner", "system_owner"];
+// Rolmodel: precies één platform_owner (Robert, het geseede break-glass-account),
+// company_admin per bedrijf, company_user (UI-naam: Productmedewerker). Publieke
+// QR-bezoekers hebben geen account en geen rol. Singulariteit van de Platform Owner
+// wordt op applicatieniveau afgedwongen: geen enkel API-pad accepteert deze rol bij
+// aanmaken of wijzigen, en het seed-script werkt alleen zijn eigen account bij.
+const PLATFORM_OWNER_ROLES = ["platform_owner"];
+
+// Rollen die via de API toegekend mogen worden (platform_owner dus bewust niet).
+const ASSIGNABLE_ROLES = ["company_admin", "company_user"];
 
 function isPlatformOwner(role) {
   return PLATFORM_OWNER_ROLES.includes(role);
 }
 
-module.exports = { PLATFORM_OWNER_ROLES, isPlatformOwner };
+module.exports = { PLATFORM_OWNER_ROLES, ASSIGNABLE_ROLES, isPlatformOwner };

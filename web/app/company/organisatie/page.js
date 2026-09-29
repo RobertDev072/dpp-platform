@@ -7,8 +7,7 @@ import Button from "@/components/ui/Button";
 
 const ROLE_OPTIONS = [
   { value: "company_admin", label: "Company Admin" },
-  { value: "company_user", label: "Medewerker" },
-  { value: "viewer", label: "Viewer" }
+  { value: "company_user", label: "Productmedewerker" }
 ];
 
 export default function OrganisatiePage() {
