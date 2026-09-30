@@ -54,4 +54,16 @@ const resetLimiter = rateLimit({
   handler: tooManyRequests("Te veel aanvragen. Probeer het over 15 minuten opnieuw.")
 });
 
-module.exports = { loginIpLimiter, loginEmailLimiter, mfaLimiter, resetLimiter };
+// Wachtwoordresets door een Partner Admin: geteld per ingelogde partner (niet per
+// IP) en álle pogingen tellen mee - ook geweigerde (404-probing is hier juist het
+// misbruik dat we willen remmen).
+const partnerResetLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user ? `user-${req.user.id}` : ipKeyGenerator(req.ip)),
+  handler: tooManyRequests("Te veel wachtwoordresets in korte tijd. Probeer het over 15 minuten opnieuw.")
+});
+
+module.exports = { loginIpLimiter, loginEmailLimiter, mfaLimiter, resetLimiter, partnerResetLimiter };

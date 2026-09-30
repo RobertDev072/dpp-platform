@@ -1,11 +1,16 @@
 const express = require("express");
 const { z } = require("zod");
-const { requireAuth, requireRole } = require("../middleware/auth");
+const { requireAuth, requireRole, denyIfImpersonating, destroySessionsForUser } = require("../middleware/auth");
 const { validateBody } = require("../middleware/validate");
 const { createInviteSchema } = require("../schemas/invites.schema");
+const { partnerResetLimiter } = require("../middleware/rateLimit");
 const companiesRepo = require("../repositories/companies.repository");
 const plansRepo = require("../repositories/plans.repository");
 const invitesRepo = require("../repositories/invites.repository");
+const usersRepo = require("../repositories/users.repository");
+const graphClient = require("../services/graphClient");
+const { hashPassword } = require("../utils/password");
+const { generateTempPassword } = require("../utils/tempPassword");
 const { buildUsage, getLicenseUsage } = require("../services/license.service");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
@@ -151,6 +156,119 @@ router.get("/customers/:id/license", async (req, res, next) => {
     next(error);
   }
 });
+
+// Alleen de Company Admins van de eigen klant - bewust géén volledige
+// gebruikerslijst (Productmedewerkers blijven voor de partner onzichtbaar).
+router.get("/customers/:id/admins", async (req, res, next) => {
+  try {
+    const customer = await loadOwnedCustomer(req, next);
+    if (!customer) return;
+    const users = await usersRepo.listUsers({ companyId: customer.id });
+    res.json(
+      users
+        .filter((u) => u.role === "company_admin")
+        .map((u) => ({ id: u.id, email: u.email, first_name: u.first_name, last_name: u.last_name, status: u.status }))
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Wachtwoordreset van een Company Admin van een eigen klant. Zelfde mechaniek als
+// de bestaande owner/admin-reset: tijdelijk wachtwoord (eenmalig in dít antwoord,
+// nooit in DB/logs/audit), gedwongen wijziging bij eerstvolgende login, en alle
+// lopende sessies van het doelwit worden ingetrokken.
+router.post(
+  "/customers/:id/admins/:userId/reset-password",
+  denyIfImpersonating,
+  partnerResetLimiter,
+  async (req, res, next) => {
+    try {
+      const customer = await loadOwnedCustomer(req, next);
+      if (!customer) return;
+
+      const target = await usersRepo.getUserById(Number(req.params.userId));
+      // Buiten het klantbedrijf (owner, partner admins, andermans gebruikers) en
+      // verwijderde accounts: 404, we bevestigen niets.
+      if (!target || target.company_id !== customer.id || target.status === "deleted") {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+      if (target.role !== "company_admin") {
+        next(new HttpError(403, "Alleen wachtwoorden van Company Admins kunnen hier gereset worden"));
+        return;
+      }
+      // Een reset mag een geblokkeerd/gearchiveerd account nooit stilzwijgend
+      // reactiveren: eerst de status herstellen (dat kan alleen owner/admin).
+      if (target.status !== "active") {
+        next(new HttpError(409, "Dit account is niet actief; een wachtwoordreset heractiveert het niet"));
+        return;
+      }
+
+      const authInfo = await usersRepo.getUserAuthInfo(target.id);
+      const tempPassword = generateTempPassword();
+
+      if (authInfo?.entraObjectId) {
+        try {
+          await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
+        } catch (error) {
+          await logAudit({
+            companyId: customer.id,
+            userId: req.user.id,
+            action: "reset_password",
+            entityType: "User",
+            entityId: target.id,
+            metadata: { via: "partner", partnerCompanyId: req.user.companyId, targetEmail: target.email, result: "mislukt" }
+          });
+          if (/\(403\)/.test(error.message || "")) {
+            next(
+              new HttpError(
+                502,
+                "Entra weigert de wachtwoordreset: de Graph-app mist de permissie User-PasswordProfile.ReadWrite.All (met admin consent). Voeg die toe in Entra en probeer opnieuw."
+              )
+            );
+            return;
+          }
+          throw error;
+        }
+      } else if (authInfo?.hasLocalPassword) {
+        await usersRepo.updatePasswordHash(target.id, await hashPassword(tempPassword));
+      } else {
+        next(new HttpError(409, "Dit account heeft geen wachtwoordmethode; neem contact op met de beheerder"));
+        return;
+      }
+
+      await usersRepo.setMustChangePassword(target.id, true);
+
+      // Best-effort: het oude wachtwoord is al waardeloos; lopende sessies horen
+      // dat ook meteen te zijn.
+      try {
+        await destroySessionsForUser(target.id);
+      } catch (error) {
+        console.error("Sessies intrekken na partner-reset mislukt:", error.message);
+      }
+
+      await logAudit({
+        companyId: customer.id,
+        userId: req.user.id,
+        action: "reset_password",
+        entityType: "User",
+        entityId: target.id,
+        metadata: {
+          via: "partner",
+          partnerCompanyId: req.user.companyId,
+          targetEmail: target.email,
+          targetRole: target.role,
+          result: "geslaagd"
+        }
+      });
+
+      res.json({ tempPassword });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 router.get("/customers/:id/invites", async (req, res, next) => {
   try {

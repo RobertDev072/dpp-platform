@@ -40,6 +40,16 @@ async function destroySession(token) {
     .query("DELETE FROM dbo.Sessions WHERE token_hash = @tokenHash");
 }
 
+// Trekt álle actieve sessies van een gebruiker in (bijv. na een wachtwoordreset
+// door een beheerder: het oude wachtwoord én bestaande sessies zijn dan waardeloos).
+async function destroySessionsForUser(userId) {
+  const pool = await getPool();
+  await pool
+    .request()
+    .input("userId", sql.Int, userId)
+    .query("DELETE FROM dbo.Sessions WHERE user_id = @userId");
+}
+
 async function getUserForToken(token) {
   const pool = await getPool();
 
@@ -157,6 +167,7 @@ module.exports = {
   SESSION_COOKIE_NAME,
   createSession,
   destroySession,
+  destroySessionsForUser,
   setSessionCookie,
   clearSessionCookie,
   getUserForToken,
