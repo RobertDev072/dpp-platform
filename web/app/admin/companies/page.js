@@ -212,7 +212,7 @@ export default function CompaniesPage() {
   function handleExport() {
     downloadCsv(
       "veripasso-bedrijven.csv",
-      ["Naam", "Slug", "Type", "Partner", "Beheerder", "Plan", "Producten", "Gebruikers", "Status", "Laatst actief"],
+      ["Naam", "Slug", "Type", "Partner", "Beheerder", "Plan", "Producten", "Medewerkers", "Status", "Laatst actief"],
       filtered.map((company) => [
         company.name,
         company.slug,
@@ -232,7 +232,7 @@ export default function CompaniesPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Bedrijven</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Klantbedrijven</h1>
           <p className="mt-1 text-sm text-slate-500">
             Beheer organisaties, abonnementen en platformgebruik.
           </p>
@@ -349,7 +349,7 @@ export default function CompaniesPage() {
                     <th className="py-2 pr-3 font-medium">Beheerder</th>
                     <th className="py-2 pr-3 font-medium">Abonnement</th>
                     <th className="py-2 pr-3 font-medium">Producten</th>
-                    <th className="py-2 pr-3 font-medium">Gebruikers</th>
+                    <th className="py-2 pr-3 font-medium">Medewerkers</th>
                     <th className="py-2 pr-3 font-medium">Status</th>
                     <th className="py-2 pr-3 font-medium">Laatst actief</th>
                     <th className="py-2 pr-3 font-medium">Acties</th>
@@ -439,7 +439,7 @@ export default function CompaniesPage() {
                             <span className="text-slate-400">
                               Partner Admins beheer je via{" "}
                               <Link href="/admin/users" className="font-medium text-blue-600 hover:underline">
-                                Gebruikers
+                                Alle gebruikers
                               </Link>
                             </span>
                           ) : (
@@ -447,7 +447,7 @@ export default function CompaniesPage() {
                               href={`/admin/companies/${company.id}/uitnodigen`}
                               className="font-medium text-blue-600 hover:text-blue-700 hover:underline"
                             >
-                              Admin uitnodigen
+                              Beheerder uitnodigen
                             </Link>
                           )}
                           {company.status !== "active" && (

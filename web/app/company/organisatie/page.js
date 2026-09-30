@@ -80,7 +80,7 @@ export default function OrganisatiePage() {
       setUsers((prev) => insertSorted(prev, created));
       setCreatedInfo({ email: created.email, tempPassword: created.tempPassword || null });
       form.reset();
-      toast.success(`Gebruiker ${created.email} aangemaakt`);
+      toast.success(`Medewerker ${created.email} aangemaakt`);
     } catch (err) {
       const applied = form.applyServerErrors(err);
       if (!applied) {
@@ -114,7 +114,7 @@ export default function OrganisatiePage() {
   // Company admins verwijderen niet (dat kan alleen de platform owner): zij archiveren.
   async function handleArchive(user) {
     const sure = window.confirm(
-      `Weet je zeker dat je ${user.email} wilt archiveren? De gebruiker kan dan niet meer inloggen.`
+      `Weet je zeker dat je ${user.email} wilt archiveren? De medewerker kan dan niet meer inloggen.`
     );
     if (!sure) return;
     const ok = await patchUser(user, { status: "archived" });
@@ -145,7 +145,7 @@ export default function OrganisatiePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Organisatie</h1>
+      <h1 className="text-xl font-semibold text-slate-900">Medewerkers</h1>
 
       {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
       {actionError && <Card className="border-red-200 bg-red-50 text-red-700">{actionError}</Card>}
@@ -200,7 +200,7 @@ export default function OrganisatiePage() {
       )}
 
       <Card>
-        <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuwe gebruiker</h2>
+        <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuwe medewerker</h2>
         <form onSubmit={handleCreate} noValidate className="space-y-4">
           <FormError error={formError} />
 
@@ -247,7 +247,7 @@ export default function OrganisatiePage() {
           </div>
 
           <p className="text-xs text-slate-400">
-            De nieuwe gebruiker stelt het eigen wachtwoord in via Wachtwoord vergeten op de loginpagina.
+            De nieuwe medewerker stelt het eigen wachtwoord in via Wachtwoord vergeten op de loginpagina.
           </p>
 
           <SubmitButton loading={creating}>Aanmaken</SubmitButton>
@@ -255,7 +255,7 @@ export default function OrganisatiePage() {
       </Card>
 
       <Card>
-        <h2 className="mb-4 text-sm font-semibold text-slate-900">Gebruikers</h2>
+        <h2 className="mb-4 text-sm font-semibold text-slate-900">Medewerkers</h2>
 
         {loading ? (
           <div className="space-y-2">
@@ -265,8 +265,8 @@ export default function OrganisatiePage() {
           </div>
         ) : users.length === 0 ? (
           <EmptyState
-            title="Nog geen gebruikers"
-            description="Maak hierboven de eerste gebruiker aan voor je organisatie."
+            title="Nog geen medewerkers"
+            description="Maak hierboven de eerste medewerker aan voor je organisatie."
           />
         ) : (
           <div className="overflow-x-auto">

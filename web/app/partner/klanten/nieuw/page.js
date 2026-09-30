@@ -118,8 +118,8 @@ export default function NieuwKlantbedrijfPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/partner" className="text-sm text-blue-600 hover:underline">
-          ← Overzicht
+        <Link href="/partner/klanten" className="text-sm text-blue-600 hover:underline">
+          ← Mijn klanten
         </Link>
         <h1 className="text-xl font-semibold text-slate-900">Nieuw klantbedrijf</h1>
       </div>
@@ -198,7 +198,7 @@ export default function NieuwKlantbedrijfPage() {
           <Card className="max-w-xl border-emerald-200 bg-emerald-50 text-emerald-800">
             <p className="text-sm">
               Klantbedrijf <span className="font-medium">{createdCompany.name}</span> is aangemaakt.
-              Nodig hieronder direct de eerste Company Admin uit, of doe dit later via de
+              Nodig hieronder direct de eerste Bedrijfsbeheerder uit, of doe dit later via de
               detailpagina.
             </p>
           </Card>
@@ -206,7 +206,7 @@ export default function NieuwKlantbedrijfPage() {
           {!createdInvite ? (
             <Card className="max-w-xl">
               <h2 className="mb-4 text-sm font-semibold text-slate-900">
-                Eerste Company Admin uitnodigen
+                Eerste Bedrijfsbeheerder uitnodigen
               </h2>
               <CustomerInviteForm
                 customerId={createdCompany.id}
@@ -235,8 +235,8 @@ export default function NieuwKlantbedrijfPage() {
                   >
                     Naar klantdetail
                   </Link>
-                  <Link href="/partner" className="text-blue-600 hover:underline">
-                    Naar overzicht
+                  <Link href="/partner/klanten" className="text-blue-600 hover:underline">
+                    Naar Mijn klanten
                   </Link>
                 </div>
               </div>

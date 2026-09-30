@@ -11,8 +11,9 @@ import { usageSummary } from "@/components/license/licenseFormat";
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState(null);
-  // Aantal partnerbedrijven: client-side geteld uit de bedrijvenlijst (kind==='partner').
+  // Aantal partner-/klantbedrijven: client-side geteld uit de bedrijvenlijst (kind).
   const [partnerCount, setPartnerCount] = useState(null);
+  const [customerCount, setCustomerCount] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -23,6 +24,7 @@ export default function AdminDashboardPage() {
         if (!cancelled) {
           setStats(data);
           setPartnerCount(companies.filter((company) => company.kind === "partner").length);
+          setCustomerCount(companies.filter((company) => company.kind !== "partner").length);
         }
       })
       .catch((err) => {
@@ -40,7 +42,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
+      <h1 className="text-xl font-semibold text-slate-900">Overzicht</h1>
 
       {error && (
         <Card className="border-red-200 bg-red-50 text-red-700">{error}</Card>
@@ -49,7 +51,7 @@ export default function AdminDashboardPage() {
       {stats && (
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            <StatTile label="Bedrijven" value={stats.companies} />
+            <StatTile label="Klantbedrijven" value={customerCount ?? stats.companies} />
             <StatTile label="Partners" value={partnerCount ?? 0} />
             <StatTile label="Actieve bedrijven" value={stats.activeCompanies} />
             <StatTile label="Actieve gebruikers" value={stats.activeUsers} />
@@ -63,7 +65,7 @@ export default function AdminDashboardPage() {
           <Card>
             <div className="mb-3 flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-slate-900">
-                Licenties die aandacht vragen
+                Abonnementen die aandacht vragen
               </h2>
               <Link
                 href="/admin/licenses"
@@ -74,7 +76,7 @@ export default function AdminDashboardPage() {
             </div>
 
             {licenseAlerts.length === 0 ? (
-              <EmptyState title="Alle licenties zijn gezond ✔" />
+              <EmptyState title="Alle abonnementen zijn gezond ✔" />
             ) : (
               <ul className="divide-y divide-slate-100">
                 {licenseAlerts.map((alert) => (

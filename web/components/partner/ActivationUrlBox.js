@@ -27,7 +27,7 @@ export default function ActivationUrlBox({ activationUrl, email }) {
       <p className="mb-2 text-sm font-medium text-amber-800">
         Activatielink{email ? ` voor ${email}` : ""} — deze wordt maar één keer getoond en is
         daarna niet meer opvraagbaar. Kopieer de link nu en deel deze zelf veilig met de
-        Company Admin.
+        Bedrijfsbeheerder.
       </p>
       <div className="flex gap-2">
         <input

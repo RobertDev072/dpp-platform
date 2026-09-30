@@ -165,7 +165,7 @@ export default function InstellingenPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold text-slate-900">Instellingen</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Bedrijfsinstellingen</h1>
         <Skeleton className="h-48 w-full" />
       </div>
     );
@@ -174,7 +174,7 @@ export default function InstellingenPage() {
   if (loadError) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold text-slate-900">Instellingen</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Bedrijfsinstellingen</h1>
         <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>
       </div>
     );
@@ -183,11 +183,11 @@ export default function InstellingenPage() {
   if (me && me.role !== "company_admin") {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold text-slate-900">Instellingen</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Bedrijfsinstellingen</h1>
         <Card>
           <p className="text-sm text-slate-600">
-            Alleen Company Admins kunnen instellingen beheren. Vraag een beheerder van je
-            organisatie om wijzigingen door te voeren.
+            Alleen Bedrijfsbeheerders kunnen bedrijfsinstellingen beheren. Vraag een beheerder
+            van je organisatie om wijzigingen door te voeren.
           </p>
         </Card>
       </div>
@@ -198,7 +198,7 @@ export default function InstellingenPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Instellingen</h1>
+      <h1 className="text-xl font-semibold text-slate-900">Bedrijfsinstellingen</h1>
 
       <Card>
         <h2 className="mb-4 text-sm font-semibold text-slate-900">Bedrijfsprofiel</h2>

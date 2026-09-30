@@ -34,8 +34,8 @@ const PAGE_SIZE = 25;
 const ROLE_FILTER_OPTIONS = [
   { value: "platform_owner", label: "Platform Owner" },
   { value: "partner_admin", label: "Partner Admin" },
-  { value: "company_admin", label: "Company Admin" },
-  { value: "company_user", label: "Productmedewerker" }
+  { value: "company_admin", label: "Bedrijfsbeheerder" },
+  { value: "company_user", label: "Medewerker" }
 ];
 
 // Soft-verwijderde accounts komen niet meer terug uit de API, dus geen "Verwijderd"-filter.
@@ -444,7 +444,7 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Gebruikers</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Alle gebruikers</h1>
           <p className="mt-1 text-sm text-slate-500">
             Beheer platformtoegang, rollen en accountbeveiliging.
           </p>
@@ -473,20 +473,20 @@ export default function UsersPage() {
       ) : (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <AdminStatTile label="Totaal gebruikers" value={stats.total} />
-          <AdminStatTile label="Company admins" value={stats.admins} />
-          <AdminStatTile label="Productmedewerkers" value={stats.members} />
+          <AdminStatTile label="Bedrijfsbeheerders" value={stats.admins} />
+          <AdminStatTile label="Medewerkers" value={stats.members} />
           <AdminStatTile label="Geblokkeerd" value={stats.blocked} tone="danger" />
         </div>
       )}
 
       <Card className="border-blue-200 bg-blue-50 text-blue-800">
         <p className="text-sm">
-          Partner Admins maak je hieronder aan door een partnerbedrijf te kiezen. Company Admins
+          Partner Admins maak je hieronder aan door een partnerbedrijf te kiezen. Bedrijfsbeheerders
           nodig je bij voorkeur uit via de{" "}
           <Link href="/admin/companies" className="font-medium underline hover:no-underline">
-            bedrijvenpagina
+            klantbedrijvenpagina
           </Link>
-          ; medewerkers worden aangemaakt door hun eigen Company Admin.
+          ; medewerkers worden aangemaakt door hun eigen Bedrijfsbeheerder.
         </p>
       </Card>
 

@@ -233,7 +233,7 @@ function PlanCompanies({ planId }) {
         Verbruik geldt per bedrijf; limieten worden nooit gedeeld.
       </p>
       {companies.length === 0 ? (
-        <EmptyState title="Geen bedrijven op dit plan" />
+        <EmptyState title="Geen klantbedrijven op dit plan" />
       ) : (
         <ul className="space-y-2">
           {companies.map((company) => (
@@ -289,7 +289,7 @@ function CompanyLicenseEditForm({ company, plans, onSaved, onCancel }) {
         licenseStart: form.values.licenseStart || null,
         licenseEnd: form.values.licenseEnd || null
       });
-      toast.success("Licentie bijgewerkt");
+      toast.success("Abonnement bijgewerkt");
       await onSaved();
     } catch (err) {
       if (!form.applyServerErrors(err)) {
@@ -407,7 +407,7 @@ export default function LicensesPage() {
                   <th className="py-2 pr-3 font-medium">Naam</th>
                   <th className="py-2 pr-3 font-medium">Max. gebruikers</th>
                   <th className="py-2 pr-3 font-medium">Max. producten</th>
-                  <th className="py-2 pr-3 font-medium">Bedrijven op dit plan</th>
+                  <th className="py-2 pr-3 font-medium">Klantbedrijven op dit plan</th>
                   <th className="py-2 pr-3 font-medium">Acties</th>
                 </tr>
               </thead>
@@ -445,7 +445,7 @@ export default function LicensesPage() {
       {/* Sectie 2: licenties per bedrijf */}
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-slate-900">Licenties per bedrijf</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Abonnementen per klantbedrijf</h2>
           {!loading && plans.length > 0 && (
             <Select
               label="Filter op plan"
@@ -467,11 +467,11 @@ export default function LicensesPage() {
           </div>
         ) : filteredCompanies.length === 0 ? (
           <EmptyState
-            title={planFilter ? "Geen bedrijven op dit plan" : "Nog geen bedrijven"}
+            title={planFilter ? "Geen klantbedrijven op dit plan" : "Nog geen klantbedrijven"}
             description={
               planFilter
                 ? "Kies een ander plan of wis het filter."
-                : "Zodra er bedrijven zijn, zie je hier hun licentiegebruik."
+                : "Zodra er klantbedrijven zijn, zie je hier hun abonnementsgebruik."
             }
           />
         ) : (
@@ -551,7 +551,7 @@ function PlanRows({
               onClick={onToggleCompanies}
               aria-expanded={showCompanies}
             >
-              {showCompanies ? "Bedrijven verbergen" : "Bedrijven"}
+              {showCompanies ? "Klantbedrijven verbergen" : "Klantbedrijven"}
             </Button>
           </div>
         </td>

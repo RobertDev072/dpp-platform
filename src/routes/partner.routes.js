@@ -137,6 +137,26 @@ router.post("/customers", validateBody(createCustomerSchema), async (req, res, n
   }
 });
 
+// Partnerbreed uitnodigingenoverzicht: alle invites van de eigen klantbedrijven.
+router.get("/invites", async (req, res, next) => {
+  try {
+    res.json(await invitesRepo.listInvitesForPartner(req.user.companyId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Activiteiten: uitsluitend de eigen partneracties (klanten aangemaakt, invites,
+// wachtwoordresets) - nooit de audit-historie van klantbedrijven zelf.
+router.get("/activity", async (req, res, next) => {
+  try {
+    const auditLogsRepo = require("../repositories/auditLogs.repository");
+    res.json(await auditLogsRepo.listPartnerActivity(req.user.companyId));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Alleen plannen die de Platform Owner voor partners heeft opengesteld.
 router.get("/plans", async (req, res, next) => {
   try {

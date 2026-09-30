@@ -73,4 +73,27 @@ async function listAuditLogs({
   return { items, total, page, pageSize };
 }
 
-module.exports = { listAuditLogs };
+// Activiteitenoverzicht voor een partner: uitsluitend acties die door gebruikers
+// van het partnerbedrijf zelf zijn uitgevoerd (klant aangemaakt, invite verstuurd,
+// wachtwoord gereset). Bewust NIET de audit-logs van de klantbedrijven zelf -
+// wat klanten met hun producten/gebruikers doen blijft voor de partner onzichtbaar.
+async function listPartnerActivity(partnerCompanyId, { limit = 50 } = {}) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input("partnerCompanyId", sql.Int, partnerCompanyId)
+    .input("limit", sql.Int, Math.min(Math.max(limit, 1), 200))
+    .query(`
+      SELECT TOP (@limit)
+             a.id, a.company_id, a.action, a.entity_type, a.entity_id, a.metadata, a.timestamp,
+             u.email AS actor_email,
+             c.name AS company_name
+      FROM dbo.AuditLogs a
+      JOIN dbo.Users u ON u.id = a.user_id AND u.company_id = @partnerCompanyId
+      LEFT JOIN dbo.Companies c ON c.id = a.company_id
+      ORDER BY a.timestamp DESC, a.id DESC
+    `);
+  return result.recordset;
+}
+
+module.exports = { listAuditLogs, listPartnerActivity };

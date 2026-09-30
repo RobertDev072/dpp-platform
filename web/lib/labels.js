@@ -4,13 +4,13 @@
 export const ROLE_LABELS = {
   platform_owner: "Platform Owner",
   partner_admin: "Partner Admin",
-  company_admin: "Company Admin",
-  company_user: "Productmedewerker"
+  company_admin: "Bedrijfsbeheerder",
+  company_user: "Medewerker"
 };
 
 export const ASSIGNABLE_ROLE_OPTIONS = [
-  { value: "company_admin", label: "Company Admin" },
-  { value: "company_user", label: "Productmedewerker" }
+  { value: "company_admin", label: "Bedrijfsbeheerder" },
+  { value: "company_user", label: "Medewerker" }
 ];
 
 // Partner Admins horen exclusief bij partnerbedrijven (en omgekeerd): de

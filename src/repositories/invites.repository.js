@@ -51,6 +51,24 @@ async function listInvitesForCompany(companyId) {
   return result.recordset;
 }
 
+// Alle uitnodigingen van de klantbedrijven van één partner (voor het
+// partnerbrede Uitnodigingen-overzicht), inclusief de klantnaam.
+async function listInvitesForPartner(partnerId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input("partnerId", sql.Int, partnerId)
+    .query(`
+      SELECT i.id, i.company_id, c.name AS company_name, i.email, i.first_name, i.last_name,
+             i.status, i.expires_at, i.accepted_at, i.created_at
+      FROM dbo.CompanyAdminInvites i
+      JOIN dbo.Companies c ON c.id = i.company_id
+      WHERE c.partner_id = @partnerId
+      ORDER BY i.created_at DESC
+    `);
+  return result.recordset;
+}
+
 async function getInviteById(id) {
   const pool = await getPool();
   const result = await pool
@@ -120,6 +138,7 @@ module.exports = {
   countPendingInvites,
   createInvite,
   listInvitesForCompany,
+  listInvitesForPartner,
   getInviteById,
   getInviteByToken,
   markInviteAccepted,

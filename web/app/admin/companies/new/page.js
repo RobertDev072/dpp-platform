@@ -117,7 +117,7 @@ export default function NewCompanyPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <Link href="/admin/companies" className="text-sm text-blue-600 hover:underline">
-          ← Bedrijven
+          ← Klantbedrijven
         </Link>
         <h1 className="text-xl font-semibold text-slate-900">Nieuw bedrijf</h1>
       </div>

@@ -96,6 +96,23 @@ const NAV_ICONS = {
       <circle cx="10" cy="6.5" r="3" />
       <path d="M4 17c.7-3.2 3-5 6-5s5.3 1.8 6 5" />
     </>
+  ),
+  mail: (
+    <>
+      <rect x="2.5" y="4.5" width="15" height="11" rx="1.5" />
+      <path d="m3.5 6.5 6.5 5 6.5-5" />
+    </>
+  ),
+  pulse: (
+    <>
+      <path d="M2.5 10.5h3l2-5 3 9 2-5.5 1 1.5h4" />
+    </>
+  ),
+  help: (
+    <>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M7.8 7.7A2.3 2.3 0 0 1 12.3 8c0 1.5-2.3 1.8-2.3 3.2M10 14.2h.01" />
+    </>
   )
 };
 
@@ -127,7 +144,9 @@ const EXTRA_SEGMENT_LABELS = {
   new: "Nieuw",
   nieuw: "Nieuw",
   uitnodigen: "Uitnodigen",
-  profiel: "Profiel"
+  profiel: "Profiel",
+  products: "Producten",
+  rapportages: "Rapportages"
 };
 
 function looksLikeId(segment) {
@@ -330,29 +349,6 @@ export default function AppShell({ menu, children }) {
         </nav>
 
         <div className="space-y-1 border-t border-slate-800 px-3 py-3">
-          <button
-            type="button"
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white"
-            title="Help & support (binnenkort beschikbaar)"
-          >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="shrink-0"
-              aria-hidden="true"
-            >
-              <circle cx="10" cy="10" r="7.5" />
-              <path d="M7.8 7.7A2.3 2.3 0 0 1 12.3 8c0 1.5-2.3 1.8-2.3 3.2M10 14.2h.01" />
-            </svg>
-            Help & support
-          </button>
-
           <Link
             href={profileHref}
             className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-800"

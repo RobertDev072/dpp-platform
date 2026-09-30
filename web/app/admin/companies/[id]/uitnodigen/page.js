@@ -108,10 +108,10 @@ export default function InviteCompanyAdminPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <Link href="/admin/companies" className="text-sm text-blue-600 hover:underline">
-          ← Bedrijven
+          ← Klantbedrijven
         </Link>
         <h1 className="text-xl font-semibold text-slate-900">
-          Company Admin uitnodigen{company ? ` — ${company.name}` : ""}
+          Bedrijfsbeheerder uitnodigen{company ? ` — ${company.name}` : ""}
         </h1>
       </div>
 
@@ -171,7 +171,7 @@ export default function InviteCompanyAdminPage() {
               {activationUrl && (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
                   <p className="mb-2 text-sm font-medium text-amber-800">
-                    Activatielink (wordt maar één keer getoond, deel deze zelf met de Company Admin):
+                    Activatielink (wordt maar één keer getoond, deel deze zelf met de Bedrijfsbeheerder):
                   </p>
                   <input
                     readOnly

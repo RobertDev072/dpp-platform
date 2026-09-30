@@ -89,6 +89,17 @@ export default function QrCodesPage() {
                   <p className="mt-0.5 truncate text-xs text-slate-500">
                     {product.sku ? `SKU: ${product.sku}` : "Geen SKU"}
                   </p>
+                  {product.public_id && (
+                    <a
+                      href={`/p/${product.public_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1 block truncate text-xs text-emerald-700 hover:text-emerald-800 hover:underline"
+                      title={`${window.location.origin}/p/${product.public_id}`}
+                    >
+                      {`${window.location.origin}/p/${product.public_id}`}
+                    </a>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
                     <a
                       href={`/api/products/${product.id}/qr.png`}

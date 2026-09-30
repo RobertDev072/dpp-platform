@@ -159,6 +159,25 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
     assert.equal(revoke.status, 200);
   });
 
+  await t.test("partnerbreed uitnodigingen- en activiteitenoverzicht is per partner gescoped", async () => {
+    const eigen = await request(baseUrl, "GET", "/api/partner/invites", { cookie: partner1Cookie });
+    assert.equal(eigen.status, 200);
+    assert.ok(eigen.data.some((i) => i.company_id === klantCo));
+    assert.ok(eigen.data.every((i) => typeof i.company_name === "string"));
+
+    const ander = await request(baseUrl, "GET", "/api/partner/invites", { cookie: partner2Cookie });
+    assert.equal(ander.status, 200);
+    assert.ok(!ander.data.some((i) => i.company_id === klantCo));
+
+    const activiteit = await request(baseUrl, "GET", "/api/partner/activity", { cookie: partner1Cookie });
+    assert.equal(activiteit.status, 200);
+    assert.ok(activiteit.data.some((a) => a.action === "invite_created"));
+    // Alleen eigen partneracties: partner 2 heeft hier niets gedaan.
+    const andermans = await request(baseUrl, "GET", "/api/partner/activity", { cookie: partner2Cookie });
+    assert.equal(andermans.status, 200);
+    assert.ok(!andermans.data.some((a) => a.company_id === klantCo));
+  });
+
   // --- Partner heeft nergens anders toegang ---
   await t.test("partner_admin krijgt 403 op producten, gebruikers, companybeheer en adminroutes", async () => {
     for (const [method, path] of [

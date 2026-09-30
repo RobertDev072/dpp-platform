@@ -87,7 +87,7 @@ export default function PartnersPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <AdminStatTile label="Partnerbedrijven" value={partners.length} />
+          <AdminStatTile label="Partners" value={partners.length} />
           <AdminStatTile label="Klanten via partners" value={totalCustomers} />
         </div>
       )}

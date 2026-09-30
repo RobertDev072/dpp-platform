@@ -5,7 +5,7 @@ import useInView from "./useInView";
 import { VeriPassoIcon } from "./VeriPassoLogo";
 
 const STATS = [
-  { label: "Bedrijven", value: 9 },
+  { label: "Klantbedrijven", value: 9 },
   { label: "Actieve bedrijven", value: 9 },
   { label: "Actieve gebruikers", value: 17 },
   { label: "Producten (concept)", value: 10 },
@@ -15,7 +15,7 @@ const STATS = [
   { label: "Openstaande uitnodigingen", value: 0 }
 ];
 
-const NAV_ITEMS = ["Dashboard", "Bedrijven", "Gebruikers", "Producten", "Licenties", "Audit log"];
+const NAV_ITEMS = ["Overzicht", "Partners", "Klantbedrijven", "Alle gebruikers", "Abonnementen", "Auditlog"];
 
 const BLUE_LINE = "M0,70 C40,20 80,20 120,50 C160,80 200,90 240,55 C280,20 320,15 360,45 C400,75 440,85 480,55 C520,25 560,20 600,50 C640,80 660,75 700,60";
 const GREEN_LINE = "M0,90 C40,80 80,95 120,85 C160,75 200,60 240,70 C280,80 320,90 360,75 C400,60 440,55 480,68 C520,80 560,85 600,70 C640,58 660,55 700,65";
@@ -85,7 +85,7 @@ export default function DashboardPreview() {
 
         <div className="flex-1 p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-white">Dashboard</h4>
+            <h4 className="text-sm font-semibold text-white">Overzicht</h4>
             <span className="text-[11px] text-slate-500">naam@uwbedrijf.nl</span>
           </div>
 

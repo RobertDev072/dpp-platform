@@ -28,7 +28,7 @@ export default function TempPasswordBox({ tempPassword, email, onClose }) {
         <p className="mb-2 text-sm font-medium text-amber-800">
           Tijdelijk wachtwoord{email ? ` voor ${email}` : ""} — dit wordt maar één keer getoond
           en is daarna niet meer opvraagbaar. Kopieer het nu en deel het zelf veilig met de
-          Company Admin; bij de eerstvolgende login moet die verplicht een nieuw wachtwoord
+          Bedrijfsbeheerder; bij de eerstvolgende login moet die verplicht een nieuw wachtwoord
           instellen.
         </p>
         {onClose && (

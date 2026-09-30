@@ -19,22 +19,22 @@ function LicenseWarning({ license }) {
     return (
       <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
         {expired
-          ? "Licentie verlopen — nieuwe gebruikers/producten aanmaken is geblokkeerd. Neem contact op met de beheerder."
-          : "Limiet bereikt — nieuwe gebruikers/producten aanmaken is geblokkeerd. Neem contact op met de beheerder."}
+          ? "Abonnement verlopen — nieuwe medewerkers/producten aanmaken is geblokkeerd. Neem contact op met de beheerder."
+          : "Limiet bereikt — nieuwe medewerkers/producten aanmaken is geblokkeerd. Neem contact op met de beheerder."}
       </div>
     );
   }
   if (maxPct >= 90) {
     return (
       <div role="alert" className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700">
-        Je nadert de limiet van je licentie.
+        Je nadert de limiet van je abonnement.
       </div>
     );
   }
   if (maxPct >= 80) {
     return (
       <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-        Je nadert de limiet van je licentie.
+        Je nadert de limiet van je abonnement.
       </div>
     );
   }
@@ -70,7 +70,7 @@ export default function CompanyDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
+      <h1 className="text-xl font-semibold text-slate-900">Overzicht</h1>
 
       {error && (
         <Card className="border-red-200 bg-red-50 text-red-700">{error}</Card>
@@ -85,7 +85,7 @@ export default function CompanyDashboardPage() {
           {license && (
             <Card>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-slate-900">Licentie</h2>
+                <h2 className="text-sm font-semibold text-slate-900">Abonnement</h2>
                 <LicenseStatusBadge status={license.status} />
               </div>
               <div className="mt-1 text-sm text-slate-600">

@@ -122,8 +122,8 @@ export default function KlantDetailPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/partner" className="text-sm text-blue-600 hover:underline">
-          ← Overzicht
+        <Link href="/partner/klanten" className="text-sm text-blue-600 hover:underline">
+          ← Mijn klanten
         </Link>
         <h1 className="text-xl font-semibold text-slate-900">
           Klantbedrijf{license ? ` — ${license.name}` : ""}
@@ -176,11 +176,11 @@ export default function KlantDetailPage() {
             </Card>
 
             <Card>
-              <h2 className="mb-4 text-sm font-semibold text-slate-900">Company Admins</h2>
+              <h2 className="mb-4 text-sm font-semibold text-slate-900">Bedrijfsbeheerders</h2>
               {admins.length === 0 ? (
                 <EmptyState
-                  title="Nog geen Company Admins"
-                  description="Zodra een uitnodiging geaccepteerd is, verschijnt de Company Admin hier."
+                  title="Nog geen Bedrijfsbeheerders"
+                  description="Zodra een uitnodiging geaccepteerd is, verschijnt de Bedrijfsbeheerder hier."
                 />
               ) : (
                 <div className="overflow-x-auto">
@@ -258,7 +258,7 @@ export default function KlantDetailPage() {
               {invites.length === 0 ? (
                 <EmptyState
                   title="Nog geen uitnodigingen"
-                  description="Maak hierboven de eerste uitnodiging aan voor de Company Admin van dit klantbedrijf."
+                  description="Maak hierboven de eerste uitnodiging aan voor de Bedrijfsbeheerder van dit klantbedrijf."
                 />
               ) : (
                 <div className="overflow-x-auto">
