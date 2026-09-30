@@ -232,20 +232,9 @@ export default function LoginPage() {
           </form>
         )}
 
-        {!continuationToken && !mustChangePassword && (
-          <>
-            <p className="my-4 text-center text-sm text-slate-400">of</p>
-            <a
-              href="/auth/login"
-              className="block w-full rounded-lg border border-slate-300 px-4 py-2 text-center text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-            >
-              Inloggen met bedrijfsaccount
-            </a>
-            <p className="mt-2 text-center text-xs text-slate-400">
-              Voor accounts die door een beheerder zijn aangemaakt — geen eigen Microsoft-account nodig.
-            </p>
-          </>
-        )}
+        {/* De oude "Inloggen met bedrijfsaccount"-knop (Microsofts gehoste pagina,
+            inclusief diens "Account aanmaken") is bewust verwijderd: accounts
+            ontstaan uitsluitend via uitnodiging of een beheerder. */}
       </div>
     </div>
   );

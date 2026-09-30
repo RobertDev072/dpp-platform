@@ -136,6 +136,38 @@ router.post(
   }
 });
 
+// Licentie-overzicht voor de Platform Owner: elk bedrijf met zijn eigen plan,
+// geldigheid, verbruik (gebruikers/producten met percentages) en status. De
+// tellingen komen per bedrijf uit één query; er wordt nooit iets over tenants
+// heen opgeteld.
+router.get("/licenses/overview", requireAuth, requireRole(...PLATFORM_OWNER_ROLES), async (req, res, next) => {
+  try {
+    const companiesRepo = require("../repositories/companies.repository");
+    const { buildUsage } = require("../services/license.service");
+    const rows = await companiesRepo.listCompaniesWithStats();
+    res.json(
+      rows.map((row) => ({
+        companyId: row.id,
+        name: row.name,
+        slug: row.slug,
+        companyStatus: row.status,
+        planId: row.plan_id,
+        ...buildUsage({
+          plan: row.plan_id
+            ? { id: row.plan_id, name: row.plan_name, max_users: row.max_users, max_products: row.max_products }
+            : null,
+          licenseStart: row.license_start,
+          licenseEnd: row.license_end,
+          usersUsed: row.active_user_count,
+          productsUsed: row.product_count
+        })
+      }))
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Diagnose voor de Platform Owner: welke Entra-configuratie draait er op deze
 // omgeving. Alleen niet-geheime identifiers (tenant/client-id's); secrets worden
 // uitsluitend als aanwezig/afwezig gerapporteerd.

@@ -70,6 +70,20 @@ router.patch("/", requireRole("company_admin"), requireOwnCompany, validateBody(
   }
 });
 
+// Licentiegebruik van het eigen bedrijf (voor de licentiekaart op het dashboard).
+router.get("/license", requireRole("company_admin", "company_user"), requireOwnCompany, async (req, res, next) => {
+  try {
+    const usage = await require("../services/license.service").getLicenseUsage(req.user.companyId);
+    if (!usage) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    res.json(usage);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/documents", requireRole("company_admin", "company_user"), requireOwnCompany, async (req, res, next) => {
   try {
     res.json(await documentsRepo.listDocumentsForCompany(req.user.companyId));

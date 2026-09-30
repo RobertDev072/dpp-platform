@@ -36,6 +36,32 @@ router.post("/", validateBody(createPlanSchema), async (req, res, next) => {
   }
 });
 
+// Welke bedrijven gebruiken dit plan - elk met zijn EIGEN verbruik en status
+// (limieten worden per bedrijf toegepast, nooit gedeeld of opgeteld).
+router.get("/:id/companies", async (req, res, next) => {
+  try {
+    const planId = Number(req.params.id);
+    const companiesRepo = require("../repositories/companies.repository");
+    const { buildUsage } = require("../services/license.service");
+    const rows = (await companiesRepo.listCompaniesWithStats()).filter((row) => row.plan_id === planId);
+    res.json(
+      rows.map((row) => ({
+        companyId: row.id,
+        name: row.name,
+        ...buildUsage({
+          plan: { id: row.plan_id, name: row.plan_name, max_users: row.max_users, max_products: row.max_products },
+          licenseStart: row.license_start,
+          licenseEnd: row.license_end,
+          usersUsed: row.active_user_count,
+          productsUsed: row.product_count
+        })
+      }))
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const plan = await plansRepo.getPlanById(Number(req.params.id));

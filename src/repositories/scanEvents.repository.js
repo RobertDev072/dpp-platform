@@ -13,4 +13,18 @@ async function recordScanEvent({ productId, userAgent, referrer }) {
     `);
 }
 
-module.exports = { recordScanEvent };
+async function countScanEvents({ companyId } = {}) {
+  const pool = await getPool();
+  const request = pool.request();
+  let join = "";
+  let where = "";
+  if (companyId !== undefined) {
+    request.input("companyId", sql.Int, companyId);
+    join = "JOIN dbo.Products p ON p.id = s.product_id";
+    where = "WHERE p.company_id = @companyId";
+  }
+  const result = await request.query(`SELECT COUNT(*) AS n FROM dbo.ScanEvents s ${join} ${where}`);
+  return result.recordset[0].n;
+}
+
+module.exports = { recordScanEvent, countScanEvents };

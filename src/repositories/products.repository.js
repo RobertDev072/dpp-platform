@@ -151,6 +151,17 @@ async function getProductStats({ companyId } = {}) {
   };
 }
 
+// Aantal producten dat meetelt voor de licentielimiet (gearchiveerde niet: die
+// bestaan alleen nog voor QR-continuïteit en audit-historie).
+async function countProductsForCompany(companyId) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input("companyId", sql.Int, companyId)
+    .query("SELECT COUNT(*) AS n FROM dbo.Products WHERE company_id = @companyId AND status <> 'archived'");
+  return result.recordset[0].n;
+}
+
 // Onderscheiden categorielabels voor het filter in het productoverzicht.
 async function listCategories({ companyId } = {}) {
   const pool = await getPool();
@@ -350,6 +361,7 @@ module.exports = {
   listProducts,
   listCategories,
   getProductStats,
+  countProductsForCompany,
   getProductById,
   createProduct,
   updateProduct,

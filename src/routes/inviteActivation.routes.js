@@ -54,6 +54,9 @@ router.post("/:token/accept", validateBody(acceptInviteSchema), async (req, res,
       return;
     }
 
+    // Verlopen licentie of volle seat-limiet blokkeert ook activatie via uitnodiging.
+    await require("../services/license.service").assertCanCreate(invite.company_id, "user");
+
     const maxUsers = await plansRepo.getMaxUsersForCompany(invite.company_id);
 
     let passwordHash = null;

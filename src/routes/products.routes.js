@@ -105,6 +105,10 @@ router.get("/categories", requireRole(...ALL_ROLES), async (req, res, next) => {
 
 router.post("/", requireRole(...EDITOR_ROLES), validateBody(createProductSchema), async (req, res, next) => {
   try {
+    // Licentie: verlopen licentie of bereikte productlimiet blokkeert aanmaken
+    // (per bedrijf; zie license.service.js).
+    await require("../services/license.service").assertCanCreate(req.user.companyId, "product");
+
     const product = await productsRepo.createProduct({
       ...req.body,
       companyId: req.user.companyId,

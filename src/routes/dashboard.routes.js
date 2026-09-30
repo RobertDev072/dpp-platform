@@ -10,12 +10,37 @@ const router = express.Router();
 router.get("/stats", requireAuth, async (req, res, next) => {
   try {
     if (require("../utils/roles").isPlatformOwner(req.user.role)) {
-      const [companies, activeCompanies, activeUsers, products] = await Promise.all([
-        companiesRepo.countCompanies(),
-        companiesRepo.countActiveCompanies(),
-        usersRepo.countAllActiveUsers(),
-        productsRepo.countProductsByStatus()
-      ]);
+      const scanEventsRepo = require("../repositories/scanEvents.repository");
+      const invitesRepo = require("../repositories/invites.repository");
+      const { buildUsage, STATUS } = require("../services/license.service");
+
+      const [companies, activeCompanies, activeUsers, products, qrScans, pendingInvites, companyRows] =
+        await Promise.all([
+          companiesRepo.countCompanies(),
+          companiesRepo.countActiveCompanies(),
+          usersRepo.countAllActiveUsers(),
+          productsRepo.countProductsByStatus(),
+          scanEventsRepo.countScanEvents(),
+          invitesRepo.countPendingInvites(),
+          companiesRepo.listCompaniesWithStats()
+        ]);
+
+      // Licenties die aandacht vragen: alles behalve "Actief" (per bedrijf berekend).
+      const licenseAlerts = companyRows
+        .map((row) => ({
+          companyId: row.id,
+          name: row.name,
+          ...buildUsage({
+            plan: row.plan_id
+              ? { id: row.plan_id, name: row.plan_name, max_users: row.max_users, max_products: row.max_products }
+              : null,
+            licenseStart: row.license_start,
+            licenseEnd: row.license_end,
+            usersUsed: row.active_user_count,
+            productsUsed: row.product_count
+          })
+        }))
+        .filter((entry) => entry.status !== STATUS.ACTIVE);
 
       res.json({
         scope: "platform",
@@ -23,8 +48,9 @@ router.get("/stats", requireAuth, async (req, res, next) => {
         activeCompanies,
         activeUsers,
         products,
-        qrScans: 0,
-        pendingInvites: 0
+        qrScans,
+        pendingInvites,
+        licenseAlerts
       });
       return;
     }
@@ -37,15 +63,20 @@ router.get("/stats", requireAuth, async (req, res, next) => {
     ]);
 
     const plan = company && company.plan_id ? await plansRepo.getPlanById(company.plan_id) : null;
+    const [license, qrScans] = await Promise.all([
+      require("../services/license.service").getLicenseUsage(req.user.companyId),
+      require("../repositories/scanEvents.repository").countScanEvents({ companyId: req.user.companyId })
+    ]);
 
     res.json({
       scope: "company",
       activeUsers,
       products,
-      qrScans: 0,
+      qrScans,
       companyName: company ? company.name : null,
       planName: plan ? plan.name : null,
-      maxUsers
+      maxUsers,
+      license
     });
   } catch (error) {
     next(error);

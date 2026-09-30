@@ -108,7 +108,16 @@ async function revokeInvite(id) {
   return result.recordset[0] || null;
 }
 
+async function countPendingInvites() {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .query("SELECT COUNT(*) AS n FROM dbo.CompanyAdminInvites WHERE status = 'pending' AND expires_at > SYSUTCDATETIME()");
+  return result.recordset[0].n;
+}
+
 module.exports = {
+  countPendingInvites,
   createInvite,
   listInvitesForCompany,
   getInviteById,

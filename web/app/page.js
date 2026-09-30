@@ -213,12 +213,12 @@ export default function HomePage() {
                 verifieerbaar paspoort.
               </p>
               <div className="mt-8 flex flex-wrap gap-4">
-                <Link
-                  href="/login"
+                <a
+                  href="mailto:rb085@icloud.com?subject=Demo%20VeriPasso%20aanvragen"
                   className="rounded-lg bg-[#1476FF] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#0f5fd1]"
                 >
                   Demo aanvragen →
-                </Link>
+                </a>
                 <Link
                   href="/login"
                   className="rounded-lg bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100"

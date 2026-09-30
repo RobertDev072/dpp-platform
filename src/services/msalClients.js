@@ -56,4 +56,6 @@ async function getDaemonConfidentialClient() {
   return daemonClient;
 }
 
-module.exports = { getWebConfidentialClient, getDaemonConfidentialClient };
+// getWebConfidentialClient is verwijderd samen met de oude browser-redirect-flow
+// (entraAuth.routes.js): login loopt volledig via Native Authentication.
+module.exports = { getDaemonConfidentialClient };

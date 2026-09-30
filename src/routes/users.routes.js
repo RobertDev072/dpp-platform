@@ -12,6 +12,7 @@ const { HttpError } = require("../middleware/errorHandler");
 const { isEntraConfigured } = require("../config/entra");
 const graphClient = require("../services/graphClient");
 const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
+const licenseService = require("../services/license.service");
 
 const router = express.Router();
 
@@ -52,15 +53,11 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
 
     const maxUsers = body.companyId != null ? await plansRepo.getMaxUsersForCompany(body.companyId) : null;
 
-    // Snelle pre-check vóór een eventuele Graph-call: voorkomt in het gangbare geval dat
-    // er een Entra-account wordt aangemaakt terwijl de seat-limit al bereikt is. De
-    // race-veilige, autoritatieve check zit in createUserWithSeatLimit hieronder.
-    if (maxUsers != null) {
-      const currentCount = await usersRepo.countActiveUsers(body.companyId);
-      if (currentCount >= maxUsers) {
-        next(new HttpError(409, "Licentielimiet bereikt voor dit bedrijf", undefined, "LICENSE_LIMIT_REACHED"));
-        return;
-      }
+    // Licentiecheck vóór een eventuele Graph-call: dekt zowel een verlopen licentie
+    // als de seat-limiet (per bedrijf). De race-veilige, autoritatieve seat-check
+    // zit daarnaast in createUserWithSeatLimit hieronder.
+    if (body.companyId != null) {
+      await licenseService.assertCanCreate(body.companyId, "user");
     }
 
     let passwordHash = null;
@@ -168,6 +165,35 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
 
     if (req.user.role === "company_admin") {
       assertCompanyAccess(req.user, existing.company_id);
+    }
+
+    const wijzigtRolOfStatus = req.body.role !== undefined || req.body.status !== undefined;
+
+    // Niemand wijzigt zijn eigen rol of status (naam bewerken mag wel).
+    if (wijzigtRolOfStatus && req.user.id === existing.id) {
+      next(new HttpError(403, "Je kunt je eigen rol of status niet wijzigen"));
+      return;
+    }
+
+    // Company Admins beheren elkaar niet: rol-/statuswijzigingen op een andere
+    // Company Admin zijn voorbehouden aan de Platform Owner. Promoveren van een
+    // Productmedewerker naar Company Admin mag wél (doelwit is dan company_user).
+    if (wijzigtRolOfStatus && req.user.role === "company_admin" && existing.role === "company_admin") {
+      next(new HttpError(403, "Alleen de Platform Owner beheert Company Admin-accounts"));
+      return;
+    }
+
+    // Reactiveren telt mee voor de seat-limiet: anders is archiveren + herstellen
+    // een gratis omweg om boven het licentiemaximum uit te komen.
+    if (req.body.status === "active" && existing.status !== "active" && existing.company_id != null) {
+      const maxUsers = await plansRepo.getMaxUsersForCompany(existing.company_id);
+      if (maxUsers != null) {
+        const activeCount = await usersRepo.countActiveUsers(existing.company_id);
+        if (activeCount >= maxUsers) {
+          next(new HttpError(409, "Licentielimiet bereikt voor dit bedrijf", undefined, "LICENSE_LIMIT_REACHED"));
+          return;
+        }
+      }
     }
 
     // Er moet altijd minimaal één actieve Company Admin per bedrijf overblijven.
