@@ -1,9 +1,7 @@
 const crypto = require("crypto");
 const { getPool, sql } = require("../config/db");
 
-// 24 uur: lang genoeg om de mail te lezen, kort genoeg dat een rondslingerende
-// link geen blijvend risico is. Verlopen? Gewoon een nieuwe uitnodiging aanmaken.
-const INVITE_DURATION_MS = 24 * 60 * 60 * 1000;
+const INVITE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");

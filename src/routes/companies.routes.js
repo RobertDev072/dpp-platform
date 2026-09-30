@@ -8,7 +8,6 @@ const invitesRepo = require("../repositories/invites.repository");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const { getAppBaseUrl } = require("../utils/baseUrl");
-const mail = require("../services/mail.service");
 
 const router = express.Router();
 
@@ -128,27 +127,7 @@ router.post("/:id/invites", validateBody(createInviteSchema), async (req, res, n
 
     // Token zit alleen in dít antwoord — wordt nergens anders (log, DB) in plaintext bewaard.
     const activationUrl = `${getAppBaseUrl(req)}/activate?token=${token}`;
-
-    // Automatisch mailen zodra SMTP is geconfigureerd; de link blijft in de respons
-    // als vangnet (mail kwijt, spamfilter, of SMTP nog niet ingesteld).
-    const mailContent = mail.inviteEmail({
-      companyName: company.name,
-      activationUrl,
-      expiresAt: invite.expires_at
-    });
-    const mailResult = await mail.sendMail({ to: req.body.email, ...mailContent });
-    if (mailResult.sent) {
-      await logAudit({
-        companyId,
-        userId: req.user.id,
-        action: "invite_email_sent",
-        entityType: "CompanyAdminInvite",
-        entityId: invite.id,
-        metadata: { to: req.body.email }
-      });
-    }
-
-    res.status(201).json({ ...invite, activationUrl, emailSent: mailResult.sent, emailReason: mailResult.reason || null });
+    res.status(201).json({ ...invite, activationUrl });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
       next(new HttpError(409, "Er is al een openstaande uitnodiging voor dit e-mailadres"));
