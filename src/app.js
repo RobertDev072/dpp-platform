@@ -19,6 +19,34 @@ const app = express();
 // (waardoor rate-limiting per bezoeker niet zou werken).
 app.set("trust proxy", 1);
 
+// Publieke healthcheck voor Azure (App Service Health check-feature): bewust
+// alleen "OK", geen enkel infrastructuurdetail. Gedetailleerde health zit
+// owner-only achter /api/admin/system/health.
+app.get("/api/health", (req, res) => res.status(200).send("OK"));
+
+// Request-telemetrie (monitoring): alleen tellers en duur, nooit bodies/headers/
+// query strings. Route wordt tot een patroon genormaliseerd (id's/tokens eruit).
+const requestMetrics = require("./monitoring/requestMetrics");
+app.use((req, res, next) => {
+  if (req.path === "/api/health") {
+    next();
+    return;
+  }
+  const start = process.hrtime.bigint();
+  res.on("finish", () => {
+    requestMetrics.record({
+      scope: "api",
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      durationMs: Number(process.hrtime.bigint() - start) / 1e6,
+      errorMessage: res.locals.monitoringErrorMessage,
+      errorCode: res.locals.monitoringErrorCode
+    });
+  });
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser(process.env.COOKIE_SECRET));
@@ -33,6 +61,7 @@ app.use("/api/password-reset", passwordResetRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public/products", publicProductsRoutes);
 app.use("/api/admin", require("./routes/admin.routes"));
+app.use("/api/admin/system", require("./routes/systemMonitoring.routes"));
 app.use("/api/partner", require("./routes/partner.routes"));
 app.use("/api/audit", require("./routes/audit.routes"));
 app.use("/api/company", require("./routes/company.routes"));

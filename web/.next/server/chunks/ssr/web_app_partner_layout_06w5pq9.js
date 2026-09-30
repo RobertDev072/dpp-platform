@@ -1,0 +1,3 @@
+module.exports=[12436,a=>{"use strict";a.s(["default",()=>b]);let b=(0,a.i(11857).registerClientReference)(function(){throw Error("Attempted to call the default export of [project]/web/app/partner/layout.js from the server, but it's on the client. It's not possible to invoke a client function from the server, it can only be rendered as a Component or passed to props of a Client Component.")},"[project]/web/app/partner/layout.js","default")},95504,a=>{"use strict";var b=a.i(12436);a.n(b)},78896,function(a){a.n(a.i(95504))}];
+
+//# sourceMappingURL=web_app_partner_layout_06w5pq9.js.map

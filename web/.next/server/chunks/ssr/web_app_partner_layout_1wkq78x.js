@@ -1,0 +1,3 @@
+module.exports=[80855,a=>{"use strict";var b=a.i(87924),c=a.i(72131),d=a.i(9532),e=a.i(71915),f=a.i(7591);a.s(["default",0,function({children:a}){let[g,h]=(0,c.useState)(!1);return((0,c.useEffect)(()=>{let a=!1;return f.api.get("/api/auth/me").then(b=>{if(!a){if("partner_admin"!==b.role){window.location.href=(0,e.homeHrefForRole)(b.role);return}h(!0)}}).catch(()=>{}),()=>{a=!0}},[]),g)?(0,b.jsx)(d.default,{menu:e.PARTNER_MENU,children:a}):(0,b.jsx)("div",{className:"flex min-h-screen items-center justify-center text-slate-500",children:"Laden..."})}])}];
+
+//# sourceMappingURL=web_app_partner_layout_1wkq78x.js.map

@@ -20,6 +20,11 @@ function errorHandler(err, req, res, next) {
     console.error(err);
   }
 
+  // Voor de monitoring: gesaneerde melding beschikbaar maken voor de
+  // telemetrie-middleware (die leest dit bij res 'finish'). Nooit stacks/bodies.
+  res.locals.monitoringErrorMessage = isKnownError ? err.message : err.message || "Interne fout";
+  res.locals.monitoringErrorCode = isKnownError ? err.code : "UNHANDLED";
+
   res.status(statusCode).json({
     error: {
       message: isKnownError ? err.message : "Er is een interne fout opgetreden",

@@ -1,0 +1,26 @@
+1:"$Sreact.fragment"
+2:I[1128,["/_next/static/chunks/0s_awoh_6e7db.js","/_next/static/chunks/1mxz60ptd3xkf.js","/_next/static/chunks/31uie47n_4d-h.js"],"default"]
+3:I[97367,["/_next/static/chunks/0s_awoh_6e7db.js"],"OutletBoundary"]
+4:"$Sreact.suspense"
+8:I[97367,["/_next/static/chunks/0s_awoh_6e7db.js"],"ViewportBoundary"]
+9:I[97367,["/_next/static/chunks/0s_awoh_6e7db.js"],"MetadataBoundary"]
+a:I[27201,["/_next/static/chunks/0s_awoh_6e7db.js"],"IconMark"]
+c:I[39756,["/_next/static/chunks/0s_awoh_6e7db.js"],"default"]
+d:I[37457,["/_next/static/chunks/0s_awoh_6e7db.js"],"default"]
+10:I[76895,["/_next/static/chunks/0s_awoh_6e7db.js","/_next/static/chunks/1mxz60ptd3xkf.js"],"default"]
+12:I[35261,["/_next/static/chunks/0s_awoh_6e7db.js"],"ToastProvider"]
+:HL["/_next/static/chunks/2k48fqayi2c70.css","style"]
+7:X
+f:X
+f:C
+0:{"buildId":"PyE55wYb_yyFAF4jgHQjR","data":[{"rsc":["$","$1","c",{"children":[["$","$L2",null,{}],[["$","script","script-0",{"src":"/_next/static/chunks/31uie47n_4d-h.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":"$@6","staleTime":"$7","varyParams":null},{"rsc":["$","$1","h",{"children":[null,["$","$L8",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","div",null,{"hidden":true,"children":["$","$L9",null,{"children":["$","$4",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"DPP Platform"}],["$","meta","1",{"name":"description","content":"Digital Product Passport platform voor beheer van producten, bedrijven en licenties."}],["$","link","2",{"rel":"icon","href":"/icon.png?icon.2-5d_rymhl16w.png","sizes":"512x512","type":"image/png"}],["$","$La","3",{}]]}]}]}],null]}],"isPartial":"$@b","staleTime":"$7","varyParams":null},{"rsc":["$","$1","c",{"children":[null,["$","$Lc",null,{"parallelRouterKey":"children","template":["$","$Ld",null,{}]}]]}],"isPartial":"$@e","staleTime":"$7","varyParams":"$f"},{"rsc":["$","$1","c",{"children":[[["$","script","script-0",{"src":"/_next/static/chunks/1mxz60ptd3xkf.js","async":true}]],["$","$L10",null,{"menu":[{"label":"Overzicht","href":"/company","icon":"home"},{"label":"Producten","href":"/company/products","icon":"box"},{"label":"Documenten","href":"/company/documenten","icon":"file"},{"label":"QR-codes","href":"/company/qr-codes","icon":"qr"},{"label":"Medewerkers","href":"/company/organisatie","icon":"team","roles":["company_admin"]},{"label":"Abonnement","href":"/company/abonnement","icon":"credit-card","roles":["company_admin"]},{"label":"Bedrijfsinstellingen","href":"/company/instellingen","icon":"cog","roles":["company_admin"]},{"label":"Mijn profiel","href":"/company/profiel","icon":"user","roles":["company_user"]},{"label":"Help & support","href":"/company/help","icon":"help"}],"children":["$","$Lc",null,{"parallelRouterKey":"children","template":["$","$Ld",null,{}]}]}]]}],"isPartial":"$@11","staleTime":"$7","varyParams":null},{"rsc":["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/chunks/2k48fqayi2c70.css","precedence":"next"}],["$","script","script-0",{"src":"/_next/static/chunks/0s_awoh_6e7db.js","async":true}]],["$","html",null,{"lang":"nl","children":["$","body",null,{"className":"bg-slate-50 text-slate-900 antialiased","children":["$","$L12",null,{"children":["$","$Lc",null,{"parallelRouterKey":"children","template":["$","$Ld",null,{}],"notFound":[[["$","title",null,{"children":"404: This page could not be found."}],["$","div",null,{"style":{"fontFamily":"system-ui,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif,\"Apple Color Emoji\",\"Segoe UI Emoji\"","height":"100vh","textAlign":"center","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"center"},"children":["$","div",null,{"children":[["$","style",null,{"dangerouslySetInnerHTML":{"__html":"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}"}}],["$","h1",null,{"className":"next-error-h1","style":{"display":"inline-block","margin":"0 20px 0 0","padding":"0 23px 0 0","fontSize":24,"fontWeight":500,"verticalAlign":"top","lineHeight":"49px"},"children":404}],["$","div",null,{"style":{"display":"inline-block"},"children":["$","h2",null,{"style":{"fontSize":14,"fontWeight":400,"lineHeight":"49px","margin":0},"children":"This page could not be found."}]}]]}]}]],[]]}]}]}]}]]}],"isPartial":"$@13","staleTime":"$7","varyParams":null}],"isUpgradeableISRFallback":false,"a":"$@14","rootVaryParams":null,"needsRuntimeRequest":"$@15"}
+5:null
+7:300
+15:true
+7:C
+14:0
+b:"$undefined"
+e:"$undefined"
+11:"$undefined"
+13:"$undefined"
+6:"$undefined"

@@ -1,0 +1,13 @@
+var R=require("../../chunks/ssr/[turbopack]_runtime.js")("server/app/wachtwoord-vergeten/page.js")
+R.c("server/chunks/ssr/[root-of-the-server]__17lxdnb._.js")
+R.c("server/chunks/ssr/node_modules_next_dist_1n3w9lb._.js")
+R.c("server/chunks/ssr/[root-of-the-server]__1zr25tw._.js")
+R.c("server/chunks/ssr/[root-of-the-server]__112mz-6._.js")
+R.c("server/chunks/ssr/web_0vxk6xf._.js")
+R.c("server/chunks/ssr/node_modules_next_dist_client_components_0wpq8j3._.js")
+R.c("server/chunks/ssr/node_modules_next_dist_client_components_builtin_forbidden_0symwr9.js")
+R.c("server/chunks/ssr/node_modules_next_dist_client_components_builtin_unauthorized_0l_sp0x.js")
+R.c("server/chunks/ssr/node_modules_next_dist_client_components_builtin_global-error_0q-w892.js")
+R.c("server/chunks/ssr/web__next-internal_server_app_wachtwoord-vergeten_page_actions_0lng8oa.js")
+R.m(39628)
+module.exports=R.m(39628).exports
