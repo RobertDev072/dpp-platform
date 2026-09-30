@@ -21,8 +21,25 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+// Een klant kan aan een partner gekoppeld worden; het doelbedrijf moet dan echt
+// een partner zijn. Partners zelf hebben nooit een partner.
+async function assertValidPartnerLink({ kind, partnerId }, next) {
+  if (partnerId == null) return true;
+  if (kind === "partner") {
+    next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { partnerId: ["Een partner kan niet zelf aan een partner gekoppeld worden"] } }));
+    return false;
+  }
+  const partner = await companiesRepo.getCompanyById(partnerId);
+  if (!partner || partner.kind !== "partner") {
+    next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { partnerId: ["Gekozen partner bestaat niet of is geen partner"] } }));
+    return false;
+  }
+  return true;
+}
+
 router.post("/", validateBody(createCompanySchema), async (req, res, next) => {
   try {
+    if (!(await assertValidPartnerLink(req.body, next))) return;
     const company = await companiesRepo.createCompany(req.body);
 
     await logAudit({
@@ -62,6 +79,10 @@ router.patch("/:id", validateBody(updateCompanySchema), async (req, res, next) =
     const existing = await companiesRepo.getCompanyById(id);
     if (!existing) {
       next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+
+    if (req.body.partnerId !== undefined && !(await assertValidPartnerLink({ kind: existing.kind, partnerId: req.body.partnerId }, next))) {
       return;
     }
 
@@ -106,6 +127,13 @@ router.post("/:id/invites", validateBody(createInviteSchema), async (req, res, n
     const company = await companiesRepo.getCompanyById(companyId);
     if (!company) {
       next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+
+    // De invite-flow levert een company_admin op; partnerbedrijven krijgen hun
+    // Partner Admins direct via de Platform Owner (gebruikersbeheer), niet via invites.
+    if (company.kind === "partner") {
+      next(new HttpError(409, "Partnerbedrijven krijgen geen Company Admin-uitnodigingen; maak een Partner Admin aan via Gebruikers"));
       return;
     }
 

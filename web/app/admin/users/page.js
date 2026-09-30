@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { useForm } from "@/lib/useForm";
+import { homeHrefForRole } from "@/lib/nav";
 import {
   ASSIGNABLE_ROLE_OPTIONS,
+  PARTNER_ROLE_OPTIONS,
   USER_STATUS_BADGE_VARIANTS,
   USER_STATUS_OPTIONS,
   fullName,
@@ -16,6 +19,8 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import Select from "@/components/ui/Select";
+import SubmitButton from "@/components/ui/SubmitButton";
+import FormError from "@/components/ui/FormError";
 import EmptyState from "@/components/ui/EmptyState";
 import IconButton, { CogIcon, KeyIcon, LoginIcon, TrashIcon } from "@/components/ui/IconButton";
 import Skeleton from "@/components/ui/Skeleton";
@@ -28,6 +33,7 @@ const PAGE_SIZE = 25;
 
 const ROLE_FILTER_OPTIONS = [
   { value: "platform_owner", label: "Platform Owner" },
+  { value: "partner_admin", label: "Partner Admin" },
   { value: "company_admin", label: "Company Admin" },
   { value: "company_user", label: "Productmedewerker" }
 ];
@@ -54,6 +60,15 @@ function RoleBadge({ role }) {
       </span>
     );
   }
+  if (role === "partner_admin") {
+    // Violet: hoort visueel bij de paarse Partner-badge op de bedrijvenpagina,
+    // maar blijft te onderscheiden van de Platform Owner.
+    return (
+      <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-700">
+        Partner Admin
+      </span>
+    );
+  }
   return <Badge variant={role === "company_admin" ? "info" : "neutral"}>{roleLabel(role)}</Badge>;
 }
 
@@ -63,6 +78,191 @@ function LockIcon() {
       <rect x="4" y="8.5" width="12" height="8" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M7 8.5V6a3 3 0 0 1 6 0v2.5" stroke="currentColor" strokeWidth="1.5" />
     </svg>
+  );
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Rolopties horen bij de bedrijfssoort: in een partnerbedrijf bestaat alleen
+// Partner Admin; company-rollen horen exclusief bij klantbedrijven (de backend
+// dwingt dit ook af, wij tonen dus nooit een keuze die toch geweigerd wordt).
+function roleOptionsForCompany(company) {
+  return company?.kind === "partner" ? PARTNER_ROLE_OPTIONS : ASSIGNABLE_ROLE_OPTIONS;
+}
+
+// Aanmaakformulier van de Platform Owner: primair bedoeld voor Partner Admins
+// (kies een partnerbedrijf), maar werkt ook voor company-rollen op klantbedrijven.
+function NewUserForm({ companies, companiesById, onCreated }) {
+  const toast = useToast();
+  const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState(null);
+  // Na aanmaken: ofwel een eenmalig tijdelijk wachtwoord (legacy), ofwel de SSPR-instructie.
+  const [createdInfo, setCreatedInfo] = useState(null);
+
+  const form = useForm({
+    initial: { companyId: "", role: "", email: "", firstName: "", lastName: "" },
+    validators: {
+      companyId: (value) => (value ? null : "Kies een bedrijf"),
+      role: (value) => (value ? null : "Kies een rol"),
+      email: (value) => (EMAIL_PATTERN.test((value || "").trim()) ? null : "Vul een geldig e-mailadres in")
+    }
+  });
+
+  const selectedCompany = form.values.companyId
+    ? companiesById[Number(form.values.companyId)]
+    : null;
+  const roleOptions = roleOptionsForCompany(selectedCompany);
+
+  function handleCompanyChange(value) {
+    form.setValue("companyId", value);
+    const company = value ? companiesById[Number(value)] : null;
+    const options = roleOptionsForCompany(company);
+    // Rol meebewegen met de bedrijfssoort: partnerbedrijf → altijd Partner Admin;
+    // klantbedrijf → een eerder gekozen partnerrol vervalt.
+    if (!options.some((option) => option.value === form.values.role)) {
+      form.setValue("role", company?.kind === "partner" ? "partner_admin" : "");
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setFormError(null);
+    setCreatedInfo(null);
+
+    if (!form.validateAll()) {
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const created = await api.post("/api/users", {
+        email: form.values.email.trim(),
+        firstName: form.values.firstName.trim() || undefined,
+        lastName: form.values.lastName.trim() || undefined,
+        role: form.values.role,
+        companyId: Number(form.values.companyId)
+      });
+
+      setCreatedInfo({ email: created.email, tempPassword: created.tempPassword || null });
+      form.reset();
+      toast.success(`Gebruiker ${created.email} aangemaakt`);
+      // Het tijdelijke wachtwoord is eenmalig zichtbaar hierboven en hoort niet
+      // in de lijst-state te blijven hangen.
+      const { tempPassword: _tempPassword, ...createdUser } = created;
+      onCreated(createdUser);
+    } catch (err) {
+      const applied = form.applyServerErrors(err);
+      if (!applied) {
+        if (err.status === 409 && !err.code) {
+          // Duplicaat-e-mail komt als kale 409-message terug: onder het e-mailveld tonen.
+          form.applyServerErrors({ fieldErrors: { email: [err.message] } });
+        } else {
+          setFormError(err);
+        }
+      }
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuwe gebruiker</h2>
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <FormError error={formError} />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Select
+            label="Bedrijf"
+            name="new-user-companyId"
+            required
+            placeholder="Kies een bedrijf"
+            options={companies.map((company) => ({
+              value: String(company.id),
+              label: company.kind === "partner" ? `${company.name} (partner)` : company.name
+            }))}
+            value={form.values.companyId}
+            onChange={(e) => handleCompanyChange(e.target.value)}
+            onBlur={() => form.onBlur("companyId")}
+            error={form.errors.companyId}
+          />
+          <Select
+            label="Rol"
+            name="new-user-role"
+            required
+            placeholder="Kies een rol"
+            options={roleOptions}
+            help={
+              selectedCompany?.kind === "partner"
+                ? "In een partnerbedrijf is alleen de rol Partner Admin mogelijk."
+                : undefined
+            }
+            value={form.values.role}
+            onChange={(e) => form.setValue("role", e.target.value)}
+            onBlur={() => form.onBlur("role")}
+            error={form.errors.role}
+          />
+          <Field
+            label="E-mail"
+            name="new-user-email"
+            type="email"
+            required
+            autoComplete="off"
+            placeholder="naam@bedrijf.nl"
+            value={form.values.email}
+            onChange={(e) => form.setValue("email", e.target.value)}
+            onBlur={() => form.onBlur("email")}
+            error={form.errors.email}
+          />
+          <Field
+            label="Voornaam"
+            name="new-user-firstName"
+            autoComplete="off"
+            placeholder="Bijv. Anna"
+            value={form.values.firstName}
+            onChange={(e) => form.setValue("firstName", e.target.value)}
+            error={form.errors.firstName}
+          />
+          <Field
+            label="Achternaam"
+            name="new-user-lastName"
+            autoComplete="off"
+            placeholder="Bijv. de Vries"
+            value={form.values.lastName}
+            onChange={(e) => form.setValue("lastName", e.target.value)}
+            error={form.errors.lastName}
+          />
+        </div>
+
+        <p className="text-xs text-slate-400">
+          De nieuwe gebruiker stelt het eigen wachtwoord in via Wachtwoord vergeten op de loginpagina.
+        </p>
+
+        <SubmitButton loading={creating}>Aanmaken</SubmitButton>
+      </form>
+
+      {createdInfo && !createdInfo.tempPassword && (
+        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          Laat <span className="font-medium">{createdInfo.email}</span> het wachtwoord instellen via{" "}
+          <span className="font-medium">Wachtwoord vergeten</span> op de loginpagina.
+        </div>
+      )}
+
+      {createdInfo && createdInfo.tempPassword && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="mb-2 text-sm font-medium text-amber-800">
+            Tijdelijk wachtwoord voor {createdInfo.email} (wordt maar één keer getoond, deel dit
+            zelf veilig met de gebruiker):
+          </p>
+          <input
+            readOnly
+            value={createdInfo.tempPassword}
+            onClick={(e) => e.target.select()}
+            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-mono text-sm text-slate-900"
+          />
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -216,7 +416,8 @@ export default function UsersPage() {
     if (!sure) return;
     try {
       await api.post(`/api/admin/impersonate/${user.id}`);
-      window.location.href = "/company";
+      // Partner Admins landen in hun eigen partnergebied, company-rollen in /company.
+      window.location.href = homeHrefForRole(user.role);
     } catch (err) {
       toast.error(err.message);
     }
@@ -280,13 +481,22 @@ export default function UsersPage() {
 
       <Card className="border-blue-200 bg-blue-50 text-blue-800">
         <p className="text-sm">
-          Nieuwe gebruikers worden hier niet aangemaakt. Company Admins nodig je uit via de{" "}
+          Partner Admins maak je hieronder aan door een partnerbedrijf te kiezen. Company Admins
+          nodig je bij voorkeur uit via de{" "}
           <Link href="/admin/companies" className="font-medium underline hover:no-underline">
             bedrijvenpagina
           </Link>
           ; medewerkers worden aangemaakt door hun eigen Company Admin.
         </p>
       </Card>
+
+      {!loading && (
+        <NewUserForm
+          companies={companies}
+          companiesById={companiesById}
+          onCreated={(created) => setUsers((prev) => [created, ...prev])}
+        />
+      )}
 
       <Card className="sticky top-0 z-10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
@@ -378,7 +588,9 @@ export default function UsersPage() {
                     const canImpersonate =
                       !isPlatformOwner &&
                       user.status === "active" &&
-                      (user.role === "company_admin" || user.role === "company_user");
+                      (user.role === "company_admin" ||
+                        user.role === "company_user" ||
+                        user.role === "partner_admin");
                     const isExpanded = expandedId === user.id && !isPlatformOwner;
                     const showReset = resetInfo && resetInfo.userId === user.id;
 
@@ -388,6 +600,7 @@ export default function UsersPage() {
                         user={user}
                         name={name}
                         companyLabel={companyName(user)}
+                        roleOptions={roleOptionsForCompany(companiesById[user.company_id])}
                         isPlatformOwner={isPlatformOwner}
                         canImpersonate={canImpersonate}
                         isExpanded={isExpanded}
@@ -430,6 +643,7 @@ function UserRows({
   user,
   name,
   companyLabel,
+  roleOptions,
   isPlatformOwner,
   canImpersonate,
   isExpanded,
@@ -518,7 +732,12 @@ function UserRows({
               <Select
                 label="Rol"
                 name={`user-role-${user.id}`}
-                options={ASSIGNABLE_ROLE_OPTIONS}
+                options={roleOptions}
+                help={
+                  roleOptions === PARTNER_ROLE_OPTIONS
+                    ? "In een partnerbedrijf is alleen de rol Partner Admin mogelijk."
+                    : undefined
+                }
                 value={user.role}
                 onChange={(e) => onRoleChange(e.target.value)}
                 className="w-full sm:w-56"

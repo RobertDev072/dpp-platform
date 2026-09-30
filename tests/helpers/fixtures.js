@@ -69,6 +69,8 @@ async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] 
   }
   if (companies.length) {
     await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${companies.join(",")})`);
+    // Invites verwijzen naar zowel company als invited_by-user; weg vóór beide.
+    await pool.request().query(`DELETE FROM dbo.CompanyAdminInvites WHERE company_id IN (${companies.join(",")})`);
     // ScanEvents heeft een FK naar Products - moet weg vóór de Products zelf verwijderd
     // worden (raakt gevuld zodra een test de publieke paspoortpagina bezoekt).
     await pool.request().query(`

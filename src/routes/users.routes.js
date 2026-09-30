@@ -4,6 +4,7 @@ const { validateBody } = require("../middleware/validate");
 const { createUserSchema, updateUserSchema } = require("../schemas/users.schema");
 const usersRepo = require("../repositories/users.repository");
 const plansRepo = require("../repositories/plans.repository");
+const companiesRepo = require("../repositories/companies.repository");
 const { hashPassword } = require("../utils/password");
 const { generateTempPassword } = require("../utils/tempPassword");
 const { assertCompanyAccess } = require("../utils/tenant");
@@ -36,12 +37,34 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
   try {
     const body = { ...req.body };
 
-    // platform_owner is nooit een toekenbare rol (schema dwingt dit al af); iedereen
-    // die hier komt maakt dus een company_admin of company_user aan.
+    // platform_owner is nooit een toekenbare rol (schema dwingt dit al af).
+    // partner_admin is exclusief terrein van de Platform Owner.
+    if (body.role === "partner_admin" && !isPlatformOwner(req.user.role)) {
+      next(new HttpError(403, "Alleen de Platform Owner beheert Partner Admin-accounts"));
+      return;
+    }
+
     if (req.user.role === "company_admin") {
       body.companyId = req.user.companyId;
     } else if (body.companyId == null) {
       next(new HttpError(400, "companyId is verplicht voor deze rol"));
+      return;
+    }
+
+    // Rol en bedrijfssoort moeten kloppen: partner_admin hoort bij een partnerbedrijf,
+    // company-rollen bij een klantbedrijf (anders zou een partnerbedrijf via een
+    // company_admin alsnog productmodules krijgen).
+    const doelbedrijf = await companiesRepo.getCompanyById(body.companyId);
+    if (!doelbedrijf) {
+      next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { companyId: ["Bedrijf bestaat niet"] } }));
+      return;
+    }
+    if (body.role === "partner_admin" && doelbedrijf.kind !== "partner") {
+      next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { companyId: ["Partner Admins horen bij een partnerbedrijf"] } }));
+      return;
+    }
+    if (body.role !== "partner_admin" && doelbedrijf.kind === "partner") {
+      next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { role: ["In een partnerbedrijf zijn alleen Partner Admins mogelijk"] } }));
       return;
     }
 
@@ -168,6 +191,24 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
     }
 
     const wijzigtRolOfStatus = req.body.role !== undefined || req.body.status !== undefined;
+
+    // Partner Admin-accounts (en de rol zelf) zijn exclusief terrein van de
+    // Platform Owner. De rol is bovendien alleen geldig binnen een partnerbedrijf.
+    if ((existing.role === "partner_admin" || req.body.role === "partner_admin") && !isPlatformOwner(req.user.role)) {
+      next(new HttpError(403, "Alleen de Platform Owner beheert Partner Admin-accounts"));
+      return;
+    }
+    if (req.body.role !== undefined && req.body.role !== existing.role) {
+      const doelbedrijf = existing.company_id != null ? await companiesRepo.getCompanyById(existing.company_id) : null;
+      if (req.body.role === "partner_admin" && (!doelbedrijf || doelbedrijf.kind !== "partner")) {
+        next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { role: ["Partner Admins horen bij een partnerbedrijf"] } }));
+        return;
+      }
+      if (req.body.role !== "partner_admin" && doelbedrijf && doelbedrijf.kind === "partner") {
+        next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { role: ["In een partnerbedrijf zijn alleen Partner Admins mogelijk"] } }));
+        return;
+      }
+    }
 
     // Niemand wijzigt zijn eigen rol of status (naam bewerken mag wel).
     if (wijzigtRolOfStatus && req.user.id === existing.id) {

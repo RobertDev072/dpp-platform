@@ -33,6 +33,7 @@ app.use("/api/password-reset", passwordResetRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public/products", publicProductsRoutes);
 app.use("/api/admin", require("./routes/admin.routes"));
+app.use("/api/partner", require("./routes/partner.routes"));
 app.use("/api/audit", require("./routes/audit.routes"));
 app.use("/api/company", require("./routes/company.routes"));
 

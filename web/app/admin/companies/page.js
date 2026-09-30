@@ -38,6 +38,29 @@ const SORT_OPTIONS = [
   { value: "product_count", label: "Meeste producten" }
 ];
 
+const TYPE_FILTER_OPTIONS = [
+  { value: "customer", label: "Klanten" },
+  { value: "partner", label: "Partners" }
+];
+
+// Bedrijfssoort: rijen zonder kind (ouder dan de partnerlaag) zijn klantbedrijven.
+function kindOf(company) {
+  return company.kind || "customer";
+}
+
+// Partnerbedrijven krijgen een duidelijk afwijkende (paarse) badge; klantbedrijven
+// blijven neutraal zonder extra badge.
+function TypeBadge({ company }) {
+  if (kindOf(company) !== "partner") {
+    return null;
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+      Partner
+    </span>
+  );
+}
+
 function compareCompanies(a, b, sortBy) {
   if (sortBy === "last_activity") {
     // Recentst actieve bedrijven eerst; bedrijven zonder activiteit onderaan.
@@ -83,6 +106,7 @@ export default function CompaniesPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [sortBy, setSortBy] = useState("name");
   const [page, setPage] = useState(1);
   // Id van het bedrijf waarvan het abonnement inline bewerkt wordt (badge → select).
@@ -101,7 +125,7 @@ export default function CompaniesPage() {
   // Elke filter- of sorteerwijziging springt terug naar pagina 1.
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, sortBy]);
+  }, [search, statusFilter, typeFilter, sortBy]);
 
   const plansById = useMemo(() => Object.fromEntries(plans.map((plan) => [plan.id, plan])), [plans]);
 
@@ -141,13 +165,16 @@ export default function CompaniesPage() {
     if (statusFilter) {
       list = list.filter((company) => company.status === statusFilter);
     }
+    if (typeFilter) {
+      list = list.filter((company) => kindOf(company) === typeFilter);
+    }
     return [...list].sort((a, b) => compareCompanies(a, b, sortBy));
-  }, [companies, search, statusFilter, sortBy]);
+  }, [companies, search, statusFilter, typeFilter, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const hasFilters = Boolean(search.trim() || statusFilter);
+  const hasFilters = Boolean(search.trim() || statusFilter || typeFilter);
 
   async function handlePlanChange(company, value) {
     const planIdValue = value ? Number(value) : null;
@@ -185,10 +212,12 @@ export default function CompaniesPage() {
   function handleExport() {
     downloadCsv(
       "veripasso-bedrijven.csv",
-      ["Naam", "Slug", "Beheerder", "Plan", "Producten", "Gebruikers", "Status", "Laatst actief"],
+      ["Naam", "Slug", "Type", "Partner", "Beheerder", "Plan", "Producten", "Gebruikers", "Status", "Laatst actief"],
       filtered.map((company) => [
         company.name,
         company.slug,
+        kindOf(company) === "partner" ? "Partnerbedrijf" : "Klantbedrijf",
+        company.partner_name || "",
         company.admin_email || "",
         planNameOf(company),
         company.product_count ?? 0,
@@ -273,6 +302,15 @@ export default function CompaniesPage() {
             className="w-full lg:w-48"
           />
           <Select
+            label="Type"
+            name="companies-type"
+            placeholder="Alle"
+            options={TYPE_FILTER_OPTIONS}
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="w-full lg:w-40"
+          />
+          <Select
             label="Sorteren op"
             name="companies-sort"
             options={SORT_OPTIONS}
@@ -307,6 +345,7 @@ export default function CompaniesPage() {
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500">
                     <th className="py-2 pr-3 font-medium">Bedrijf</th>
+                    <th className="py-2 pr-3 font-medium">Partner</th>
                     <th className="py-2 pr-3 font-medium">Beheerder</th>
                     <th className="py-2 pr-3 font-medium">Abonnement</th>
                     <th className="py-2 pr-3 font-medium">Producten</th>
@@ -323,11 +362,15 @@ export default function CompaniesPage() {
                         <div className="flex items-center gap-3">
                           <CompanyLogo company={company} />
                           <div>
-                            <p className="font-medium text-slate-900">{company.name}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-slate-900">{company.name}</p>
+                              <TypeBadge company={company} />
+                            </div>
                             <p className="text-xs text-slate-500">{company.slug}</p>
                           </div>
                         </div>
                       </td>
+                      <td className="py-2.5 pr-3 text-slate-600">{company.partner_name || "—"}</td>
                       <td className="py-2.5 pr-3">
                         {company.admin_email ? (
                           <span className="text-slate-600">{company.admin_email}</span>
@@ -391,12 +434,22 @@ export default function CompaniesPage() {
                       </td>
                       <td className="py-2.5 pr-3">
                         <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <Link
-                            href={`/admin/companies/${company.id}/uitnodigen`}
-                            className="font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                          >
-                            Admin uitnodigen
-                          </Link>
+                          {kindOf(company) === "partner" ? (
+                            // Partnerbedrijven krijgen geen Company Admin-invites (backend geeft 409).
+                            <span className="text-slate-400">
+                              Partner Admins beheer je via{" "}
+                              <Link href="/admin/users" className="font-medium text-blue-600 hover:underline">
+                                Gebruikers
+                              </Link>
+                            </span>
+                          ) : (
+                            <Link
+                              href={`/admin/companies/${company.id}/uitnodigen`}
+                              className="font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                            >
+                              Admin uitnodigen
+                            </Link>
+                          )}
                           {company.status !== "active" && (
                             <button
                               type="button"

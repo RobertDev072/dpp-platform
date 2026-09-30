@@ -90,11 +90,16 @@ router.post(
     }
 
     const target = await usersRepo.getUserById(targetId);
-    if (!target || !["company_admin", "company_user"].includes(target.role)) {
+    if (!target || !["company_admin", "company_user", "partner_admin"].includes(target.role)) {
       next(new HttpError(404, "Niet gevonden"));
       return;
     }
     if (req.user.role === "company_admin") {
+      // Partner Admins vallen buiten het bereik van een Company Admin.
+      if (target.role === "partner_admin") {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
       assertCompanyAccess(req.user, target.company_id);
     }
     if (target.status !== "active") {
@@ -151,6 +156,9 @@ router.get("/licenses/overview", requireAuth, requireRole(...PLATFORM_OWNER_ROLE
         name: row.name,
         slug: row.slug,
         companyStatus: row.status,
+        kind: row.kind,
+        partnerId: row.partner_id,
+        partnerName: row.partner_name,
         planId: row.plan_id,
         ...buildUsage({
           plan: row.plan_id

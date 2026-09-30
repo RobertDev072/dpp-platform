@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Logo from "@/components/ui/Logo";
 import { api } from "@/lib/api";
+import { homeHrefForRole } from "@/lib/nav";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -17,7 +18,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   function goToApp(user) {
-    window.location.href = user.role === "platform_owner" ? "/admin" : "/company";
+    window.location.href = homeHrefForRole(user.role);
   }
 
   async function handleSubmit(event) {

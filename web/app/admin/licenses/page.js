@@ -480,6 +480,7 @@ export default function LicensesPage() {
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
                   <th className="py-2 pr-3 font-medium">Bedrijf</th>
+                  <th className="py-2 pr-3 font-medium">Partner</th>
                   <th className="py-2 pr-3 font-medium">Plan</th>
                   <th className="py-2 pr-3 font-medium">Geldigheid</th>
                   <th className="py-2 pr-3 font-medium">Gebruikers</th>
@@ -579,6 +580,7 @@ function CompanyRows({ company, plans, editing, onToggleEdit, onSaved }) {
     <>
       <tr className="border-b border-slate-100 align-top">
         <td className="py-3 pr-3 font-medium text-slate-900">{company.name}</td>
+        <td className="py-3 pr-3 text-slate-600">{company.partnerName || "—"}</td>
         <td className="py-3 pr-3">
           {company.plan ? (
             <Badge variant="info">{company.plan.name}</Badge>
@@ -612,7 +614,7 @@ function CompanyRows({ company, plans, editing, onToggleEdit, onSaved }) {
       </tr>
       {editing && (
         <tr className="border-b border-slate-100 bg-slate-50">
-          <td colSpan={7} className="p-4">
+          <td colSpan={8} className="p-4">
             <CompanyLicenseEditForm
               company={company}
               plans={plans}

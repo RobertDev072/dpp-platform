@@ -11,16 +11,18 @@ import { usageSummary } from "@/components/license/licenseFormat";
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState(null);
+  // Aantal partnerbedrijven: client-side geteld uit de bedrijvenlijst (kind==='partner').
+  const [partnerCount, setPartnerCount] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
-    api
-      .get("/api/dashboard/stats")
-      .then((data) => {
+    Promise.all([api.get("/api/dashboard/stats"), api.get("/api/admin/companies")])
+      .then(([data, companies]) => {
         if (!cancelled) {
           setStats(data);
+          setPartnerCount(companies.filter((company) => company.kind === "partner").length);
         }
       })
       .catch((err) => {
@@ -48,6 +50,7 @@ export default function AdminDashboardPage() {
         <>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             <StatTile label="Bedrijven" value={stats.companies} />
+            <StatTile label="Partners" value={partnerCount ?? 0} />
             <StatTile label="Actieve bedrijven" value={stats.activeCompanies} />
             <StatTile label="Actieve gebruikers" value={stats.activeUsers} />
             <StatTile label="Producten (concept)" value={stats.products.draft} />

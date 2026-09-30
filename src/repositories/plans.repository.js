@@ -21,7 +21,7 @@ async function getMaxUsersForCompany(companyId) {
 async function listPlans() {
   const pool = await getPool();
   const result = await pool.request().query(`
-    SELECT id, name, max_users, max_products, feature_flags, created_at, updated_at
+    SELECT id, name, max_users, max_products, feature_flags, partner_assignable, created_at, updated_at
     FROM dbo.Plans
     ORDER BY name
   `);
@@ -34,14 +34,14 @@ async function getPlanById(id) {
     .request()
     .input("id", sql.Int, id)
     .query(`
-      SELECT id, name, max_users, max_products, feature_flags, created_at, updated_at
+      SELECT id, name, max_users, max_products, feature_flags, partner_assignable, created_at, updated_at
       FROM dbo.Plans
       WHERE id = @id
     `);
   return result.recordset[0] || null;
 }
 
-async function createPlan({ name, maxUsers, maxProducts, featureFlags }) {
+async function createPlan({ name, maxUsers, maxProducts, featureFlags, partnerAssignable }) {
   const pool = await getPool();
   const result = await pool
     .request()
@@ -49,20 +49,22 @@ async function createPlan({ name, maxUsers, maxProducts, featureFlags }) {
     .input("maxUsers", sql.Int, maxUsers)
     .input("maxProducts", sql.Int, maxProducts)
     .input("featureFlags", sql.NVarChar(sql.MAX), featureFlags ?? null)
+    .input("partnerAssignable", sql.Bit, partnerAssignable === false ? 0 : 1)
     .query(`
-      INSERT INTO dbo.Plans (name, max_users, max_products, feature_flags)
+      INSERT INTO dbo.Plans (name, max_users, max_products, feature_flags, partner_assignable)
       OUTPUT INSERTED.id, INSERTED.name, INSERTED.max_users, INSERTED.max_products,
-             INSERTED.feature_flags, INSERTED.created_at, INSERTED.updated_at
-      VALUES (@name, @maxUsers, @maxProducts, @featureFlags)
+             INSERTED.feature_flags, INSERTED.partner_assignable, INSERTED.created_at, INSERTED.updated_at
+      VALUES (@name, @maxUsers, @maxProducts, @featureFlags, @partnerAssignable)
     `);
   return result.recordset[0];
 }
 
-const UPDATABLE_FIELDS = ["name", "maxUsers", "maxProducts", "featureFlags"];
+const UPDATABLE_FIELDS = ["name", "maxUsers", "maxProducts", "featureFlags", "partnerAssignable"];
 const FIELD_TO_COLUMN = {
   name: "name",
   maxUsers: "max_users",
   maxProducts: "max_products",
+  partnerAssignable: "partner_assignable",
   featureFlags: "feature_flags"
 };
 
@@ -80,6 +82,8 @@ async function updatePlan(id, fields) {
       request.input(field, sql.NVarChar(100), fields[field]);
     } else if (field === "featureFlags") {
       request.input(field, sql.NVarChar(sql.MAX), fields[field]);
+    } else if (field === "partnerAssignable") {
+      request.input(field, sql.Bit, fields[field] ? 1 : 0);
     } else {
       request.input(field, sql.Int, fields[field]);
     }
@@ -95,7 +99,7 @@ async function updatePlan(id, fields) {
     UPDATE dbo.Plans
     SET ${setClauses.join(", ")}
     OUTPUT INSERTED.id, INSERTED.name, INSERTED.max_users, INSERTED.max_products,
-           INSERTED.feature_flags, INSERTED.created_at, INSERTED.updated_at
+           INSERTED.feature_flags, INSERTED.partner_assignable, INSERTED.created_at, INSERTED.updated_at
     WHERE id = @id
   `);
 

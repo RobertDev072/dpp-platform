@@ -3,6 +3,7 @@
 
 export const ROLE_LABELS = {
   platform_owner: "Platform Owner",
+  partner_admin: "Partner Admin",
   company_admin: "Company Admin",
   company_user: "Productmedewerker"
 };
@@ -11,6 +12,10 @@ export const ASSIGNABLE_ROLE_OPTIONS = [
   { value: "company_admin", label: "Company Admin" },
   { value: "company_user", label: "Productmedewerker" }
 ];
+
+// Partner Admins horen exclusief bij partnerbedrijven (en omgekeerd): de
+// gebruikerspagina van de owner kiest op basis van de bedrijfssoort welke set geldt.
+export const PARTNER_ROLE_OPTIONS = [{ value: "partner_admin", label: "Partner Admin" }];
 
 export const USER_STATUS_LABELS = {
   active: "Actief",

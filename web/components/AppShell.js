@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { api } from "@/lib/api";
 import { roleLabel } from "@/lib/labels";
+import { homeHrefForRole } from "@/lib/nav";
 import { VeriPassoWordmark } from "@/components/landing/VeriPassoLogo";
 
 // Kleine, met de hand getekende 20px stroke-iconen (geen icon-library).
@@ -81,6 +82,20 @@ const NAV_ICONS = {
       <circle cx="10" cy="10" r="3" />
       <path d="M10 2.5v2.2M10 15.3v2.2M17.5 10h-2.2M4.7 10H2.5M15.3 4.7l-1.6 1.6M6.3 13.7l-1.6 1.6M15.3 15.3l-1.6-1.6M6.3 6.3 4.7 4.7" />
     </>
+  ),
+  partners: (
+    <>
+      <circle cx="10" cy="4.5" r="2" />
+      <circle cx="4.5" cy="14.5" r="2" />
+      <circle cx="15.5" cy="14.5" r="2" />
+      <path d="M8.9 6.3 5.6 12.7M11.1 6.3l3.3 6.4M6.5 14.5h7" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="10" cy="6.5" r="3" />
+      <path d="M4 17c.7-3.2 3-5 6-5s5.3 1.8 6 5" />
+    </>
   )
 };
 
@@ -110,6 +125,7 @@ function NavIcon({ name, className = "" }) {
 // Labels voor padsegmenten die niet in het menu staan (breadcrumb).
 const EXTRA_SEGMENT_LABELS = {
   new: "Nieuw",
+  nieuw: "Nieuw",
   uitnodigen: "Uitnodigen",
   profiel: "Profiel"
 };
@@ -222,7 +238,7 @@ export default function AppShell({ menu, children }) {
 
   async function handleStopImpersonation() {
     const { restored } = await api.post("/api/admin/impersonate/stop");
-    window.location.href = restored.role === "platform_owner" ? "/admin" : "/company";
+    window.location.href = homeHrefForRole(restored.role);
   }
 
   if (loading || !user) {
@@ -236,7 +252,7 @@ export default function AppShell({ menu, children }) {
   const visibleMenu = menu.filter((item) => !item.roles || item.roles.includes(user.role));
   const rootHref = menu[0]?.href;
   const breadcrumb = buildBreadcrumb(pathname, visibleMenu);
-  const profileHref = user.role === "platform_owner" ? "/admin/profiel" : "/company/profiel";
+  const profileHref = `${homeHrefForRole(user.role)}/profiel`;
   const initials = initialsOf(user);
   const displayName = displayNameOf(user);
 

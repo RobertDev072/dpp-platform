@@ -55,6 +55,45 @@ router.get("/stats", requireAuth, async (req, res, next) => {
       return;
     }
 
+    if (req.user.role === "partner_admin") {
+      const { buildUsage, STATUS } = require("../services/license.service");
+      const [rows, company] = await Promise.all([
+        companiesRepo.listCompaniesWithStats({ partnerId: req.user.companyId }),
+        companiesRepo.getCompanyById(req.user.companyId)
+      ]);
+
+      // Let op: buildUsage levert óók een 'status' (licentiestatus); de
+      // bedrijfsstatus gaat daarom apart mee als companyStatus.
+      const customers = rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        companyStatus: row.status,
+        ...buildUsage({
+          plan: row.plan_id
+            ? { id: row.plan_id, name: row.plan_name, max_users: row.max_users, max_products: row.max_products }
+            : null,
+          licenseStart: row.license_start,
+          licenseEnd: row.license_end,
+          usersUsed: row.active_user_count,
+          productsUsed: row.product_count
+        })
+      }));
+
+      res.json({
+        scope: "partner",
+        companyName: company ? company.name : null,
+        customers,
+        totals: {
+          customers: customers.length,
+          active: customers.filter((c) => c.status === STATUS.ACTIVE).length,
+          nearLimit: customers.filter((c) => c.status === STATUS.NEAR_LIMIT || c.status === STATUS.LIMIT_REACHED).length,
+          expired: customers.filter((c) => c.status === STATUS.EXPIRED).length
+        }
+      });
+      return;
+    }
+
     const [activeUsers, products, company, maxUsers] = await Promise.all([
       usersRepo.countActiveUsers(req.user.companyId),
       productsRepo.countProductsByStatus({ companyId: req.user.companyId }),

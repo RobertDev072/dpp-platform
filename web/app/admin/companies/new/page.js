@@ -14,6 +14,11 @@ import { useToast } from "@/components/ui/Toast";
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+const KIND_OPTIONS = [
+  { value: "customer", label: "Klantbedrijf" },
+  { value: "partner", label: "Partnerbedrijf" }
+];
+
 function slugify(value) {
   return (value || "")
     .toLowerCase()
@@ -29,12 +34,14 @@ export default function NewCompanyPage() {
   const toast = useToast();
 
   const [plans, setPlans] = useState([]);
+  // Bestaande partnerbedrijven voor de optionele partnerkoppeling van een klantbedrijf.
+  const [partners, setPartners] = useState([]);
   const [loadError, setLoadError] = useState("");
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState(null);
 
   const form = useForm({
-    initial: { name: "", slug: "", planId: "" },
+    initial: { name: "", slug: "", planId: "", kind: "customer", partnerId: "" },
     validators: {
       name: (value) => ((value || "").trim() ? null : "Vul een bedrijfsnaam in"),
       slug: (value) => {
@@ -51,9 +58,11 @@ export default function NewCompanyPage() {
   });
 
   useEffect(() => {
-    api
-      .get("/api/admin/plans")
-      .then((data) => setPlans(data))
+    Promise.all([api.get("/api/admin/plans"), api.get("/api/admin/companies")])
+      .then(([planData, companyData]) => {
+        setPlans(planData);
+        setPartners(companyData.filter((company) => company.kind === "partner"));
+      })
       .catch((err) => setLoadError(err.message));
   }, []);
 
@@ -79,7 +88,14 @@ export default function NewCompanyPage() {
       const created = await api.post("/api/admin/companies", {
         name: form.values.name.trim(),
         slug: form.values.slug.trim(),
-        planId: form.values.planId ? Number(form.values.planId) : undefined
+        planId: form.values.planId ? Number(form.values.planId) : undefined,
+        kind: form.values.kind,
+        // Alleen klantbedrijven kunnen aan een partner hangen; de backend weigert
+        // een partner-op-partner-koppeling sowieso met een veldfout.
+        partnerId:
+          form.values.kind === "customer" && form.values.partnerId
+            ? Number(form.values.partnerId)
+            : undefined
       });
       toast.success(`Bedrijf ${created.name} aangemaakt`);
       router.push("/admin/companies");
@@ -136,6 +152,36 @@ export default function NewCompanyPage() {
             onBlur={() => form.onBlur("slug")}
             error={form.errors.slug}
           />
+
+          <Select
+            label="Type"
+            name="kind"
+            required
+            options={KIND_OPTIONS}
+            help="Een partnerbedrijf beheert eigen klanttenants en heeft zelf geen producten of DPP's."
+            value={form.values.kind}
+            onChange={(e) => {
+              form.setValue("kind", e.target.value);
+              // Een partnerbedrijf kan niet zelf aan een partner hangen.
+              if (e.target.value === "partner") {
+                form.setValue("partnerId", "");
+              }
+            }}
+            error={form.errors.kind}
+          />
+
+          {form.values.kind === "customer" && (
+            <Select
+              label="Partner"
+              name="partnerId"
+              placeholder="— geen partner (directe klant) —"
+              options={partners.map((partner) => ({ value: String(partner.id), label: partner.name }))}
+              help="Optioneel: de partner/reseller die dit klantbedrijf beheert."
+              value={form.values.partnerId}
+              onChange={(e) => form.setValue("partnerId", e.target.value)}
+              error={form.errors.partnerId}
+            />
+          )}
 
           <Select
             label="Plan"
