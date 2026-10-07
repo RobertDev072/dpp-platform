@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 const requestMetrics = require("../src/monitoring/requestMetrics");
@@ -47,11 +47,10 @@ function assertNoSensitiveKeys(value, path = "") {
 
 test("systeemmonitoring: alleen Platform Owner, publieke health kaal, geen secrets", async (t) => {
   const { server, baseUrl } = await startTestServer();
-  const pool = await getPool();
 
   const partnerCo = await createTestCompany("Monitor Partner");
   const klantCo = await createTestCompany("Monitor Klant");
-  await pool.request().input("id", sql.Int, partnerCo).query("UPDATE dbo.Companies SET kind = 'partner' WHERE id = @id");
+  await query("UPDATE companies SET kind = 'partner' WHERE id = $1", [partnerCo]);
 
   const owner = await createTestUser({ companyId: null, role: "platform_owner" });
   const partner = await createTestUser({ companyId: partnerCo, role: "partner_admin" });
@@ -62,14 +61,14 @@ test("systeemmonitoring: alleen Platform Owner, publieke health kaal, geen secre
 
   t.after(async () => {
     if (snapshotIds.length) {
-      await pool.request().query(`DELETE FROM dbo.SystemMetricsSnapshots WHERE id IN (${snapshotIds.join(",")})`);
+      await query(`DELETE FROM system_metrics_snapshots WHERE id IN (${snapshotIds.join(",")})`);
     }
     await cleanupTestData({
       companyIds: [partnerCo, klantCo],
       userIds: [owner.id, partner.id, admin.id, medewerker.id]
     });
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   await t.test("anonieme aanvraag krijgt 401 op alle monitoringroutes", async () => {
@@ -127,18 +126,22 @@ test("systeemmonitoring: alleen Platform Owner, publieke health kaal, geen secre
   await t.test("handmatige snapshot werkt voor de owner en database-info toont capaciteit", async () => {
     const cookie = await login(baseUrl, owner);
 
-    const voor = await pool.request().query("SELECT MAX(id) AS m FROM dbo.SystemMetricsSnapshots");
+    const voor = await query("SELECT MAX(id) AS m FROM system_metrics_snapshots");
     const res = await request(baseUrl, "POST", "/api/admin/system/snapshot", { cookie });
     assert.equal(res.status, 201);
-    const na = await pool.request().query("SELECT MAX(id) AS m FROM dbo.SystemMetricsSnapshots");
-    assert.ok(na.recordset[0].m > (voor.recordset[0].m || 0));
-    snapshotIds.push(na.recordset[0].m);
+    const na = await query("SELECT MAX(id) AS m FROM system_metrics_snapshots");
+    assert.ok(na.rows[0].m > (voor.rows[0].m || 0));
+    snapshotIds.push(na.rows[0].m);
 
     const db = await request(baseUrl, "GET", "/api/admin/system/database", { cookie });
     assert.equal(db.status, 200);
     assert.ok(db.data.sizeBytes > 0);
-    assert.ok(db.data.maxBytes > db.data.sizeBytes);
-    assert.ok(db.data.usedPct >= 0);
+    // Supabase kent geen harde maximale databasegrootte; alleen als
+    // SUPABASE_DB_MAX_BYTES (plan-quotum) gezet is, is er een capaciteit.
+    if (db.data.maxBytes != null) {
+      assert.ok(db.data.maxBytes > db.data.sizeBytes);
+      assert.ok(db.data.usedPct >= 0);
+    }
     assert.ok(Array.isArray(db.data.tables) && db.data.tables.length > 0);
   });
 

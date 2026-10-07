@@ -11,9 +11,10 @@ function randomChar(charset) {
   return charset[index];
 }
 
-// Genereert een tijdelijk wachtwoord dat voldoet aan Entra's complexiteitseisen
-// (hoofdletter, kleine letter, cijfer, symbool). Wordt nooit opgeslagen in DPP zelf —
-// alleen doorgegeven aan Graph en één keer teruggegeven aan de admin die het aanmaakt.
+// Genereert een sterk tijdelijk wachtwoord (hoofdletter, kleine letter, cijfer,
+// symbool). Wordt nooit opgeslagen in DPP zelf — alleen doorgegeven aan Supabase Auth
+// (of als bcrypt-hash bij een lokaal account) en één keer teruggegeven aan de
+// beheerder die het aanmaakt.
 function generateTempPassword(length = 16) {
   const required = [randomChar(LOWER), randomChar(UPPER), randomChar(DIGITS), randomChar(SYMBOLS)];
   const rest = Array.from({ length: length - required.length }, () => randomChar(ALL));

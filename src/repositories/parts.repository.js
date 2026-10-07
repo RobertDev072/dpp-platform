@@ -1,49 +1,24 @@
-const { getPool, sql } = require("../config/db");
+const { queryRows, queryOne } = require("../config/db");
+
+const COLUMNS = "id, product_id, company_id, part_number, name, description, image_url, created_at";
 
 async function listPartsForProduct(productId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("productId", sql.Int, productId)
-    .query(`
-      SELECT id, product_id, company_id, part_number, name, description, image_url, created_at
-      FROM dbo.ProductParts
-      WHERE product_id = @productId
-      ORDER BY id
-    `);
-  return result.recordset;
+  return queryRows(`SELECT ${COLUMNS} FROM product_parts WHERE product_id = $1 ORDER BY id`, [productId]);
 }
 
 async function createPart({ productId, companyId, partNumber, name, description, imageUrl }) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("productId", sql.Int, productId)
-    .input("companyId", sql.Int, companyId)
-    .input("partNumber", sql.NVarChar(100), partNumber)
-    .input("name", sql.NVarChar(200), name)
-    .input("description", sql.NVarChar(sql.MAX), description ?? null)
-    .input("imageUrl", sql.NVarChar(1000), imageUrl ?? null)
-    .query(`
-      INSERT INTO dbo.ProductParts (product_id, company_id, part_number, name, description, image_url)
-      OUTPUT INSERTED.id, INSERTED.product_id, INSERTED.company_id, INSERTED.part_number,
-             INSERTED.name, INSERTED.description, INSERTED.image_url, INSERTED.created_at
-      VALUES (@productId, @companyId, @partNumber, @name, @description, @imageUrl)
-    `);
-  return result.recordset[0];
+  return queryOne(
+    `
+    INSERT INTO product_parts (product_id, company_id, part_number, name, description, image_url)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING ${COLUMNS}
+  `,
+    [productId, companyId, partNumber, name, description ?? null, imageUrl ?? null]
+  );
 }
 
 async function deletePart(id) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .query(`
-      DELETE FROM dbo.ProductParts
-      OUTPUT DELETED.id
-      WHERE id = @id
-    `);
-  return result.recordset[0] || null;
+  return queryOne(`DELETE FROM product_parts WHERE id = $1 RETURNING id`, [id]);
 }
 
 module.exports = { listPartsForProduct, createPart, deletePart };

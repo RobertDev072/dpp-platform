@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, createTestProduct, cleanupTestData } = require("./helpers/fixtures");
 
@@ -19,20 +19,17 @@ async function login(baseUrl, user) {
 
 test("licenties en adminrechten: per-tenant limieten, verlopen licentie en rolguards", async (t) => {
   const { server, baseUrl } = await startTestServer();
-  const pool = await getPool();
 
   // Plan met 2 gebruikers / 1 product.
-  const planResult = await pool.request().query(`
-    INSERT INTO dbo.Plans (name, max_users, max_products)
-    OUTPUT INSERTED.id VALUES ('Test Krap Plan', 2, 1)
-  `);
-  const planId = planResult.recordset[0].id;
+  const planResult = await query(`
+    INSERT INTO plans (name, max_users, max_products)
+    VALUES ('Test Krap Plan', 2, 1) RETURNING id`);
+  const planId = planResult.rows[0].id;
 
   const companyA = await createTestCompany("Licentie A");
   const companyB = await createTestCompany("Licentie B");
   for (const cid of [companyA, companyB]) {
-    await pool.request().input("cid", sql.Int, cid).input("pid", sql.Int, planId)
-      .query("UPDATE dbo.Companies SET plan_id = @pid WHERE id = @cid");
+    await query("UPDATE companies SET plan_id = $1 WHERE id = $2", [planId, cid]);
   }
 
   const owner = await createTestUser({ companyId: null, role: "platform_owner" });
@@ -48,9 +45,9 @@ test("licenties en adminrechten: per-tenant limieten, verlopen licentie en rolgu
       userIds: [owner.id, adminA.id, adminA2.id, medewerkerA.id, adminB.id],
       productIds: [productA]
     });
-    await pool.request().input("pid", sql.Int, planId).query("DELETE FROM dbo.Plans WHERE id = @pid");
+    await query("DELETE FROM plans WHERE id = $1", [planId]);
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   const ownerCookie = await login(baseUrl, owner);
@@ -96,8 +93,7 @@ test("licenties en adminrechten: per-tenant limieten, verlopen licentie en rolgu
 
   // --- Verlopen licentie blokkeert aanmaken, bestaande blijft werken ---
   await t.test("verlopen licentie blokkeert product- en gebruikersaanmaak met duidelijke code", async () => {
-    await pool.request().input("cid", sql.Int, companyB)
-      .query("UPDATE dbo.Companies SET license_end = DATEADD(day, -1, CAST(SYSUTCDATETIME() AS date)) WHERE id = @cid");
+    await query("UPDATE companies SET license_end = (now() AT TIME ZONE 'UTC')::date - 1 WHERE id = $1", [companyB]);
 
     const product = await request(baseUrl, "POST", "/api/products", {
       cookie: adminBCookie,

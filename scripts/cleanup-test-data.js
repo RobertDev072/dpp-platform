@@ -1,95 +1,86 @@
-// Ruimt restanten van geautomatiseerde testruns op die crashten vóór hun eigen
-// cleanup: alle @example.com-gebruikers (fixtures gebruiken uitsluitend dat
-// gereserveerde domein - echte data kan nooit matchen), bedrijven met slug
-// test-<hex>, en achtergebleven @example.com-accounts in de Entra-tenant.
-// Gebruik: node scripts/cleanup-test-data.js
+// Veegt achtergebleven testdata op: bedrijven met slug test-<hex>, gebruikers met
+// e-mail test-<hex>@example.com of *@example.com uit de e2e-scripts, hun producten/
+// documenten, en de bijbehorende accounts in Supabase Auth.
+//
+// Gebruik: node scripts/cleanup-test-data.js           (droog: toont wat weg zou gaan)
+//          node scripts/cleanup-test-data.js --apply   (echt opruimen)
 require("dotenv").config();
-const { getPool, sql } = require("../src/config/db");
-const { getDaemonConfidentialClient } = require("../src/services/msalClients");
+const { query, queryRows, closePool } = require("../src/config/db");
+const { isSupabaseConfigured, getSupabaseAdmin } = require("../src/config/supabase");
 
-const USER_PATTERN = "%@example.com";
-const SLUG_PATTERN = "test-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]";
+const APPLY = process.argv.includes("--apply");
+const EMAIL_PATTERNS = ["test-%@example.com", "e2e-%@example.com"];
+const SLUG_PATTERNS = ["test-%", "e2e-%"];
 
-async function cleanupEntraTestAccounts() {
-  try {
-    const client = await getDaemonConfidentialClient();
-    const t = await client.acquireTokenByClientCredential({ scopes: ["https://graph.microsoft.com/.default"] });
-    const r = await fetch("https://graph.microsoft.com/v1.0/users?$select=id,displayName&$top=999", {
-      headers: { Authorization: `Bearer ${t.accessToken}` }
-    });
-    const body = await r.json();
-    let removed = 0;
-    for (const u of body.value || []) {
-      if (/@example\.com$/i.test(u.displayName || "")) {
-        const del = await fetch(`https://graph.microsoft.com/v1.0/users/${u.id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${t.accessToken}` }
-        });
-        if (del.ok) removed += 1;
-        console.log(`  Entra verwijderd: ${u.displayName} (${del.status})`);
+async function cleanupSupabaseAuthTestAccounts() {
+  if (!isSupabaseConfigured()) {
+    console.log("Supabase-veegronde overgeslagen: Supabase niet geconfigureerd.");
+    return;
+  }
+  const admin = getSupabaseAdmin().auth.admin;
+  let removed = 0;
+  for (let page = 1; page < 100; page += 1) {
+    const { data, error } = await admin.listUsers({ page, perPage: 200 });
+    if (error) {
+      console.log("Supabase-veegronde mislukt:", error.message);
+      return;
+    }
+    const testUsers = data.users.filter((u) => /^(test|e2e)-[^@]*@example\.com$/i.test(u.email || ""));
+    for (const u of testUsers) {
+      console.log(`  Supabase Auth: ${u.email}${APPLY ? " verwijderd" : " (zou verwijderd worden)"}`);
+      if (APPLY) {
+        await admin.deleteUser(u.id);
+        removed += 1;
       }
     }
-    console.log(`Entra-veegronde klaar: ${removed} testaccount(s) verwijderd`);
-  } catch (error) {
-    console.log("Entra-veegronde overgeslagen:", error.message);
+    if (data.users.length < 200) break;
   }
+  console.log(`Supabase-veegronde klaar: ${removed} testaccount(s) verwijderd`);
 }
 
-async function run() {
-  const pool = await getPool();
+async function cleanupDatabase() {
+  const users = await queryRows(`SELECT id, email FROM users WHERE email ILIKE ANY($1)`, [EMAIL_PATTERNS]);
+  const companies = await queryRows(`SELECT id, slug FROM companies WHERE slug ILIKE ANY($1)`, [SLUG_PATTERNS]);
+  console.log(`Database: ${users.length} testgebruiker(s), ${companies.length} testbedrij(f/ven)`);
+  if (!APPLY) return;
 
-  const users = await pool.request().query(`SELECT id, email FROM dbo.Users WHERE email LIKE '${USER_PATTERN}'`);
-  const companies = await pool.request().query(`SELECT id, slug FROM dbo.Companies WHERE slug LIKE '${SLUG_PATTERN}'`);
-  console.log(`Gevonden: ${users.recordset.length} testgebruikers, ${companies.recordset.length} testbedrijven`);
-
-  const userIds = users.recordset.map((u) => u.id);
-  const companyIds = companies.recordset.map((c) => c.id);
-
-  if (userIds.length) {
-    const ids = userIds.join(",");
-    await pool.request().query(`DELETE FROM dbo.Sessions WHERE user_id IN (${ids})`);
-    await pool.request().query(`UPDATE dbo.CompanyAdminInvites SET invited_by = NULL WHERE invited_by IN (${ids})`);
-    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE user_id IN (${ids}) OR impersonator_user_id IN (${ids})`);
-    await pool.request().query(`UPDATE dbo.Products SET created_by = NULL WHERE created_by IN (${ids})`);
-  }
-
-  if (companyIds.length) {
-    const ids = companyIds.join(",");
-    await pool.request().query(`DELETE FROM dbo.ScanEvents WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${ids}))`);
-    await pool.request().query(`DELETE FROM dbo.Documents WHERE company_id IN (${ids})`);
-    await pool.request().query(`DELETE FROM dbo.ProductParts WHERE company_id IN (${ids})`);
-    await pool.request().query(`DELETE FROM dbo.ProductBatches WHERE company_id IN (${ids})`);
-    await pool.request().query(`DELETE FROM dbo.ProductSustainability WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${ids}))`);
-    await pool.request().query(`DELETE FROM dbo.ProductCompliance WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${ids}))`);
-    await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${ids})`);
-    await pool.request().query(`DELETE FROM dbo.CompanyAdminInvites WHERE company_id IN (${ids})`);
-    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${ids})`);
-  }
+  const userIds = users.map((u) => u.id);
+  const companyIds = companies.map((c) => c.id);
 
   if (userIds.length) {
-    await pool.request().query(`DELETE FROM dbo.Users WHERE id IN (${userIds.join(",")})`);
+    await query(`DELETE FROM sessions WHERE user_id = ANY($1::int[]) OR impersonator_user_id = ANY($1::int[])`, [userIds]);
+    await query(`DELETE FROM company_admin_invites WHERE invited_by = ANY($1::int[])`, [userIds]);
+    await query(`DELETE FROM audit_logs WHERE user_id = ANY($1::int[]) OR impersonator_user_id = ANY($1::int[])`, [userIds]);
+    await query(`UPDATE products SET created_by = NULL WHERE created_by = ANY($1::int[])`, [userIds]);
   }
   if (companyIds.length) {
-    // Eventuele niet-testgebruikers in een testbedrijf blokkeren het verwijderen via
-    // de FK - dat is bewust: dan blijft dat bedrijf staan en zie je het hieronder.
-    for (const id of companyIds) {
-      try {
-        await pool.request().input("id", sql.Int, id).query("DELETE FROM dbo.Companies WHERE id = @id");
-      } catch {
-        console.log(`  bedrijf ${id} overgeslagen (bevat nog echte gebruikers)`);
-      }
+    const productFilter = "product_id IN (SELECT id FROM products WHERE company_id = ANY($1::int[]))";
+    for (const table of ["scan_events", "documents", "product_parts", "product_batches", "product_sustainability", "product_compliance"]) {
+      await query(`DELETE FROM ${table} WHERE ${productFilter}`, [companyIds]);
     }
+    await query(`DELETE FROM products WHERE company_id = ANY($1::int[])`, [companyIds]);
+    await query(`DELETE FROM company_admin_invites WHERE company_id = ANY($1::int[])`, [companyIds]);
+    await query(`DELETE FROM audit_logs WHERE company_id = ANY($1::int[])`, [companyIds]);
+    await query(`UPDATE companies SET partner_id = NULL WHERE partner_id = ANY($1::int[])`, [companyIds]);
+    await query(`DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE company_id = ANY($1::int[]))`, [companyIds]);
+    await query(`DELETE FROM users WHERE company_id = ANY($1::int[])`, [companyIds]);
   }
-
-  await cleanupEntraTestAccounts();
-
-  const left = await pool.request().query("SELECT COUNT(*) AS n FROM dbo.Users");
-  const owners = await pool.request().query("SELECT email FROM dbo.Users WHERE role = 'platform_owner'");
-  console.log(`Klaar. Gebruikers over: ${left.recordset[0].n}; platform owner(s): ${owners.recordset.map((o) => o.email).join(", ")}`);
-  await sql.close();
+  if (userIds.length) {
+    await query(`DELETE FROM users WHERE id = ANY($1::int[])`, [userIds]);
+  }
+  if (companyIds.length) {
+    await query(`DELETE FROM companies WHERE id = ANY($1::int[])`, [companyIds]);
+  }
+  console.log("Database opgeschoond.");
 }
 
-run().catch((error) => {
-  console.error("Opruimen mislukt:", error.message);
-  process.exit(1);
-});
+(async () => {
+  if (!APPLY) console.log("Droge run - voeg --apply toe om echt op te ruimen.\n");
+  await cleanupDatabase();
+  await cleanupSupabaseAuthTestAccounts();
+})()
+  .catch((error) => {
+    console.error("❌ Opruimen mislukt:", error.message);
+    process.exitCode = 1;
+  })
+  .finally(() => closePool());

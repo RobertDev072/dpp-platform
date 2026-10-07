@@ -1,7 +1,7 @@
 const test = require("node:test");
 const { after } = require("node:test");
 const assert = require("node:assert/strict");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
@@ -84,19 +84,19 @@ test("impersonatie: volledige start/stop-cyclus met audit-logging", async (t) =>
   });
 
   await t.test("audit-log bevat impersonate_start met beide id's", async () => {
-    const pool = await getPool();
-    const rows = await pool
-      .request()
-      .input("targetId", sql.NVarChar(50), String(admin.id))
-      .query(`
-        SELECT TOP 1 user_id, impersonator_user_id, action
-        FROM dbo.AuditLogs
-        WHERE action = 'impersonate_start' AND entity_type = 'User' AND entity_id = @targetId
+    const rows = await query(
+      `
+        SELECT user_id, impersonator_user_id, action
+        FROM audit_logs
+        WHERE action = 'impersonate_start' AND entity_type = 'User' AND entity_id = $1
         ORDER BY id DESC
-      `);
-    assert.equal(rows.recordset.length, 1);
-    assert.equal(rows.recordset[0].user_id, owner.id);
-    assert.equal(rows.recordset[0].impersonator_user_id, owner.id);
+        LIMIT 1
+      `,
+      [String(admin.id)]
+    );
+    assert.equal(rows.rows.length, 1);
+    assert.equal(rows.rows[0].user_id, owner.id);
+    assert.equal(rows.rows[0].impersonator_user_id, owner.id);
   });
 
   await t.test("stop: eigen sessie wordt hersteld", async () => {
@@ -162,5 +162,5 @@ test("impersonatie: volledige start/stop-cyclus met audit-logging", async (t) =>
 });
 
 after(async () => {
-  await sql.close();
+  await closePool();
 });

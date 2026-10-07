@@ -8,7 +8,7 @@ const companiesRepo = require("../repositories/companies.repository");
 const plansRepo = require("../repositories/plans.repository");
 const invitesRepo = require("../repositories/invites.repository");
 const usersRepo = require("../repositories/users.repository");
-const graphClient = require("../services/graphClient");
+const identity = require("../services/identity.service");
 const { hashPassword } = require("../utils/password");
 const { generateTempPassword } = require("../utils/tempPassword");
 const { buildUsage, getLicenseUsage } = require("../services/license.service");
@@ -129,7 +129,7 @@ router.post("/customers", validateBody(createCustomerSchema), async (req, res, n
 
     res.status(201).json(company);
   } catch (error) {
-    if (error.number === 2627 || error.number === 2601) {
+    if (error.code === "23505") {
       next(new HttpError(409, "Slug is al in gebruik"));
       return;
     }
@@ -228,9 +228,9 @@ router.post(
       const authInfo = await usersRepo.getUserAuthInfo(target.id);
       const tempPassword = generateTempPassword();
 
-      if (authInfo?.entraObjectId) {
+      if (authInfo?.authUserId && !authInfo.hasLocalPassword) {
         try {
-          await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
+          await identity.setPassword(authInfo.authUserId, tempPassword);
         } catch (error) {
           await logAudit({
             companyId: customer.id,
@@ -240,13 +240,8 @@ router.post(
             entityId: target.id,
             metadata: { via: "partner", partnerCompanyId: req.user.companyId, targetEmail: target.email, result: "mislukt" }
           });
-          if (/\(403\)/.test(error.message || "")) {
-            next(
-              new HttpError(
-                502,
-                "Entra weigert de wachtwoordreset: de Graph-app mist de permissie User-PasswordProfile.ReadWrite.All (met admin consent). Voeg die toe in Entra en probeer opnieuw."
-              )
-            );
+          if (error instanceof identity.IdentityError) {
+            next(new HttpError(502, `Wachtwoordreset bij Supabase Auth mislukt: ${error.message}`));
             return;
           }
           throw error;
@@ -326,7 +321,7 @@ router.post("/customers/:id/invites", validateBody(createInviteSchema), async (r
     const activationUrl = `${getAppBaseUrl(req)}/activate?token=${token}`;
     res.status(201).json({ ...invite, activationUrl });
   } catch (error) {
-    if (error.number === 2627 || error.number === 2601) {
+    if (error.code === "23505") {
       next(new HttpError(409, "Er is al een openstaande uitnodiging voor dit e-mailadres"));
       return;
     }

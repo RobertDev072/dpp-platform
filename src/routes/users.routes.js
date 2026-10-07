@@ -10,8 +10,7 @@ const { generateTempPassword } = require("../utils/tempPassword");
 const { assertCompanyAccess } = require("../utils/tenant");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const { isEntraConfigured } = require("../config/entra");
-const graphClient = require("../services/graphClient");
+const identity = require("../services/identity.service");
 const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
 const licenseService = require("../services/license.service");
 
@@ -76,7 +75,7 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
 
     const maxUsers = body.companyId != null ? await plansRepo.getMaxUsersForCompany(body.companyId) : null;
 
-    // Licentiecheck vóór een eventuele Graph-call: dekt zowel een verlopen licentie
+    // Licentiecheck vóór het aanmaken van een Supabase Auth-account: dekt zowel een verlopen licentie
     // als de seat-limiet (per bedrijf). De race-veilige, autoritatieve seat-check
     // zit daarnaast in createUserWithSeatLimit hieronder.
     if (body.companyId != null) {
@@ -84,22 +83,29 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
     }
 
     let passwordHash = null;
-    let entraObjectId = null;
+    let authUserId = null;
     let tempPassword;
 
-    if (isEntraConfigured()) {
+    if (identity.isIdentityProviderConfigured()) {
       tempPassword = generateTempPassword();
       const displayName = [body.firstName, body.lastName].filter(Boolean).join(" ") || body.email;
-      const created = await graphClient.createEntraUser({
-        email: body.email,
-        displayName,
-        tempPassword
-      });
-      entraObjectId = created.entraObjectId;
+      try {
+        ({ authUserId } = await identity.createAuthUser({
+          email: body.email,
+          displayName,
+          password: tempPassword
+        }));
+      } catch (error) {
+        if (error instanceof identity.IdentityError && error.code === "EMAIL_EXISTS") {
+          next(new HttpError(409, "E-mailadres is al in gebruik"));
+          return;
+        }
+        throw error;
+      }
     } else {
-      // Legacy-modus (Entra-provisioning niet geconfigureerd): genereer zelf een
-      // tijdelijk wachtwoord i.p.v. de aanmaak te blokkeren - het nieuwe
-      // aanmaakformulier heeft bewust geen wachtwoordveld meer.
+      // Lokale modus (Supabase Auth niet geconfigureerd, alleen lokaal/tests): genereer
+      // zelf een tijdelijk wachtwoord i.p.v. de aanmaak te blokkeren - het
+      // aanmaakformulier heeft bewust geen wachtwoordveld.
       if (!body.password) {
         tempPassword = generateTempPassword();
         passwordHash = await hashPassword(tempPassword);
@@ -108,23 +114,31 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
       }
     }
 
-    const { limitReached, user } = await usersRepo.createUserWithSeatLimit({
-      companyId: body.companyId,
-      maxUsers,
-      email: body.email,
-      passwordHash,
-      entraObjectId,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      role: body.role,
-      status: body.status
-    });
+    let created;
+    try {
+      created = await usersRepo.createUserWithSeatLimit({
+        companyId: body.companyId,
+        maxUsers,
+        email: body.email,
+        passwordHash,
+        authUserId,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        role: body.role,
+        status: body.status
+      });
+    } catch (error) {
+      // Geen weesaccount in Supabase Auth achterlaten als de DPP-rij niet ontstaat.
+      if (authUserId) await identity.deleteAuthUser(authUserId).catch(() => {});
+      throw error;
+    }
+    const { limitReached, user } = created;
 
     if (limitReached) {
       // Zeldzame race: de snelle pre-check hierboven zag nog ruimte, maar een
-      // gelijktijdige aanvraag heeft de laatste plek net ingenomen. Het eventueel al
-      // aangemaakte Entra-account blijft dan als ongebruikt account achter in de
-      // tenant (bekende MVP-beperking, zie docs/entra-external-id-setup.md).
+      // gelijktijdige aanvraag heeft de laatste plek net ingenomen. Het zojuist
+      // aangemaakte Supabase-account wordt weer opgeruimd.
+      if (authUserId) await identity.deleteAuthUser(authUserId).catch(() => {});
       next(new HttpError(409, "Licentielimiet bereikt voor dit bedrijf", undefined, "LICENSE_LIMIT_REACHED"));
       return;
     }
@@ -135,7 +149,7 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
       action: "create",
       entityType: "User",
       entityId: user.id,
-      metadata: { via: entraObjectId ? "entra" : "local" }
+      metadata: { via: authUserId ? "supabase" : "local" }
     });
 
     // Bij een gegenereerd tijdelijk wachtwoord: gedwongen wijziging bij eerste login.
@@ -262,19 +276,20 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
 
     const updated = await usersRepo.updateUser(id, req.body);
 
-    // Best-effort: DPP's eigen status-check (in requireAuth) blokkeert toegang meteen en
-    // onafhankelijk hiervan. Een Graph-fout hier mag de DPP-statuswijziging dus nooit
-    // blokkeren. Elke niet-actieve status (blocked/suspended/archived) schakelt het
-    // Entra-account uit; terugzetten naar active schakelt het weer in.
-    if (req.body.status !== undefined && existing.entra_object_id) {
+    // Best-effort: DPP's eigen status-check (in requireAuth en bij het inloggen)
+    // blokkeert toegang meteen en onafhankelijk hiervan. Een Supabase-fout hier mag de
+    // DPP-statuswijziging dus nooit blokkeren. Elke niet-actieve status (blocked/
+    // suspended/archived) blokkeert het Supabase-account; terugzetten naar active
+    // deblokkeert het; 'deleted' verwijdert het definitief.
+    if (req.body.status !== undefined && existing.auth_user_id && identity.isIdentityProviderConfigured()) {
       try {
         if (req.body.status === "deleted") {
-          await graphClient.deleteEntraUser(existing.entra_object_id);
+          await identity.deleteAuthUser(existing.auth_user_id);
         } else {
-          await graphClient.setAccountEnabled(existing.entra_object_id, req.body.status === "active");
+          await identity.setAccountEnabled(existing.auth_user_id, req.body.status === "active");
         }
       } catch (error) {
-        console.error("Entra account bijwerken/verwijderen mislukt:", error.message);
+        console.error("Supabase Auth-account bijwerken/verwijderen mislukt:", error.message);
       }
     }
 
@@ -312,17 +327,12 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
     const authInfo = await usersRepo.getUserAuthInfo(id);
     const tempPassword = generateTempPassword();
 
-    if (authInfo?.entraObjectId) {
+    if (authInfo?.authUserId && !authInfo.hasLocalPassword) {
       try {
-        await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
+        await identity.setPassword(authInfo.authUserId, tempPassword);
       } catch (error) {
-        if (/\(403\)/.test(error.message || "")) {
-          next(
-            new HttpError(
-              502,
-              "Entra weigert de wachtwoordreset: de Graph-app mist de permissie User-PasswordProfile.ReadWrite.All (met admin consent). Voeg die toe in Entra en probeer opnieuw."
-            )
-          );
+        if (error instanceof identity.IdentityError) {
+          next(new HttpError(502, `Wachtwoordreset bij Supabase Auth mislukt: ${error.message}`));
           return;
         }
         throw error;
@@ -342,7 +352,7 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
       action: "reset_password",
       entityType: "User",
       entityId: id,
-      metadata: { via: authInfo.entraObjectId ? "entra" : "lokaal" }
+      metadata: { via: authInfo.hasLocalPassword ? "lokaal" : "supabase" }
     });
 
     res.json({ tempPassword });

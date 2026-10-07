@@ -1,0 +1,56 @@
+# CI: tests + productie-build bij elke push en pull request.
+#
+# Deployen doet Vercel zelf via de Git-integratie (push naar main = productie,
+# elke andere branch/PR = preview-deployment); daar is geen workflow voor nodig.
+#
+# De tests draaien tegen een wegwerp-Postgres in de runner - geen secrets nodig en
+# nooit tegen de live database. Tests die een echt Supabase-project nodig hebben
+# (Auth/Storage) worden hier overgeslagen; die dekt scripts/e2e-supabase-live.js.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dpp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/dpp
+      DATABASE_SSL: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - run: npm ci
+      - name: Databaseschema
+        run: npm run migrate
+      - name: Tests
+        run: npm test
+      - name: Productie-build
+        run: npm run build

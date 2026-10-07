@@ -1,8 +1,9 @@
 // In-memory request-telemetrie. Doel: performance-inzicht zonder externe (betaalde)
 // telemetriedienst en zonder de app zelf te vertragen: elke request kost hier alleen
-// een paar teller-ophogingen. Persistentie gebeurt één keer per uur (scheduler.js)
-// naar SystemRequestMetricsHourly; bij een herstart gaat hooguit het lopende uur
-// aan detail verloren (bewuste, goedkope keuze).
+// een paar teller-ophogingen. Persistentie: op Vercel draaien meerdere, kortlevende
+// function-instances naast elkaar, dus elke instance telt zijn eigen aggregaten
+// hooguit elke minuut op bij system_request_metrics_hourly (flush.js). Wat in het
+// geheugen staat (live-minuutgrafiek, recente foutdetails) geldt per instance.
 //
 // Privacy/veiligheid: er worden uitsluitend route-PATRONEN opgeslagen (id's, GUID's
 // en tokens worden genormaliseerd), nooit query strings, headers, bodies of cookies.
@@ -24,8 +25,9 @@ let totals = { requests: 0, errors4xx: 0, errors5xx: 0 };
 // Per-minuut ringbuffer (24 uur) voor de live/uur-grafieken.
 const minuteBuckets = new Map(); // epochMinute -> { count, err4, err5, durSum }
 
-// Per-route-aggregatie voor het lopende uur (geflusht door de scheduler).
+// Per-route-aggregatie sinds de laatste flush (zie flush.js).
 let hourRoutes = new Map(); // key scope|method|route -> aggregaat
+let hourRoutesStartedAt = null; // tijdstip van de eerste request in hourRoutes
 
 // Recente fouten (ring). Alleen gesaneerde meldingen, nooit bodies/headers.
 const recentErrors = [];
@@ -84,7 +86,8 @@ function record({ scope, method, path, status, durationMs, errorMessage, errorCo
   if (is5xx) mb.err5 += 1;
   mb.durSum += dur;
 
-  // Route-aggregaat (lopend uur)
+  // Route-aggregaat (sinds de laatste flush)
+  if (hourRoutesStartedAt === null) hourRoutesStartedAt = now;
   let key = `${scope}|${method}|${route}`;
   if (!hourRoutes.has(key) && hourRoutes.size >= MAX_ROUTE_KEYS) {
     key = `${scope}|${method}|_overig`;
@@ -211,8 +214,16 @@ function getMinuteSeries(minutes) {
   return series;
 }
 
-// Flush: lopende uur-aggregaten omzetten naar rijen voor SystemRequestMetricsHourly
-// en de teller resetten. De scheduler bepaalt wanneer.
+// Begin van het uur (UTC) waarin de nog niet geflushte aggregaten begonnen.
+function pendingBucketStart() {
+  if (hourRoutesStartedAt === null) return null;
+  const bucket = new Date(hourRoutesStartedAt);
+  bucket.setUTCMinutes(0, 0, 0);
+  return bucket;
+}
+
+// Flush: aggregaten omzetten naar rijen voor system_request_metrics_hourly en de
+// teller resetten. flush.js bepaalt wanneer.
 function drainHourRoutes() {
   const drained = [...hourRoutes.values()].map((a) => ({
     scope: a.scope,
@@ -228,6 +239,7 @@ function drainHourRoutes() {
     p99Ms: percentileFromBins(a.bins, a.count, 99)
   }));
   hourRoutes = new Map();
+  hourRoutesStartedAt = null;
   return drained;
 }
 
@@ -238,5 +250,6 @@ module.exports = {
   getLiveSnapshot,
   getMinuteSeries,
   drainHourRoutes,
+  pendingBucketStart,
   HIST_BINS
 };

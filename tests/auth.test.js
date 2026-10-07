@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
@@ -12,7 +12,7 @@ test("auth: login, /me, logout", async (t) => {
   t.after(async () => {
     await cleanupTestData({ userIds });
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   await t.test("verkeerd wachtwoord geeft 401", async () => {
@@ -54,12 +54,8 @@ test("auth: login, /me, logout", async (t) => {
   });
 
   await t.test("login-actie wordt gelogd in AuditLogs", async () => {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .input("userId", sql.Int, owner.id)
-      .query("SELECT TOP 1 action FROM dbo.AuditLogs WHERE user_id = @userId AND action = 'login'");
-    assert.equal(result.recordset.length, 1);
+    const result = await query("SELECT action FROM audit_logs WHERE user_id = $1 AND action = 'login' LIMIT 1", [owner.id]);
+    assert.equal(result.rows.length, 1);
   });
 
   await t.test("logout maakt de sessie ongeldig", async () => {

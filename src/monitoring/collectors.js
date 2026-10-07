@@ -1,12 +1,12 @@
 // Verzamelfuncties voor het monitoringdashboard. Uitgangspunten:
 // - alles server-side, alleen voor de Platform Owner ontsloten (routes dwingen af);
-// - dure metingen (tabelgroottes, blob-enumeratie) draaien maar één keer per dag
+// - dure metingen (tabelgroottes, opslagtelling) draaien maar één keer per dag
 //   in de snapshot en worden verder uit de snapshot-tabel gelezen;
 // - lichte metingen (DB-grootte, verbindingen) hebben een korte in-memory cache;
 // - geen enkele meting mag de app laten crashen: alles faalt zacht naar null met
 //   een gesaneerde reden, het dashboard toont dan "Niet beschikbaar".
 
-const { getPool, sql } = require("../config/db");
+const { getPool, query, queryRows, queryOne } = require("../config/db");
 const { sanitizeErrorMessage } = require("./requestMetrics");
 
 // --- mini-cache -------------------------------------------------------------
@@ -19,97 +19,97 @@ async function cached(key, ttlMs, fn) {
   return value;
 }
 
+// Supabase kent geen harde databasegrootte zoals Azure SQL serverless (32 GB), maar
+// wel een plan-quotum (Free 0,5 GB, Pro 8 GB inbegrepen). Zet SUPABASE_DB_MAX_BYTES
+// op het quotum van je plan voor de capaciteitsprognose.
+function configuredDatabaseMaxBytes() {
+  const value = Number(process.env.SUPABASE_DB_MAX_BYTES);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 // --- database ---------------------------------------------------------------
 
-// Actuele databasegrootte + maximum. Goedkope catalogusquery, 60s cache.
+// Actuele databasegrootte + maximum. Goedkope catalogusfunctie, 60s cache.
 async function getDatabaseSize() {
   return cached("dbSize", 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT SUM(CAST(size AS BIGINT)) * 8192 AS used_bytes,
-             CAST(DATABASEPROPERTYEX(DB_NAME(), 'MaxSizeInBytes') AS BIGINT) AS max_bytes
-      FROM sys.database_files
-      WHERE type_desc = 'ROWS'
-    `);
-    const row = result.recordset[0] || {};
-    return { usedBytes: row.used_bytes ?? null, maxBytes: row.max_bytes ?? null };
+    const row = await queryOne("SELECT pg_database_size(current_database()) AS used_bytes");
+    return { usedBytes: row?.used_bytes ?? null, maxBytes: configuredDatabaseMaxBytes() };
   });
 }
 
-// Tabelgroottes + rijen in één catalogusquery (geen table scans).
+// Tabelgroottes + (geschatte) rijen uit de statistieken (geen table scans).
 async function getTableStats() {
-  const pool = await getPool();
-  const result = await pool.request().query(`
-    SELECT t.name AS table_name,
-           SUM(CASE WHEN p.index_id IN (0,1) THEN p.row_count ELSE 0 END) AS row_count,
-           SUM(p.used_page_count) * 8192 AS used_bytes
-    FROM sys.tables t
-    JOIN sys.dm_db_partition_stats p ON p.object_id = t.object_id
-    WHERE t.is_ms_shipped = 0
-    GROUP BY t.name
+  const rows = await queryRows(`
+    SELECT c.relname AS table_name,
+           GREATEST(c.reltuples, 0)::bigint AS row_count,
+           pg_total_relation_size(c.oid) AS used_bytes
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
     ORDER BY used_bytes DESC
   `);
-  return result.recordset.map((r) => ({
+  return rows.map((r) => ({
     table: r.table_name,
     rows: Number(r.row_count),
     bytes: Number(r.used_bytes)
   }));
 }
 
-// Live databaseperformance via DMV's (gratis, geen instrumentatie nodig).
-// Vereist VIEW DATABASE STATE; zonder die permissie: nette "niet beschikbaar".
+// Live databaseperformance via pg_stat_statements (standaard aan op Supabase) en
+// pg_stat_activity. Zonder pg_stat_statements: alleen sessies, nette melding.
 async function getDbPerformance() {
   return cached("dbPerf", 60000, async () => {
-    const pool = await getPool();
     try {
-      const [stats, sessions] = await Promise.all([
-        pool.request().query(`
-          SELECT TOP 8
-                 SUBSTRING(qt.text, 1, 160) AS query_text,
-                 qs.execution_count,
-                 qs.total_elapsed_time / NULLIF(qs.execution_count, 0) / 1000 AS avg_ms,
-                 qs.max_elapsed_time / 1000 AS max_ms
-          FROM sys.dm_exec_query_stats qs
-          CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) qt
-          WHERE qs.execution_count > 1
-          ORDER BY qs.total_elapsed_time / NULLIF(qs.execution_count, 0) DESC
-        `),
-        pool.request().query(`
-          SELECT COUNT(*) AS active_sessions
-          FROM sys.dm_exec_sessions
-          WHERE is_user_process = 1
-        `)
-      ]);
+      const sessions = await queryOne(`
+        SELECT COUNT(*) AS active_sessions
+        FROM pg_stat_activity
+        WHERE datname = current_database() AND backend_type = 'client backend'
+      `);
 
-      // Querytekst is bij ons altijd geparametriseerd (@p-variabelen), maar we
-      // saneren voor de zekerheid alsnog string-literals weg.
-      const slowest = stats.recordset.map((r) => ({
-        query: String(r.query_text || "").replace(/'[^']*'/g, "'…'").replace(/\s+/g, " ").trim(),
-        executions: Number(r.execution_count),
-        avgMs: r.avg_ms != null ? Math.round(Number(r.avg_ms)) : null,
-        maxMs: r.max_ms != null ? Math.round(Number(r.max_ms)) : null
-      }));
+      let slowest = [];
+      let statementsAvailable = true;
+      try {
+        const stats = await queryRows(`
+          SELECT left(query, 160) AS query_text, calls AS execution_count,
+                 mean_exec_time AS avg_ms, max_exec_time AS max_ms
+          FROM pg_stat_statements
+          WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+            AND calls > 1
+            AND query NOT ILIKE '%pg_stat_statements%'
+          ORDER BY mean_exec_time DESC
+          LIMIT 8
+        `);
+        // Querytekst is bij ons altijd geparametriseerd ($1-variabelen), maar we
+        // saneren voor de zekerheid alsnog string-literals weg.
+        slowest = stats.map((r) => ({
+          query: String(r.query_text || "").replace(/'[^']*'/g, "'…'").replace(/\s+/g, " ").trim(),
+          executions: Number(r.execution_count),
+          avgMs: r.avg_ms != null ? Math.round(Number(r.avg_ms)) : null,
+          maxMs: r.max_ms != null ? Math.round(Number(r.max_ms)) : null
+        }));
+      } catch {
+        statementsAvailable = false;
+      }
 
-      // Poolstatus van onze eigen mssql/tarn-pool.
+      // Poolstatus van onze eigen node-postgres-pool (deze function-instance).
       let poolStatus = null;
       try {
-        const tarn = pool.pool;
-        if (tarn) {
-          poolStatus = {
-            used: tarn.numUsed(),
-            free: tarn.numFree(),
-            pendingAcquires: tarn.numPendingAcquires(),
-            max: tarn.max
-          };
-        }
+        const pool = getPool();
+        poolStatus = {
+          used: pool.totalCount - pool.idleCount,
+          free: pool.idleCount,
+          pendingAcquires: pool.waitingCount,
+          max: pool.options.max
+        };
       } catch {
         poolStatus = null;
       }
 
       return {
         available: true,
+        statementsAvailable,
         slowestQueries: slowest,
-        activeSessions: sessions.recordset[0]?.active_sessions ?? null,
+        activeSessions: sessions?.active_sessions ?? null,
         connectionPool: poolStatus
       };
     } catch (error) {
@@ -119,148 +119,136 @@ async function getDbPerformance() {
 }
 
 // --- entiteits-tellingen ------------------------------------------------------
-// Eén round-trip met subqueries; alle tabellen hebben een geclusterde PK dus
-// COUNT(*) blijft goedkoop op de huidige schaal. Bij echt grote aantallen komt
-// dit uit de dagelijkse snapshot i.p.v. live (de routes lezen dan de snapshot).
 async function getEntityCounts() {
-  return cached("entityCounts", 5 * 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
+  return cached("entityCounts", 5 * 60000, async () =>
+    queryOne(`
       SELECT
-        (SELECT COUNT(*) FROM dbo.Companies WHERE kind = 'partner') AS partner_count,
-        (SELECT COUNT(*) FROM dbo.Companies WHERE kind = 'customer') AS company_count,
-        (SELECT COUNT(*) FROM dbo.Users WHERE status <> 'deleted') AS user_count,
-        (SELECT COUNT(*) FROM dbo.Users WHERE status = 'active') AS active_user_count,
-        (SELECT COUNT(*) FROM dbo.Products) AS product_count,
-        (SELECT COUNT(*) FROM dbo.Documents) AS document_count,
-        (SELECT COUNT(*) FROM dbo.AuditLogs) AS audit_log_count,
-        (SELECT COUNT(*) FROM dbo.ScanEvents) AS scan_event_count,
-        (SELECT COUNT(*) FROM dbo.CompanyAdminInvites) AS invite_count
-    `);
-    return result.recordset[0];
-  });
+        (SELECT COUNT(*) FROM companies WHERE kind = 'partner') AS partner_count,
+        (SELECT COUNT(*) FROM companies WHERE kind = 'customer') AS company_count,
+        (SELECT COUNT(*) FROM users WHERE status <> 'deleted') AS user_count,
+        (SELECT COUNT(*) FROM users WHERE status = 'active') AS active_user_count,
+        (SELECT COUNT(*) FROM products) AS product_count,
+        (SELECT COUNT(*) FROM documents) AS document_count,
+        (SELECT COUNT(*) FROM audit_logs) AS audit_log_count,
+        (SELECT COUNT(*) FROM scan_events) AS scan_event_count,
+        (SELECT COUNT(*) FROM company_admin_invites) AS invite_count
+    `)
+  );
 }
 
-// QR-scans per periode (echte data uit ScanEvents.timestamp).
+// QR-scans per periode (echte data uit scan_events.scanned_at).
 async function getScanStats() {
-  return cached("scanStats", 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
+  return cached("scanStats", 60000, async () =>
+    queryOne(`
       SELECT
-        (SELECT COUNT(*) FROM dbo.ScanEvents WHERE scanned_at >= CAST(SYSUTCDATETIME() AS date)) AS today,
-        (SELECT COUNT(*) FROM dbo.ScanEvents WHERE scanned_at >= DATEADD(day, -7, SYSUTCDATETIME())) AS last7,
-        (SELECT COUNT(*) FROM dbo.ScanEvents WHERE scanned_at >= DATEADD(day, -30, SYSUTCDATETIME())) AS last30,
-        (SELECT COUNT(*) FROM dbo.ScanEvents) AS total
-    `);
-    return result.recordset[0];
-  });
+        (SELECT COUNT(*) FROM scan_events WHERE scanned_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS today,
+        (SELECT COUNT(*) FROM scan_events WHERE scanned_at >= now() - interval '7 days') AS last7,
+        (SELECT COUNT(*) FROM scan_events WHERE scanned_at >= now() - interval '30 days') AS last30,
+        (SELECT COUNT(*) FROM scan_events) AS total
+    `)
+  );
 }
 
 // Meest gescande producten (alleen productnaam + aantal; geen bezoekersgegevens).
 async function getTopScannedProducts() {
-  return cached("topScanned", 5 * 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT TOP 5 p.name, c.name AS company_name, COUNT(*) AS scans
-      FROM dbo.ScanEvents s
-      JOIN dbo.Products p ON p.id = s.product_id
-      JOIN dbo.Companies c ON c.id = p.company_id
-      WHERE s.scanned_at >= DATEADD(day, -30, SYSUTCDATETIME())
+  return cached("topScanned", 5 * 60000, async () =>
+    queryRows(`
+      SELECT p.name, c.name AS company_name, COUNT(*) AS scans
+      FROM scan_events s
+      JOIN products p ON p.id = s.product_id
+      JOIN companies c ON c.id = p.company_id
+      WHERE s.scanned_at >= now() - interval '30 days'
       GROUP BY p.name, c.name
       ORDER BY COUNT(*) DESC
-    `);
-    return result.recordset;
-  });
+      LIMIT 5
+    `)
+  );
 }
 
 // Logins per periode uit de bestaande auditlog.
 async function getLoginStats() {
-  return cached("loginStats", 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
+  return cached("loginStats", 60000, async () =>
+    queryOne(`
       SELECT
-        (SELECT COUNT(*) FROM dbo.AuditLogs WHERE action = 'login' AND timestamp >= CAST(SYSUTCDATETIME() AS date)) AS today,
-        (SELECT COUNT(*) FROM dbo.AuditLogs WHERE action = 'login' AND timestamp >= DATEADD(day, -7, SYSUTCDATETIME())) AS last7,
-        (SELECT COUNT(*) FROM dbo.AuditLogs WHERE action = 'login' AND timestamp >= DATEADD(day, -30, SYSUTCDATETIME())) AS last30
-    `);
-    return result.recordset[0];
-  });
+        (SELECT COUNT(*) FROM audit_logs WHERE action = 'login' AND timestamp >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') AS today,
+        (SELECT COUNT(*) FROM audit_logs WHERE action = 'login' AND timestamp >= now() - interval '7 days') AS last7,
+        (SELECT COUNT(*) FROM audit_logs WHERE action = 'login' AND timestamp >= now() - interval '30 days') AS last30
+    `)
+  );
 }
 
-// Groei per entiteit deze maand (op basis van created_at waar beschikbaar).
+// Groei per entiteit afgelopen 30 dagen (op basis van created_at waar beschikbaar).
 async function getEntityGrowthThisMonth() {
-  return cached("entityGrowth", 10 * 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
+  return cached("entityGrowth", 10 * 60000, async () =>
+    queryOne(`
       SELECT
-        (SELECT COUNT(*) FROM dbo.Companies WHERE kind = 'partner' AND created_at >= DATEADD(day, -30, SYSUTCDATETIME())) AS partners,
-        (SELECT COUNT(*) FROM dbo.Companies WHERE kind = 'customer' AND created_at >= DATEADD(day, -30, SYSUTCDATETIME())) AS companies,
-        (SELECT COUNT(*) FROM dbo.Users WHERE created_at >= DATEADD(day, -30, SYSUTCDATETIME())) AS users,
-        (SELECT COUNT(*) FROM dbo.Products WHERE created_at >= DATEADD(day, -30, SYSUTCDATETIME())) AS products,
-        (SELECT COUNT(*) FROM dbo.Documents WHERE created_at >= DATEADD(day, -30, SYSUTCDATETIME())) AS documents,
-        (SELECT COUNT(*) FROM dbo.AuditLogs WHERE timestamp >= DATEADD(day, -30, SYSUTCDATETIME())) AS auditLogs
-    `);
-    return result.recordset[0];
-  });
+        (SELECT COUNT(*) FROM companies WHERE kind = 'partner' AND created_at >= now() - interval '30 days') AS partners,
+        (SELECT COUNT(*) FROM companies WHERE kind = 'customer' AND created_at >= now() - interval '30 days') AS companies,
+        (SELECT COUNT(*) FROM users WHERE created_at >= now() - interval '30 days') AS users,
+        (SELECT COUNT(*) FROM products WHERE created_at >= now() - interval '30 days') AS products,
+        (SELECT COUNT(*) FROM documents WHERE created_at >= now() - interval '30 days') AS documents,
+        (SELECT COUNT(*) FROM audit_logs WHERE timestamp >= now() - interval '30 days') AS "auditLogs"
+    `)
+  );
 }
 
 // Opslagverdeling documenten op basis van de DB (betrouwbaar: file_size wordt bij
 // upload vastgelegd). Foto's hebben geen size in de DB - die komen uit de
-// dagelijkse blob-snapshot.
+// dagelijkse opslag-snapshot.
 async function getDocumentStorageBreakdown() {
   return cached("docBreakdown", 10 * 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT type, COUNT(*) AS n, SUM(CAST(file_size AS BIGINT)) AS bytes
-      FROM dbo.Documents
+    const rows = await queryRows(`
+      SELECT type, COUNT(*) AS n, SUM(file_size::bigint) AS bytes
+      FROM documents
       WHERE blob_name IS NOT NULL
       GROUP BY type
-      ORDER BY bytes DESC
+      ORDER BY bytes DESC NULLS LAST
     `);
-    return result.recordset.map((r) => ({ type: r.type, count: r.n, bytes: Number(r.bytes || 0) }));
+    return rows.map((r) => ({ type: r.type, count: r.n, bytes: Number(r.bytes || 0) }));
   });
 }
 
-// --- blob storage -------------------------------------------------------------
-// Volledige enumeratie is de enige exacte meting zonder extra Azure-diensten.
-// Draait daarom uitsluitend in de dagelijkse snapshot (niet per page load). Bij
-// forse groei (>100k blobs) is het gratis alternatief de maandelijkse capaciteits-
-// metric van Azure Monitor; dat staat in het eindrapport als vervolgstap.
+// --- bestandsopslag (Supabase Storage) -----------------------------------------
+// Supabase houdt alle objecten bij in de tabel storage.objects (met grootte en
+// mimetype in metadata), dus één query geeft een exacte telling - geen enumeratie
+// van de opslag zelf nodig. Draait alleen in de dagelijkse snapshot.
 async function getBlobStats() {
-  const { isBlobStorageConfigured } = require("../config/storage");
-  if (!isBlobStorageConfigured()) {
-    return { available: false, reason: "Blob Storage niet geconfigureerd" };
-  }
-  const { IMAGES_CONTAINER, DOCUMENTS_CONTAINER } = require("../services/blobStorage.service");
-  const { BlobServiceClient } = require("@azure/storage-blob");
-  const { DefaultAzureCredential } = require("@azure/identity");
-  const { ACCOUNT_NAME } = require("../config/storage");
+  const { IMAGES_BUCKET, DOCUMENTS_BUCKET } = require("../config/supabase");
+  const buckets = [IMAGES_BUCKET, DOCUMENTS_BUCKET];
 
-  const client = new BlobServiceClient(`https://${ACCOUNT_NAME}.blob.core.windows.net`, new DefaultAzureCredential());
+  let rows;
+  try {
+    rows = await queryRows(
+      `
+      SELECT bucket_id,
+             lower(substring(name from '\\.([A-Za-z0-9]{1,10})$')) AS ext,
+             COUNT(*) AS n,
+             COALESCE(SUM((metadata->>'size')::bigint), 0) AS bytes
+      FROM storage.objects
+      WHERE bucket_id = ANY($1)
+      GROUP BY bucket_id, ext
+    `,
+      [buckets]
+    );
+  } catch (error) {
+    // Geen Supabase-database (bijv. lokale Postgres): schema storage bestaat niet.
+    return { available: false, reason: sanitizeErrorMessage(error.message) };
+  }
+
   const containers = {};
   let totalBytes = 0;
   let totalCount = 0;
-
-  for (const name of [IMAGES_CONTAINER, DOCUMENTS_CONTAINER]) {
-    let bytes = 0;
-    let count = 0;
-    const byExtension = {};
-    try {
-      const containerClient = client.getContainerClient(name);
-      for await (const blob of containerClient.listBlobsFlat()) {
-        const size = blob.properties.contentLength || 0;
-        bytes += size;
-        count += 1;
-        const ext = (blob.name.split(".").pop() || "onbekend").toLowerCase().slice(0, 10);
-        byExtension[ext] = byExtension[ext] || { count: 0, bytes: 0 };
-        byExtension[ext].count += 1;
-        byExtension[ext].bytes += size;
-      }
-    } catch (error) {
-      containers[name] = { available: false, reason: sanitizeErrorMessage(error.message) };
-      continue;
-    }
-    containers[name] = { available: true, bytes, count, byExtension };
+  for (const name of buckets) {
+    containers[name] = { available: true, bytes: 0, count: 0, byExtension: {} };
+  }
+  for (const r of rows) {
+    const bucket = containers[r.bucket_id];
+    const ext = r.ext || "onbekend";
+    const count = Number(r.n);
+    const bytes = Number(r.bytes);
+    bucket.count += count;
+    bucket.bytes += bytes;
+    bucket.byExtension[ext] = { count, bytes };
     totalBytes += bytes;
     totalCount += count;
   }
@@ -271,7 +259,6 @@ async function getBlobStats() {
 // --- snapshots ------------------------------------------------------------------
 
 async function takeSnapshot() {
-  const pool = await getPool();
   const [dbSize, tableStats, counts, blobStats] = await Promise.all([
     getDatabaseSize().catch(() => ({ usedBytes: null, maxBytes: null })),
     getTableStats().catch(() => null),
@@ -279,146 +266,160 @@ async function takeSnapshot() {
     getBlobStats().catch((e) => ({ available: false, reason: sanitizeErrorMessage(e.message) }))
   ]);
 
-  await pool
-    .request()
-    .input("dbBytes", sql.BigInt, dbSize.usedBytes)
-    .input("dbMaxBytes", sql.BigInt, dbSize.maxBytes)
-    .input("blobBytes", sql.BigInt, blobStats?.available ? blobStats.totalBytes : null)
-    .input("blobCount", sql.Int, blobStats?.available ? blobStats.totalCount : null)
-    .input("partnerCount", sql.Int, counts?.partner_count ?? 0)
-    .input("companyCount", sql.Int, counts?.company_count ?? 0)
-    .input("userCount", sql.Int, counts?.user_count ?? 0)
-    .input("activeUserCount", sql.Int, counts?.active_user_count ?? 0)
-    .input("productCount", sql.Int, counts?.product_count ?? 0)
-    .input("documentCount", sql.Int, counts?.document_count ?? 0)
-    .input("auditLogCount", sql.Int, counts?.audit_log_count ?? 0)
-    .input("scanEventCount", sql.Int, counts?.scan_event_count ?? 0)
-    .input("inviteCount", sql.Int, counts?.invite_count ?? 0)
-    .input("tableStats", sql.NVarChar(sql.MAX), tableStats ? JSON.stringify(tableStats) : null)
-    .input("blobStats", sql.NVarChar(sql.MAX), blobStats ? JSON.stringify(blobStats) : null)
-    .query(`
-      INSERT INTO dbo.SystemMetricsSnapshots
-        (database_size_bytes, database_max_bytes, blob_storage_bytes, blob_count,
-         partner_count, company_count, user_count, active_user_count, product_count,
-         document_count, audit_log_count, scan_event_count, invite_count, table_stats, blob_stats)
-      VALUES (@dbBytes, @dbMaxBytes, @blobBytes, @blobCount, @partnerCount, @companyCount,
-              @userCount, @activeUserCount, @productCount, @documentCount, @auditLogCount,
-              @scanEventCount, @inviteCount, @tableStats, @blobStats)
-    `);
+  await query(
+    `
+    INSERT INTO system_metrics_snapshots
+      (database_size_bytes, database_max_bytes, blob_storage_bytes, blob_count,
+       partner_count, company_count, user_count, active_user_count, product_count,
+       document_count, audit_log_count, scan_event_count, invite_count, table_stats, blob_stats)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+  `,
+    [
+      dbSize.usedBytes,
+      dbSize.maxBytes,
+      blobStats?.available ? blobStats.totalBytes : null,
+      blobStats?.available ? blobStats.totalCount : null,
+      counts?.partner_count ?? 0,
+      counts?.company_count ?? 0,
+      counts?.user_count ?? 0,
+      counts?.active_user_count ?? 0,
+      counts?.product_count ?? 0,
+      counts?.document_count ?? 0,
+      counts?.audit_log_count ?? 0,
+      counts?.scan_event_count ?? 0,
+      counts?.invite_count ?? 0,
+      tableStats ? JSON.stringify(tableStats) : null,
+      blobStats ? JSON.stringify(blobStats) : null
+    ]
+  );
+  cache.delete("latestSnapshot");
 }
 
 async function getLatestSnapshot() {
-  return cached("latestSnapshot", 60000, async () => {
-    const pool = await getPool();
-    const result = await pool.request().query(`
-      SELECT TOP 1 * FROM dbo.SystemMetricsSnapshots ORDER BY taken_at DESC
-    `);
-    return result.recordset[0] || null;
-  });
+  return cached("latestSnapshot", 60000, async () =>
+    queryOne(`SELECT * FROM system_metrics_snapshots ORDER BY taken_at DESC LIMIT 1`)
+  );
 }
 
 async function getSnapshotSeries(days) {
-  const pool = await getPool();
-  const request = pool.request();
+  const params = [];
   let where = "";
   if (days) {
-    request.input("days", sql.Int, days);
-    where = "WHERE taken_at >= DATEADD(day, -@days, SYSUTCDATETIME())";
+    params.push(days);
+    where = "WHERE taken_at >= now() - make_interval(days => $1)";
   }
-  const result = await request.query(`
+  return queryRows(
+    `
     SELECT id, taken_at, database_size_bytes, database_max_bytes, blob_storage_bytes, blob_count,
            partner_count, company_count, user_count, active_user_count, product_count,
            document_count, audit_log_count, scan_event_count
-    FROM dbo.SystemMetricsSnapshots
+    FROM system_metrics_snapshots
     ${where}
     ORDER BY taken_at ASC
-  `);
-  return result.recordset;
+  `,
+    params
+  );
 }
 
 async function getLastSnapshotAgeHours() {
-  const pool = await getPool();
-  const result = await pool.request().query(`
-    SELECT DATEDIFF(minute, MAX(taken_at), SYSUTCDATETIME()) AS age_minutes
-    FROM dbo.SystemMetricsSnapshots
+  const row = await queryOne(`
+    SELECT EXTRACT(EPOCH FROM (now() - MAX(taken_at))) / 60 AS age_minutes
+    FROM system_metrics_snapshots
   `);
-  const age = result.recordset[0]?.age_minutes;
-  return age == null ? null : age / 60;
+  const age = row?.age_minutes;
+  return age == null ? null : Number(age) / 60;
 }
 
 // --- uurmetrics lezen/schrijven ---------------------------------------------------
 
+// Meerdere function-instances schrijven naar dezelfde uurrij: tellers en sommen
+// worden opgeteld, het maximum is het grootste, en de percentielen worden gewogen
+// naar aantal requests samengevoegd (benadering, zo ook gelabeld in de UI).
 async function persistHourlyMetrics(rows, bucketStart) {
   if (!rows.length) return;
-  const pool = await getPool();
-  // Beperkt aantal rijen (max ~MAX_ROUTE_KEYS); sequentieel is prima en houdt
-  // de transactielast minimaal.
   for (const row of rows) {
-    await pool
-      .request()
-      .input("bucketStart", sql.DateTime2, bucketStart)
-      .input("scope", sql.NVarChar(20), row.scope)
-      .input("route", sql.NVarChar(200), row.route)
-      .input("method", sql.NVarChar(10), row.method)
-      .input("requestCount", sql.Int, row.requestCount)
-      .input("error4xx", sql.Int, row.error4xx)
-      .input("error5xx", sql.Int, row.error5xx)
-      .input("durationSum", sql.BigInt, row.durationSumMs)
-      .input("durationMax", sql.Int, row.durationMaxMs)
-      .input("p50", sql.Int, row.p50Ms)
-      .input("p95", sql.Int, row.p95Ms)
-      .input("p99", sql.Int, row.p99Ms)
-      .query(`
-        INSERT INTO dbo.SystemRequestMetricsHourly
-          (bucket_start, scope, route, method, request_count, error_4xx_count, error_5xx_count,
-           duration_sum_ms, duration_max_ms, p50_ms, p95_ms, p99_ms)
-        VALUES (@bucketStart, @scope, @route, @method, @requestCount, @error4xx, @error5xx,
-                @durationSum, @durationMax, @p50, @p95, @p99)
-      `);
+    await query(
+      `
+      INSERT INTO system_request_metrics_hourly AS h
+        (bucket_start, scope, route, method, request_count, error_4xx_count, error_5xx_count,
+         duration_sum_ms, duration_max_ms, p50_ms, p95_ms, p99_ms)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ON CONFLICT (bucket_start, scope, route, method) DO UPDATE SET
+        p50_ms = ROUND((COALESCE(h.p50_ms, 0)::numeric * h.request_count + COALESCE(EXCLUDED.p50_ms, 0) * EXCLUDED.request_count)
+                       / NULLIF(h.request_count + EXCLUDED.request_count, 0)),
+        p95_ms = ROUND((COALESCE(h.p95_ms, 0)::numeric * h.request_count + COALESCE(EXCLUDED.p95_ms, 0) * EXCLUDED.request_count)
+                       / NULLIF(h.request_count + EXCLUDED.request_count, 0)),
+        p99_ms = GREATEST(h.p99_ms, EXCLUDED.p99_ms),
+        request_count = h.request_count + EXCLUDED.request_count,
+        error_4xx_count = h.error_4xx_count + EXCLUDED.error_4xx_count,
+        error_5xx_count = h.error_5xx_count + EXCLUDED.error_5xx_count,
+        duration_sum_ms = h.duration_sum_ms + EXCLUDED.duration_sum_ms,
+        duration_max_ms = GREATEST(h.duration_max_ms, EXCLUDED.duration_max_ms)
+    `,
+      [
+        bucketStart,
+        row.scope,
+        String(row.route).slice(0, 200),
+        row.method,
+        row.requestCount,
+        row.error4xx,
+        row.error5xx,
+        row.durationSumMs,
+        row.durationMaxMs,
+        row.p50Ms,
+        row.p95Ms,
+        row.p99Ms
+      ]
+    );
   }
 }
 
 async function getHourlyMetrics({ hours, scope }) {
-  const pool = await getPool();
-  const request = pool.request().input("hours", sql.Int, hours);
+  const params = [hours];
   let scopeWhere = "";
   if (scope) {
-    request.input("scope", sql.NVarChar(20), scope);
-    scopeWhere = "AND scope = @scope";
+    params.push(scope);
+    scopeWhere = "AND scope = $2";
   }
-  const result = await request.query(`
+  return queryRows(
+    `
     SELECT bucket_start, scope, route, method, request_count, error_4xx_count, error_5xx_count,
            duration_sum_ms, duration_max_ms, p50_ms, p95_ms, p99_ms
-    FROM dbo.SystemRequestMetricsHourly
-    WHERE bucket_start >= DATEADD(hour, -@hours, SYSUTCDATETIME()) ${scopeWhere}
+    FROM system_request_metrics_hourly
+    WHERE bucket_start >= now() - make_interval(hours => $1) ${scopeWhere}
     ORDER BY bucket_start ASC
-  `);
-  return result.recordset;
+  `,
+    params
+  );
 }
 
 // Tijdserie over de uurdata, per uur of per dag geaggregeerd (SQL-side, compact).
 async function getHourlySeries({ hours, scope, perDay = false }) {
-  const pool = await getPool();
-  const request = pool.request().input("hours", sql.Int, hours);
+  const params = [hours];
   let scopeWhere = "";
   if (scope) {
-    request.input("scope", sql.NVarChar(20), scope);
-    scopeWhere = "AND scope = @scope";
+    params.push(scope);
+    scopeWhere = "AND scope = $2";
   }
-  const bucketExpr = perDay ? "CAST(bucket_start AS date)" : "bucket_start";
-  const result = await request.query(`
+  const bucketExpr = perDay
+    ? "(date_trunc('day', bucket_start AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')"
+    : "bucket_start";
+  const rows = await queryRows(
+    `
     SELECT ${bucketExpr} AS bucket,
            SUM(request_count) AS requests,
            SUM(error_4xx_count) AS errors4xx,
            SUM(error_5xx_count) AS errors5xx,
            SUM(duration_sum_ms) / NULLIF(SUM(request_count), 0) AS avg_ms,
-           SUM(CAST(p95_ms AS BIGINT) * request_count) / NULLIF(SUM(request_count), 0) AS p95_ms
-    FROM dbo.SystemRequestMetricsHourly
-    WHERE bucket_start >= DATEADD(hour, -@hours, SYSUTCDATETIME()) ${scopeWhere}
-    GROUP BY ${bucketExpr}
-    ORDER BY bucket ASC
-  `);
-  return result.recordset.map((r) => ({
+           SUM(p95_ms::bigint * request_count) / NULLIF(SUM(request_count), 0) AS p95_ms
+    FROM system_request_metrics_hourly
+    WHERE bucket_start >= now() - make_interval(hours => $1) ${scopeWhere}
+    GROUP BY 1
+    ORDER BY 1 ASC
+  `,
+    params
+  );
+  return rows.map((r) => ({
     timestamp: r.bucket,
     requests: Number(r.requests),
     errors: Number(r.errors4xx) + Number(r.errors5xx),
@@ -430,27 +431,29 @@ async function getHourlySeries({ hours, scope, perDay = false }) {
 
 // Endpoint-tabel over een periode (langzaamste/snelste/foutgevoeligste routes).
 async function getEndpointStats({ hours, scope }) {
-  const pool = await getPool();
-  const request = pool.request().input("hours", sql.Int, hours);
+  const params = [hours];
   let scopeWhere = "";
   if (scope) {
-    request.input("scope", sql.NVarChar(20), scope);
-    scopeWhere = "AND scope = @scope";
+    params.push(scope);
+    scopeWhere = "AND scope = $2";
   }
-  const result = await request.query(`
+  const rows = await queryRows(
+    `
     SELECT scope, route, method,
            SUM(request_count) AS requests,
            SUM(error_4xx_count) AS errors4xx,
            SUM(error_5xx_count) AS errors5xx,
            SUM(duration_sum_ms) / NULLIF(SUM(request_count), 0) AS avg_ms,
            MAX(duration_max_ms) AS max_ms,
-           SUM(CAST(p95_ms AS BIGINT) * request_count) / NULLIF(SUM(request_count), 0) AS p95_ms,
+           SUM(p95_ms::bigint * request_count) / NULLIF(SUM(request_count), 0) AS p95_ms,
            MAX(p99_ms) AS p99_ms
-    FROM dbo.SystemRequestMetricsHourly
-    WHERE bucket_start >= DATEADD(hour, -@hours, SYSUTCDATETIME()) ${scopeWhere}
+    FROM system_request_metrics_hourly
+    WHERE bucket_start >= now() - make_interval(hours => $1) ${scopeWhere}
     GROUP BY scope, route, method
-  `);
-  return result.recordset.map((r) => ({
+  `,
+    params
+  );
+  return rows.map((r) => ({
     scope: r.scope,
     route: r.route,
     method: r.method,
@@ -464,35 +467,34 @@ async function getEndpointStats({ hours, scope }) {
   }));
 }
 
-// Requests/fouten sinds een tijdstip (voor de KPI "vandaag"), uurdata + live uur.
+// Requests/fouten sinds een tijdstip (voor de KPI "vandaag").
 async function getRequestTotalsSince(sinceDate) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("since", sql.DateTime2, sinceDate)
-    .query(`
+  const row = await queryOne(
+    `
     SELECT SUM(request_count) AS requests,
            SUM(error_4xx_count) AS errors4xx,
            SUM(error_5xx_count) AS errors5xx
-    FROM dbo.SystemRequestMetricsHourly
-    WHERE bucket_start >= @since
-  `);
-  const row = result.recordset[0] || {};
+    FROM system_request_metrics_hourly
+    WHERE bucket_start >= $1
+  `,
+    [sinceDate]
+  );
   return {
-    requests: Number(row.requests || 0),
-    errors4xx: Number(row.errors4xx || 0),
-    errors5xx: Number(row.errors5xx || 0)
+    requests: Number(row?.requests || 0),
+    errors4xx: Number(row?.errors4xx || 0),
+    errors5xx: Number(row?.errors5xx || 0)
   };
 }
 
 async function pruneOldMetrics({ hourlyRetentionDays, snapshotRetentionDays }) {
-  const pool = await getPool();
-  await pool.request().input("days", sql.Int, hourlyRetentionDays).query(`
-    DELETE FROM dbo.SystemRequestMetricsHourly WHERE bucket_start < DATEADD(day, -@days, SYSUTCDATETIME())
-  `);
-  await pool.request().input("days", sql.Int, snapshotRetentionDays).query(`
-    DELETE FROM dbo.SystemMetricsSnapshots WHERE taken_at < DATEADD(day, -@days, SYSUTCDATETIME())
-  `);
+  await query(`DELETE FROM system_request_metrics_hourly WHERE bucket_start < now() - make_interval(days => $1)`, [
+    hourlyRetentionDays
+  ]);
+  await query(`DELETE FROM system_metrics_snapshots WHERE taken_at < now() - make_interval(days => $1)`, [
+    snapshotRetentionDays
+  ]);
+  // Verlopen sessies hebben geen functie meer (requireAuth weigert ze al).
+  await query(`DELETE FROM sessions WHERE expires_at < now() - interval '1 day'`);
 }
 
 // --- groei & prognose ---------------------------------------------------------

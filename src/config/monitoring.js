@@ -17,16 +17,16 @@ const THRESHOLDS = {
   healthLatencyMs: { warn: 1500, crit: 5000 },
   // Waarschuwing wanneer de capaciteitsgrens naar verwachting binnen X dagen valt.
   capacityForecastWarnDays: 90,
-  // Geheugen (heapUsed/heapTotal-onafhankelijk): % van totaal beschikbaar RSS-budget
-  // op een B1 (1,75 GB); indicatief.
+  // Geheugen: % van het geheugenbudget van een Vercel Function (standaard 2 GB);
+  // indicatief, en per instance.
   memoryRssPct: { warn: 70, crit: 85 }
 };
 
-// Verzamelcadans. Uurflush houdt de in-memory telemetrie klein; de dagelijkse
-// snapshot doet de zwaardere metingen (tabelgroottes, blob-enumeratie) één keer.
+// Verzamelcadans. Elke function-instance telt zijn telemetrie hooguit elke minuut op
+// bij de uurrij (flush.js); de dagelijkse snapshot (Vercel Cron) doet de zwaardere
+// metingen (tabelgroottes, opslag) één keer per dag.
 const SCHEDULE = {
-  flushIntervalMs: 60 * 60 * 1000,
-  snapshotCheckIntervalMs: 60 * 60 * 1000,
+  flushIntervalMs: 60 * 1000,
   snapshotMinAgeHours: 22,
   hourlyRetentionDays: 90,
   snapshotRetentionDays: 400,

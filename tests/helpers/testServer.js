@@ -54,4 +54,25 @@ async function request(baseUrl, method, path, { body, cookie, redirect } = {}) {
   };
 }
 
-module.exports = { startTestServer, stopTestServer, request };
+// Bootst de browserflow van lib/api.js na: upload-URL aanvragen, het bestand
+// rechtstreeks naar Supabase Storage sturen, upload afronden.
+async function directUpload(baseUrl, { cookie, requestPath, completePath, buffer, mimeType, fields = {} }) {
+  const target = await request(baseUrl, "POST", requestPath, {
+    cookie,
+    body: { mimeType, size: buffer.length }
+  });
+  if (target.status !== 201) return target;
+
+  const put = await fetch(target.data.uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType, "x-upsert": "false" },
+    body: buffer
+  });
+  if (!put.ok) {
+    return { status: put.status, data: await put.text(), stage: "storage" };
+  }
+
+  return request(baseUrl, "POST", completePath, { cookie, body: { path: target.data.path, ...fields } });
+}
+
+module.exports = { startTestServer, stopTestServer, request, directUpload };

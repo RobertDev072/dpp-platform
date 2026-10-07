@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql } = require("../src/config/db");
+const { closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const {
   createTestCompany,
@@ -37,7 +37,7 @@ test("tenant isolation: bedrijven, gebruikers en producten blijven gescheiden", 
       productIds: [productA]
     });
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   let ownerCookie;

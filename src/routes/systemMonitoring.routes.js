@@ -61,7 +61,7 @@ router.get("/overview", async (req, res, next) => {
       uptime: {
         processStartedAt: live.startedAt,
         processUptimeSeconds: live.uptimeSeconds,
-        note: "Uptime van het app-proces sinds de laatste (her)start. Externe beschikbaarheidsmeting is niet actief."
+        note: "Uptime van de function-instance die dit verzoek afhandelde (Vercel start en stopt instances naar behoefte). Externe beschikbaarheidsmeting is niet actief."
       },
       kpis: {
         requestsToday,
@@ -368,7 +368,7 @@ router.get("/errors", async (req, res, next) => {
     );
 
     res.json({
-      note: "Recente fouten komen uit het procesgeheugen en gaan bij een herstart verloren; aantallen per uur zijn blijvend opgeslagen.",
+      note: "Recente foutdetails komen uit het geheugen van de function-instance die dit verzoek afhandelde (op Vercel draaien er meerdere en ze worden regelmatig vervangen); aantallen per uur zijn blijvend opgeslagen.",
       recent: live.recentErrors,
       currentHour: {
         errors4xx: live.currentHour.overall.errors4xx,
@@ -387,22 +387,27 @@ router.get("/errors", async (req, res, next) => {
 
 router.get("/infra", async (req, res, next) => {
   try {
-    const fs = require("fs");
-    const path = require("path");
-    let buildInfo = null;
-    try {
-      buildInfo = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "build-info.json"), "utf8"));
-    } catch {
-      buildInfo = null;
-    }
+    // Deployment-info komt rechtstreeks uit de systeemvariabelen die Vercel aan elke
+    // function meegeeft (geen build-info.json meer nodig). Commit-SHA ingekort.
+    const sha = process.env.VERCEL_GIT_COMMIT_SHA || null;
+    const build = sha || process.env.VERCEL_DEPLOYMENT_ID
+      ? {
+          commit: sha ? sha.slice(0, 7) : null,
+          branch: process.env.VERCEL_GIT_COMMIT_REF || null,
+          deploymentId: process.env.VERCEL_DEPLOYMENT_ID || null,
+          url: process.env.VERCEL_URL || null
+        }
+      : null;
 
     const memory = process.memoryUsage();
     const os = require("os");
 
     res.json({
-      environment: process.env.NODE_ENV || "development",
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "development",
       nodeVersion: process.version,
-      appService: process.env.WEBSITE_SITE_NAME || null,
+      platform: process.env.VERCEL ? "Vercel" : "lokaal",
+      region: process.env.VERCEL_REGION || null,
+      note: "Proces- en geheugengegevens gelden voor de function-instance die dit verzoek afhandelde.",
       processUptimeSeconds: Math.floor(process.uptime()),
       memory: {
         rssBytes: memory.rss,
@@ -410,7 +415,7 @@ router.get("/infra", async (req, res, next) => {
         heapTotalBytes: memory.heapTotal
       },
       cpu: { loadAvg1m: os.loadavg()[0], cores: os.cpus().length },
-      build: buildInfo
+      build
     });
   } catch (error) {
     next(error);

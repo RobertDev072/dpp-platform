@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { getPool, sql } = require("../../src/config/db");
+const { query, queryOne } = require("../../src/config/db");
 const { hashPassword } = require("../../src/utils/password");
 
 function uniqueSuffix() {
@@ -7,87 +7,77 @@ function uniqueSuffix() {
 }
 
 async function createTestCompany(name = "Test Company") {
-  const pool = await getPool();
   const suffix = uniqueSuffix();
-  const result = await pool
-    .request()
-    .input("name", sql.NVarChar(200), `${name} ${suffix}`)
-    .input("slug", sql.NVarChar(100), `test-${suffix}`)
-    .query(`
-      INSERT INTO dbo.Companies (name, slug)
-      OUTPUT INSERTED.id
-      VALUES (@name, @slug)
-    `);
-  return result.recordset[0].id;
+  const row = await queryOne(`INSERT INTO companies (name, slug) VALUES ($1, $2) RETURNING id`, [
+    `${name} ${suffix}`,
+    `test-${suffix}`
+  ]);
+  return row.id;
 }
 
 async function createTestUser({ companyId = null, role, password = "TestPassword123!" }) {
-  const pool = await getPool();
   const suffix = uniqueSuffix();
   const email = `test-${suffix}@example.com`;
   const passwordHash = await hashPassword(password);
 
-  const result = await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .input("email", sql.NVarChar(256), email)
-    .input("passwordHash", sql.NVarChar(255), passwordHash)
-    .input("role", sql.NVarChar(30), role)
-    .query(`
-      INSERT INTO dbo.Users (company_id, email, password_hash, role, status)
-      OUTPUT INSERTED.id
-      VALUES (@companyId, @email, @passwordHash, @role, 'active')
-    `);
+  const row = await queryOne(
+    `INSERT INTO users (company_id, email, password_hash, role, status)
+     VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
+    [companyId, email, passwordHash, role]
+  );
 
-  return { id: result.recordset[0].id, email, password, companyId, role };
+  return { id: row.id, email, password, companyId, role };
 }
 
 async function createTestProduct({ companyId, name = "Test Product" }) {
-  const pool = await getPool();
   const suffix = uniqueSuffix();
-  const result = await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .input("name", sql.NVarChar(200), `${name} ${suffix}`)
-    .query(`
-      INSERT INTO dbo.Products (company_id, name, status)
-      OUTPUT INSERTED.id
-      VALUES (@companyId, @name, 'draft')
-    `);
-  return result.recordset[0].id;
+  const row = await queryOne(
+    `INSERT INTO products (company_id, name, status) VALUES ($1, $2, 'draft') RETURNING id`,
+    [companyId, `${name} ${suffix}`]
+  );
+  return row.id;
 }
 
+// Ruimt testdata op in FK-volgorde. Ids worden als int-array doorgegeven
+// (= ANY($1::int[])), nooit in de SQL-tekst geplakt.
 async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] }) {
-  const pool = await getPool();
   const companies = companyIds.map(Number);
   const users = userIds.map(Number);
   const products = productIds.map(Number);
 
   if (users.length) {
-    await pool.request().query(`DELETE FROM dbo.Sessions WHERE user_id IN (${users.join(",")})`);
-    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE user_id IN (${users.join(",")})`);
+    await query(`DELETE FROM sessions WHERE user_id = ANY($1::int[]) OR impersonator_user_id = ANY($1::int[])`, [users]);
+    await query(`DELETE FROM audit_logs WHERE user_id = ANY($1::int[])`, [users]);
   }
   if (companies.length) {
-    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${companies.join(",")})`);
+    await query(`DELETE FROM audit_logs WHERE company_id = ANY($1::int[])`, [companies]);
     // Invites verwijzen naar zowel company als invited_by-user; weg vóór beide.
-    await pool.request().query(`DELETE FROM dbo.CompanyAdminInvites WHERE company_id IN (${companies.join(",")})`);
-    // ScanEvents heeft een FK naar Products - moet weg vóór de Products zelf verwijderd
-    // worden (raakt gevuld zodra een test de publieke paspoortpagina bezoekt).
-    await pool.request().query(`
-      DELETE FROM dbo.ScanEvents
-      WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${companies.join(",")}))
-    `);
-    await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
+    await query(`DELETE FROM company_admin_invites WHERE company_id = ANY($1::int[])`, [companies]);
+    // Kindtabellen van producten moeten weg vóór de producten zelf.
+    for (const table of ["scan_events", "documents", "product_parts", "product_batches", "product_sustainability", "product_compliance"]) {
+      await query(
+        `DELETE FROM ${table} WHERE product_id IN (SELECT id FROM products WHERE company_id = ANY($1::int[]))`,
+        [companies]
+      );
+    }
+    await query(`DELETE FROM products WHERE company_id = ANY($1::int[])`, [companies]);
   }
   if (products.length) {
-    await pool.request().query(`DELETE FROM dbo.ScanEvents WHERE product_id IN (${products.join(",")})`);
-    await pool.request().query(`DELETE FROM dbo.Products WHERE id IN (${products.join(",")})`);
+    for (const table of ["scan_events", "documents", "product_parts", "product_batches", "product_sustainability", "product_compliance"]) {
+      await query(`DELETE FROM ${table} WHERE product_id = ANY($1::int[])`, [products]);
+    }
+    await query(`DELETE FROM products WHERE id = ANY($1::int[])`, [products]);
   }
   if (users.length) {
-    await pool.request().query(`DELETE FROM dbo.Users WHERE id IN (${users.join(",")})`);
+    await query(`DELETE FROM company_admin_invites WHERE invited_by = ANY($1::int[])`, [users]);
+    await query(`UPDATE products SET created_by = NULL WHERE created_by = ANY($1::int[])`, [users]);
+    await query(`DELETE FROM users WHERE id = ANY($1::int[])`, [users]);
   }
   if (companies.length) {
-    await pool.request().query(`DELETE FROM dbo.Companies WHERE id IN (${companies.join(",")})`);
+    // Klanten van een partner eerst ontkoppelen (FK partner_id).
+    await query(`UPDATE companies SET partner_id = NULL WHERE partner_id = ANY($1::int[])`, [companies]);
+    await query(`DELETE FROM users WHERE company_id = ANY($1::int[])`, [companies]);
+    await query(`DELETE FROM companies WHERE id = ANY($1::int[])`, [companies]);
   }
 }
 

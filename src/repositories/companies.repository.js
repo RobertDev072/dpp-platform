@@ -1,49 +1,45 @@
-const { getPool, sql } = require("../config/db");
+const { queryRows, queryOne } = require("../config/db");
 
 async function listCompanies() {
-  const pool = await getPool();
-  const result = await pool.request().query(`
+  return queryRows(`
     SELECT id, name, slug, status, plan_id, created_at, updated_at
-    FROM dbo.Companies
+    FROM companies
     ORDER BY name
   `);
-  return result.recordset;
 }
 
 async function getCompanyById(id) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .query(`
-      SELECT id, name, slug, status, plan_id, logo, kind, partner_id,
-             license_start, license_end, created_at, updated_at
-      FROM dbo.Companies
-      WHERE id = @id
-    `);
-  return result.recordset[0] || null;
+  if (!Number.isInteger(id)) return null;
+  return queryOne(
+    `
+    SELECT id, name, slug, status, plan_id, logo, kind, partner_id,
+           license_start, license_end, created_at, updated_at
+    FROM companies
+    WHERE id = $1
+  `,
+    [id]
+  );
 }
 
 async function createCompany({ name, slug, planId, status, kind, partnerId, licenseStart, licenseEnd }) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("name", sql.NVarChar(200), name)
-    .input("slug", sql.NVarChar(100), slug)
-    .input("planId", sql.Int, planId ?? null)
-    .input("status", sql.NVarChar(20), status || "active")
-    .input("kind", sql.NVarChar(20), kind || "customer")
-    .input("partnerId", sql.Int, partnerId ?? null)
-    .input("licenseStart", sql.Date, licenseStart ?? null)
-    .input("licenseEnd", sql.Date, licenseEnd ?? null)
-    .query(`
-      INSERT INTO dbo.Companies (name, slug, plan_id, status, kind, partner_id, license_start, license_end)
-      OUTPUT INSERTED.id, INSERTED.name, INSERTED.slug, INSERTED.status, INSERTED.plan_id,
-             INSERTED.kind, INSERTED.partner_id, INSERTED.license_start, INSERTED.license_end,
-             INSERTED.created_at, INSERTED.updated_at
-      VALUES (@name, @slug, @planId, @status, @kind, @partnerId, @licenseStart, @licenseEnd)
-    `);
-  return result.recordset[0];
+  return queryOne(
+    `
+    INSERT INTO companies (name, slug, plan_id, status, kind, partner_id, license_start, license_end)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    RETURNING id, name, slug, status, plan_id, kind, partner_id, license_start, license_end,
+              created_at, updated_at
+  `,
+    [
+      name,
+      slug,
+      planId ?? null,
+      status || "active",
+      kind || "customer",
+      partnerId ?? null,
+      licenseStart ?? null,
+      licenseEnd ?? null
+    ]
+  );
 }
 
 const UPDATABLE_FIELDS = ["name", "slug", "status", "planId", "logo", "licenseStart", "licenseEnd", "partnerId"];
@@ -62,90 +58,72 @@ const FIELD_TO_COLUMN = {
 // laatste activiteit per bedrijf in één query (schaal is hier beperkt: bedrijven,
 // niet producten).
 async function listCompaniesWithStats({ partnerId, kind } = {}) {
-  const pool = await getPool();
-  const request = pool.request();
+  const params = [];
   const where = [];
   if (partnerId !== undefined) {
-    request.input("partnerId", sql.Int, partnerId);
-    where.push("c.partner_id = @partnerId");
+    params.push(partnerId);
+    where.push(`c.partner_id = $${params.length}`);
   }
   if (kind !== undefined) {
-    request.input("kind", sql.NVarChar(20), kind);
-    where.push("c.kind = @kind");
+    params.push(kind);
+    where.push(`c.kind = $${params.length}`);
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-  const result = await request.query(`
+  return queryRows(
+    `
     SELECT c.id, c.name, c.slug, c.status, c.plan_id, c.logo, c.kind, c.partner_id,
            partner.name AS partner_name,
            c.license_start, c.license_end, c.created_at, c.updated_at,
            pl.name AS plan_name, pl.max_users, pl.max_products,
-           (SELECT COUNT(*) FROM dbo.Products p WHERE p.company_id = c.id AND p.status <> 'archived') AS product_count,
-           (SELECT COUNT(*) FROM dbo.Users u WHERE u.company_id = c.id AND u.status = 'active') AS active_user_count,
-           (SELECT TOP 1 u.email FROM dbo.Users u
+           (SELECT COUNT(*) FROM products p WHERE p.company_id = c.id AND p.status <> 'archived') AS product_count,
+           (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id AND u.status = 'active') AS active_user_count,
+           (SELECT u.email FROM users u
              WHERE u.company_id = c.id AND u.role = 'company_admin' AND u.status = 'active'
-             ORDER BY u.id) AS admin_email,
-           (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.company_id = c.id) AS last_activity
-    FROM dbo.Companies c
-    LEFT JOIN dbo.Plans pl ON pl.id = c.plan_id
-    LEFT JOIN dbo.Companies partner ON partner.id = c.partner_id
+             ORDER BY u.id LIMIT 1) AS admin_email,
+           (SELECT MAX(a.timestamp) FROM audit_logs a WHERE a.company_id = c.id) AS last_activity
+    FROM companies c
+    LEFT JOIN plans pl ON pl.id = c.plan_id
+    LEFT JOIN companies partner ON partner.id = c.partner_id
     ${whereSql}
     ORDER BY c.name
-  `);
-  return result.recordset;
+  `,
+    params
+  );
 }
 
 async function updateCompany(id, fields) {
-  const pool = await getPool();
-  const request = pool.request().input("id", sql.Int, id);
-
+  const params = [id];
   const setClauses = [];
   for (const field of UPDATABLE_FIELDS) {
     if (!(field in fields)) continue;
-    const column = FIELD_TO_COLUMN[field];
-    setClauses.push(`${column} = @${field}`);
-
-    if (field === "planId" || field === "partnerId") {
-      request.input(field, sql.Int, fields[field] ?? null);
-    } else if (field === "status") {
-      request.input(field, sql.NVarChar(20), fields[field]);
-    } else if (field === "logo") {
-      request.input(field, sql.NVarChar(sql.MAX), fields[field] ?? null);
-    } else if (field === "licenseStart" || field === "licenseEnd") {
-      request.input(field, sql.Date, fields[field] ?? null);
-    } else {
-      request.input(field, sql.NVarChar(field === "name" ? 200 : 100), fields[field]);
-    }
+    const value = ["planId", "partnerId", "logo", "licenseStart", "licenseEnd"].includes(field)
+      ? fields[field] ?? null
+      : fields[field];
+    params.push(value);
+    setClauses.push(`${FIELD_TO_COLUMN[field]} = $${params.length}`);
   }
 
   if (setClauses.length === 0) {
     return getCompanyById(id);
   }
 
-  setClauses.push("updated_at = SYSUTCDATETIME()");
+  setClauses.push("updated_at = now()");
 
-  const result = await request.query(`
-    UPDATE dbo.Companies
-    SET ${setClauses.join(", ")}
-    OUTPUT INSERTED.id, INSERTED.name, INSERTED.slug, INSERTED.status, INSERTED.plan_id,
-           INSERTED.created_at, INSERTED.updated_at
-    WHERE id = @id
-  `);
-
-  return result.recordset[0] || null;
+  return queryOne(
+    `UPDATE companies SET ${setClauses.join(", ")} WHERE id = $1
+     RETURNING id, name, slug, status, plan_id, created_at, updated_at`,
+    params
+  );
 }
 
 async function countCompanies() {
-  const pool = await getPool();
-  const result = await pool.request().query(`SELECT COUNT(*) AS total FROM dbo.Companies`);
-  return result.recordset[0].total;
+  const row = await queryOne(`SELECT COUNT(*) AS total FROM companies`);
+  return row.total;
 }
 
 async function countActiveCompanies() {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .query(`SELECT COUNT(*) AS total FROM dbo.Companies WHERE status = 'active'`);
-  return result.recordset[0].total;
+  const row = await queryOne(`SELECT COUNT(*) AS total FROM companies WHERE status = 'active'`);
+  return row.total;
 }
 
 module.exports = {

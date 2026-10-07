@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
@@ -20,19 +20,16 @@ async function login(baseUrl, user) {
 
 test("partner-wachtwoordreset: scoping, weigeringen en volledige tijdelijk-wachtwoord-flow", async (t) => {
   const { server, baseUrl } = await startTestServer();
-  const pool = await getPool();
 
   const partnerCo1 = await createTestCompany("Reset Partner Een");
   const partnerCo2 = await createTestCompany("Reset Partner Twee");
-  await pool.request().query(`UPDATE dbo.Companies SET kind = 'partner' WHERE id IN (${partnerCo1}, ${partnerCo2})`);
+  await query(`UPDATE companies SET kind = 'partner' WHERE id IN (${partnerCo1}, ${partnerCo2})`);
 
   const klantCo1 = await createTestCompany("Reset Klant Van Een");
   const klantCo2 = await createTestCompany("Reset Klant Van Twee");
   const directCo = await createTestCompany("Reset Directe Klant");
-  await pool.request().input("pid", sql.Int, partnerCo1).input("cid", sql.Int, klantCo1)
-    .query("UPDATE dbo.Companies SET partner_id = @pid WHERE id = @cid");
-  await pool.request().input("pid", sql.Int, partnerCo2).input("cid", sql.Int, klantCo2)
-    .query("UPDATE dbo.Companies SET partner_id = @pid WHERE id = @cid");
+  await query("UPDATE companies SET partner_id = $1 WHERE id = $2", [partnerCo1, klantCo1]);
+  await query("UPDATE companies SET partner_id = $1 WHERE id = $2", [partnerCo2, klantCo2]);
 
   const owner = await createTestUser({ companyId: null, role: "platform_owner" });
   const partner1 = await createTestUser({ companyId: partnerCo1, role: "partner_admin" });
@@ -43,10 +40,8 @@ test("partner-wachtwoordreset: scoping, weigeringen en volledige tijdelijk-wacht
   const deletedAdminK1 = await createTestUser({ companyId: klantCo1, role: "company_admin" });
   const adminK2 = await createTestUser({ companyId: klantCo2, role: "company_admin" });
   const adminDirect = await createTestUser({ companyId: directCo, role: "company_admin" });
-  await pool.request().input("id", sql.Int, blockedAdminK1.id)
-    .query("UPDATE dbo.Users SET status = 'blocked' WHERE id = @id");
-  await pool.request().input("id", sql.Int, deletedAdminK1.id)
-    .query("UPDATE dbo.Users SET status = 'deleted' WHERE id = @id");
+  await query("UPDATE users SET status = 'blocked' WHERE id = $1", [blockedAdminK1.id]);
+  await query("UPDATE users SET status = 'deleted' WHERE id = $1", [deletedAdminK1.id]);
 
   t.after(async () => {
     await cleanupTestData({
@@ -57,7 +52,7 @@ test("partner-wachtwoordreset: scoping, weigeringen en volledige tijdelijk-wacht
       ]
     });
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   const partner1Cookie = (await login(baseUrl, partner1)).cookie;
@@ -114,9 +109,8 @@ test("partner-wachtwoordreset: scoping, weigeringen en volledige tijdelijk-wacht
     );
     assert.equal(blocked.status, 409);
 
-    const statusNa = await pool.request().input("id", sql.Int, blockedAdminK1.id)
-      .query("SELECT status FROM dbo.Users WHERE id = @id");
-    assert.equal(statusNa.recordset[0].status, "blocked");
+    const statusNa = await query("SELECT status FROM users WHERE id = $1", [blockedAdminK1.id]);
+    assert.equal(statusNa.rows[0].status, "blocked");
 
     const deleted = await request(
       baseUrl, "POST", `/api/partner/customers/${klantCo1}/admins/${deletedAdminK1.id}/reset-password`,
@@ -171,17 +165,18 @@ test("partner-wachtwoordreset: scoping, weigeringen en volledige tijdelijk-wacht
     assert.equal(nieuw.data.mustChangePassword, undefined);
 
     // Audit: wie, voor wie, bij welk bedrijf, resultaat - en nooit het wachtwoord.
-    const audit = await pool.request()
-      .input("targetId", sql.NVarChar(50), String(adminK1.id))
-      .input("actorId", sql.Int, partner1.id)
-      .query(`
-        SELECT TOP 1 company_id, user_id, action, metadata, timestamp
-        FROM dbo.AuditLogs
+    const audit = await query(
+      `
+        SELECT company_id, user_id, action, metadata, timestamp
+        FROM audit_logs
         WHERE action = 'reset_password' AND entity_type = 'User'
-          AND entity_id = @targetId AND user_id = @actorId
+          AND entity_id = $1 AND user_id = $2
         ORDER BY timestamp DESC
-      `);
-    const rij = audit.recordset[0];
+        LIMIT 1
+      `,
+      [String(adminK1.id), partner1.id]
+    );
+    const rij = audit.rows[0];
     assert.ok(rij, "auditregel voor de reset ontbreekt");
     assert.equal(rij.company_id, klantCo1);
     assert.ok(rij.timestamp);

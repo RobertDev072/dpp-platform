@@ -1,12 +1,9 @@
 const express = require("express");
-const { loginSchema, mfaSchema, updateMeSchema, changePasswordSchema } = require("../schemas/auth.schema");
+const { loginSchema, updateMeSchema, changePasswordSchema } = require("../schemas/auth.schema");
 const usersRepo = require("../repositories/users.repository");
-const { updateUser } = usersRepo;
-const { hashPassword } = require("../utils/password");
-const graphClient = require("../services/graphClient");
+const { updateUser, getUserByEmail } = usersRepo;
+const { hashPassword, verifyPassword, DUMMY_HASH } = require("../utils/password");
 const { validateBody } = require("../middleware/validate");
-const { getUserByEmail } = require("../repositories/users.repository");
-const { verifyPassword, DUMMY_HASH } = require("../utils/password");
 const {
   createSession,
   destroySession,
@@ -16,15 +13,14 @@ const {
 } = require("../middleware/auth");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const nativeAuth = require("../services/nativeAuth.service");
-const { resolveEntraLogin, EntraLoginError } = require("../services/entraLogin.service");
-const { loginIpLimiter, loginEmailLimiter, mfaLimiter } = require("../middleware/rateLimit");
+const identity = require("../services/identity.service");
+const { loginIpLimiter, loginEmailLimiter } = require("../middleware/rateLimit");
 
 const router = express.Router();
 
 // Vloer voor de responstijd van mislukte logins: het lokale bcrypt-pad (~230ms) en
-// het Entra-pad (2-3 netwerk-roundtrips) verschillen anders meetbaar in duur,
-// waarmee een aanvaller zou kunnen aftasten welke e-mailadressen een Entra-account
+// het Supabase Auth-pad (netwerk-roundtrip) verschillen anders meetbaar in duur,
+// waarmee een aanvaller zou kunnen aftasten welke e-mailadressen een account
 // hebben. Met een vaste ondergrens is dat timingkanaal in de praktijk dichtgedrukt.
 const FAILED_LOGIN_MIN_MS = 1200;
 
@@ -35,36 +31,45 @@ async function padFailedLogin(startedAt) {
   }
 }
 
-// Rondt een geslaagde Entra-native-auth-aanmelding (eerste factor of MFA) af tot een
-// DPP-sessie: hergebruikt exact dezelfde JIT-koppeling en sessie-opzet als de
-// bestaande browser-redirect-flow in entraAuth.routes.js.
-async function finishEntraLogin(res, claims, via) {
-  // Het ID-token van via-Graph-aangemaakte accounts bevat GEEN email-claim (empirisch
-  // vastgesteld): het e-mailadres zit daar in preferred_username. Zonder deze fallback
-  // mislukte de allereerste JIT-koppeling (en dus de eerste login) van elk door een
-  // beheerder aangemaakt account.
-  const user = await resolveEntraLogin({
-    sub: claims.sub,
-    email: claims.email || claims.preferred_username
-  });
-  const { token, expiresAt } = await createSession(user.id);
-  setSessionCookie(res, token, expiresAt);
+// Vertaalt een mislukte wachtwoordcontrole bij Supabase Auth naar een HTTP-fout.
+// Alles wat "fout wachtwoord/onbekend/geblokkeerd" betekent wordt één en dezelfde
+// 401 (geen enumeratie); alleen echte storingen krijgen een eigen melding.
+function identityFailure(err) {
+  if (err.code === "RATE_LIMITED") {
+    return new HttpError(429, err.message, undefined, "RATE_LIMITED");
+  }
+  if (err.code === "UNAVAILABLE" || err.code === "UNKNOWN") {
+    return new HttpError(503, "Inloggen is tijdelijk niet mogelijk. Probeer het over een moment opnieuw.", undefined, "AUTH_UNAVAILABLE");
+  }
+  return new HttpError(401, "Ongeldige inloggegevens");
+}
 
-  await logAudit({
-    companyId: user.company_id,
-    userId: user.id,
-    action: "login",
-    entityType: "User",
-    entityId: user.id,
-    metadata: { via }
-  });
+// Controleert het wachtwoord van een Supabase-account en of het Supabase-account
+// echt bij dit DPP-account hoort. Gooit een HttpError bij falen.
+async function verifySupabasePassword(user, email, password) {
+  if (!identity.isIdentityProviderConfigured()) {
+    console.error("Login geweigerd: account zonder lokaal wachtwoord, maar Supabase Auth is niet geconfigureerd.");
+    throw new HttpError(503, "Inloggen is tijdelijk niet mogelijk. Probeer het over een moment opnieuw.", undefined, "AUTH_UNAVAILABLE");
+  }
+  let authUserId;
+  try {
+    ({ authUserId } = await identity.verifyPassword(email, password));
+  } catch (err) {
+    if (err instanceof identity.IdentityError) throw identityFailure(err);
+    throw err;
+  }
+  if (!user.auth_user_id || user.auth_user_id !== authUserId) {
+    throw new HttpError(401, "Ongeldige inloggegevens");
+  }
+}
 
-  res.json({
+function sessionResponse(user) {
+  return {
     id: user.id,
     email: user.email,
     role: user.role,
     companyId: user.company_id
-  });
+  };
 }
 
 router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchema), async (req, res, next) => {
@@ -73,129 +78,55 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
     const { email, password } = req.body;
     const user = await getUserByEmail(email);
 
-    if (user && user.password_hash) {
-      // Bestaand bcrypt-pad (System Owner break-glass) - ongewijzigd.
-      const passwordMatches = await verifyPassword(password, user.password_hash);
-
-      if (user.status !== "active" || !passwordMatches) {
-        await padFailedLogin(startedAt);
-        next(new HttpError(401, "Ongeldige inloggegevens"));
-        return;
-      }
-
-      if (user.must_change_password) {
-        // Wachtwoord klopt, maar het is een tijdelijk wachtwoord: eerst een eigen
-        // wachtwoord instellen (via /change-password), pas daarna een sessie.
-        res.json({ mustChangePassword: true });
-        return;
-      }
-
-      const { token, expiresAt } = await createSession(user.id);
-      setSessionCookie(res, token, expiresAt);
-
-      await logAudit({
-        companyId: user.company_id,
-        userId: user.id,
-        action: "login",
-        entityType: "User",
-        entityId: user.id
-      });
-
-      res.json({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        companyId: user.company_id
-      });
-      return;
-    }
-
-    if (!user || user.status !== "active") {
+    if (!user || user.status !== "active" || (!user.password_hash && !user.auth_user_id)) {
       // Draai alsnog een bcrypt-vergelijking tegen een dummy-hash: voorkomt dat de
       // afwezigheid van deze stap zelf al een (grof) timing-enumeratielek wordt.
-      await verifyPassword(password, DUMMY_HASH);
+      await verifyPassword(password, user?.password_hash || DUMMY_HASH);
       await padFailedLogin(startedAt);
       next(new HttpError(401, "Ongeldige inloggegevens"));
       return;
     }
 
-    // Geen lokale hash + actieve user => Entra-beheerd account. Native Authentication,
-    // volledig server-side, nooit een Microsoft-pagina te zien voor de gebruiker.
-    try {
-      const { continuationToken } = await nativeAuth.startPasswordSignIn({ email });
-      const { claims } = await nativeAuth.submitPassword({ continuationToken, password });
-
-      if (user.must_change_password) {
-        // Tijdelijk wachtwoord geverifieerd bij Entra: eerst een eigen wachtwoord
-        // instellen (via /change-password), pas daarna een sessie.
-        res.json({ mustChangePassword: true });
-        return;
-      }
-
-      await finishEntraLogin(res, claims, "native-entra");
-    } catch (err) {
-      // Bewuste keuze: MFA_REQUIRED kan hier alleen uit submitPassword komen, dus
-      // {mfaRequired:true} is uitsluitend bereikbaar mét een geldig wachtwoord -
-      // dit is geen enumeratie-orakel (geverifieerd in de security-audit).
-      if (err instanceof nativeAuth.NativeAuthError && err.code === "MFA_REQUIRED") {
-        if (user.must_change_password) {
-          // MFA_REQUIRED impliceert een correct wachtwoord: eerst wijzigen, dan pas
-          // de MFA-stap (die volgt vanzelf bij de login met het nieuwe wachtwoord).
-          res.json({ mustChangePassword: true });
-          return;
-        }
-        const { continuationToken, methods } = await nativeAuth.listMfaMethods({
-          continuationToken: err.continuationToken
-        });
-        if (!methods.length) {
-          await padFailedLogin(startedAt);
-          next(new HttpError(401, "Geen MFA-methode geregistreerd voor dit account"));
-          return;
-        }
-        const challenged = await nativeAuth.requestMfaCode({
-          continuationToken,
-          methodId: methods[0].id
-        });
-        res.json({
-          mfaRequired: true,
-          continuationToken: challenged.continuationToken,
-          codeLength: challenged.codeLength
-        });
-        return;
-      }
-      if (err instanceof nativeAuth.NativeAuthError && err.code === "PASSWORD_RESET_REQUIRED") {
-        // Alleen bereikbaar mét een geldig account (Entra herkende de gebruiker),
-        // dus deze specifieke melding lekt geen accountbestaan.
-        await padFailedLogin(startedAt);
-        next(new HttpError(401, err.message, undefined, "PASSWORD_RESET_REQUIRED"));
-        return;
-      }
-      if (err instanceof nativeAuth.NativeAuthError || err instanceof EntraLoginError) {
+    if (user.password_hash) {
+      // Lokaal (bcrypt) account: Platform Owner break-glass, of lokale ontwikkeling.
+      if (!(await verifyPassword(password, user.password_hash))) {
         await padFailedLogin(startedAt);
         next(new HttpError(401, "Ongeldige inloggegevens"));
         return;
       }
-      throw err;
+    } else {
+      // Supabase Auth-account: volledig server-side, de browser praat nooit zelf
+      // met Supabase.
+      try {
+        await verifySupabasePassword(user, email, password);
+      } catch (err) {
+        await padFailedLogin(startedAt);
+        next(err);
+        return;
+      }
     }
-  } catch (error) {
-    next(error);
-  }
-});
 
-router.post("/login/mfa", mfaLimiter, validateBody(mfaSchema), async (req, res, next) => {
-  try {
-    const { continuationToken, code } = req.body;
-    const { claims } = await nativeAuth.submitMfaCode({ continuationToken, code });
-    await finishEntraLogin(res, claims, "native-entra-mfa");
+    if (user.must_change_password) {
+      // Wachtwoord klopt, maar het is een tijdelijk wachtwoord: eerst een eigen
+      // wachtwoord instellen (via /change-password), pas daarna een sessie.
+      res.json({ mustChangePassword: true });
+      return;
+    }
+
+    const { token, expiresAt } = await createSession(user.id);
+    setSessionCookie(res, token, expiresAt);
+
+    await logAudit({
+      companyId: user.company_id,
+      userId: user.id,
+      action: "login",
+      entityType: "User",
+      entityId: user.id,
+      metadata: { via: user.password_hash ? "lokaal" : "supabase" }
+    });
+
+    res.json(sessionResponse(user));
   } catch (error) {
-    if (error instanceof nativeAuth.NativeAuthError) {
-      next(new HttpError(401, error.message));
-      return;
-    }
-    if (error instanceof EntraLoginError) {
-      next(new HttpError(401, error.message));
-      return;
-    }
     next(error);
   }
 });
@@ -214,7 +145,7 @@ router.post(
       const { email, currentPassword, newPassword } = req.body;
       const user = await getUserByEmail(email);
 
-      if (!user || user.status !== "active") {
+      if (!user || user.status !== "active" || (!user.password_hash && !user.auth_user_id)) {
         await verifyPassword(currentPassword, DUMMY_HASH);
         await padFailedLogin(startedAt);
         next(new HttpError(401, "Ongeldige inloggegevens"));
@@ -231,53 +162,30 @@ router.post(
         }
         await usersRepo.updatePasswordHash(user.id, await hashPassword(newPassword));
       } else {
-        // Entra-account: huidig (tijdelijk) wachtwoord bij Entra verifiëren, daarna
-        // het nieuwe wachtwoord via Graph zetten. MFA_REQUIRED impliceert ook een
-        // correct wachtwoord.
+        // Supabase-account: huidig (tijdelijk) wachtwoord bij Supabase verifiëren,
+        // daarna het nieuwe wachtwoord via de Auth-admin-API zetten.
         try {
-          const { continuationToken } = await nativeAuth.startPasswordSignIn({ email });
-          await nativeAuth.submitPassword({ continuationToken, password: currentPassword });
+          await verifySupabasePassword(user, email, currentPassword);
         } catch (err) {
-          if (!(err instanceof nativeAuth.NativeAuthError && err.code === "MFA_REQUIRED")) {
-            if (err instanceof nativeAuth.NativeAuthError) {
-              await padFailedLogin(startedAt);
-              next(new HttpError(401, "Ongeldige inloggegevens"));
-              return;
-            }
-            throw err;
-          }
-        }
-
-        const authInfo = await usersRepo.getUserAuthInfo(user.id);
-        if (!authInfo?.entraObjectId) {
-          next(new HttpError(409, "Dit account heeft geen wachtwoordmethode; neem contact op met de beheerder"));
+          await padFailedLogin(startedAt);
+          next(err);
           return;
         }
+
         try {
-          await graphClient.resetPassword(authInfo.entraObjectId, newPassword);
+          await identity.setPassword(user.auth_user_id, newPassword);
         } catch (err) {
-          if (/\(403\)/.test(err.message || "")) {
-            // Configuratiefout aan onze kant, niet die van de gebruiker: de Graph-app
-            // mist User-PasswordProfile.ReadWrite.All. Meld het eerlijk.
-            next(
-              new HttpError(
-                502,
-                "Wachtwoord instellen is tijdelijk niet mogelijk door een serverconfiguratie-probleem. Neem contact op met de beheerder."
-              )
-            );
-            return;
-          }
-          if (/\(400\)/.test(err.message || "")) {
+          if (err instanceof identity.IdentityError && err.code === "WEAK_PASSWORD") {
             next(
               new HttpError(400, "Ongeldige invoer", {
                 formErrors: [],
-                fieldErrors: {
-                  newPassword: [
-                    "Dit wachtwoord voldoet niet aan de eisen. Gebruik minimaal 12 tekens met hoofdletters, kleine letters, cijfers en leestekens."
-                  ]
-                }
+                fieldErrors: { newPassword: [err.message] }
               })
             );
+            return;
+          }
+          if (err instanceof identity.IdentityError) {
+            next(new HttpError(502, "Wachtwoord instellen is tijdelijk niet mogelijk. Probeer het opnieuw of neem contact op met de beheerder."));
             return;
           }
           throw err;
@@ -295,15 +203,10 @@ router.post(
         action: "change_password",
         entityType: "User",
         entityId: user.id,
-        metadata: { via: user.password_hash ? "lokaal" : "entra" }
+        metadata: { via: user.password_hash ? "lokaal" : "supabase" }
       });
 
-      res.json({
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        companyId: user.company_id
-      });
+      res.json(sessionResponse(user));
     } catch (error) {
       next(error);
     }

@@ -5,11 +5,6 @@ const loginSchema = z.object({
   password: z.string().min(1)
 });
 
-const mfaSchema = z.object({
-  continuationToken: z.string().min(1),
-  code: z.string().min(1)
-});
-
 // Zelfbeheer profiel: alleen naamvelden - rol, status en e-mail zijn hier bewust
 // niet wijzigbaar.
 const updateMeSchema = z
@@ -29,4 +24,4 @@ const changePasswordSchema = z.object({
     .max(256, "Wachtwoord mag maximaal 256 tekens zijn")
 });
 
-module.exports = { loginSchema, mfaSchema, updateMeSchema, changePasswordSchema };
+module.exports = { loginSchema, updateMeSchema, changePasswordSchema };

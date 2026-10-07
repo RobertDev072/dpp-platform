@@ -5,94 +5,135 @@ const {
   submitCodeSchema,
   submitPasswordSchema
 } = require("../schemas/passwordReset.schema");
-const nativeAuth = require("../services/nativeAuth.service");
+const identity = require("../services/identity.service");
 const { HttpError } = require("../middleware/errorHandler");
 const { resetLimiter } = require("../middleware/rateLimit");
+const { destroySessionsForUser } = require("../middleware/auth");
 const usersRepo = require("../repositories/users.repository");
+const { logAudit } = require("../utils/auditLog");
+const { signToken, verifyToken } = require("../utils/signedToken");
+const { getAppBaseUrl } = require("../utils/baseUrl");
 
 const router = express.Router();
 
 router.use(resetLimiter);
 
-// Volledig publiek (geen requireAuth), zelfde stijl als inviteActivation.routes.js:
-// dit is precies de "wachtwoord vergeten"-/eerste-wachtwoord-flow, die per definitie
-// vóór het inloggen gebeurt. Elke stap is een dunne proxy naar Entra's SSPR-API -
-// DPP slaat nergens een wachtwoord of continuation_token op.
+// "Wachtwoord vergeten" / eerste wachtwoord instellen, volledig publiek (vóór het
+// inloggen). Supabase Auth stuurt een e-mail met een eenmalige code; DPP slaat
+// nergens een wachtwoord of code op. Tussen de stappen gaat een kortlevend,
+// door de server ondertekend token heen en weer (geen serverstatus nodig - past bij
+// stateless Vercel Functions).
+const START_TOKEN_TTL_MS = 30 * 60 * 1000;
+const VERIFIED_TOKEN_TTL_MS = 10 * 60 * 1000;
+const CODE_LENGTH = Number(process.env.SUPABASE_OTP_LENGTH || 6);
 
-function mapNativeAuthError(error, next) {
-  if (error instanceof nativeAuth.NativeAuthError) {
-    next(new HttpError(400, error.message, { subError: error.subError }, error.code));
-    return true;
+function maskEmail(email) {
+  const [local, domain] = String(email).split("@");
+  if (!domain) return null;
+  return `${local.slice(0, 1)}***@${domain}`;
+}
+
+function expired() {
+  return new HttpError(400, "Deze aanvraag is verlopen, begin opnieuw", undefined, "EXPIRED");
+}
+
+function assertConfigured() {
+  if (!identity.isIdentityProviderConfigured()) {
+    throw new HttpError(503, "Wachtwoordherstel is tijdelijk niet beschikbaar.", undefined, "AUTH_UNAVAILABLE");
   }
-  return false;
 }
 
 router.post("/start", validateBody(startResetSchema), async (req, res, next) => {
   try {
-    const started = await nativeAuth.startPasswordReset({ email: req.body.email });
-    const challenged = await nativeAuth.requestPasswordResetCode({
-      continuationToken: started.continuationToken
-    });
+    assertConfigured();
+    const email = req.body.email.trim().toLowerCase();
+    try {
+      await identity.startPasswordRecovery(email, { redirectTo: `${getAppBaseUrl(req)}/wachtwoord-vergeten` });
+    } catch (error) {
+      if (error instanceof identity.IdentityError && error.code === "RATE_LIMITED") {
+        next(new HttpError(429, error.message, undefined, "RATE_LIMITED"));
+        return;
+      }
+      if (!(error instanceof identity.IdentityError) || error.code !== "USER_NOT_FOUND") throw error;
+      // Onbekend adres: bewust dezelfde respons, om niet te verklappen welke
+      // e-mailadressen een account hebben.
+    }
     res.json({
-      continuationToken: challenged.continuationToken,
-      codeLength: challenged.codeLength,
-      targetLabel: challenged.targetLabel
+      continuationToken: signToken("password-reset-start", { email }, START_TOKEN_TTL_MS),
+      codeLength: CODE_LENGTH,
+      targetLabel: maskEmail(email)
     });
   } catch (error) {
-    if (error instanceof nativeAuth.NativeAuthError && error.code === "USER_NOT_FOUND") {
-      // Bewust geen 404: niet verklappen of een e-mailadres bestaat. De gebruiker ziet
-      // altijd "als dit adres bekend is, is er een code verstuurd".
-      res.json({ continuationToken: null });
-      return;
-    }
-    if (mapNativeAuthError(error, next)) return;
     next(error);
   }
 });
 
 router.post("/verify-code", validateBody(submitCodeSchema), async (req, res, next) => {
   try {
-    const result = await nativeAuth.submitPasswordResetCode({
-      continuationToken: req.body.continuationToken,
-      code: req.body.code
+    const started = verifyToken(req.body.continuationToken, "password-reset-start");
+    if (!started) {
+      next(expired());
+      return;
+    }
+    assertConfigured();
+
+    let authUserId;
+    try {
+      ({ authUserId } = await identity.verifyRecoveryCode(started.email, req.body.code.trim()));
+    } catch (error) {
+      if (error instanceof identity.IdentityError) {
+        const status = error.code === "RATE_LIMITED" ? 429 : 400;
+        next(new HttpError(status, error.code === "RATE_LIMITED" ? error.message : "Ongeldige of verlopen code", undefined, error.code === "RATE_LIMITED" ? "RATE_LIMITED" : "INVALID_CODE"));
+        return;
+      }
+      throw error;
+    }
+
+    res.json({
+      continuationToken: signToken("password-reset-verified", { email: started.email, authUserId }, VERIFIED_TOKEN_TTL_MS)
     });
-    res.json({ continuationToken: result.continuationToken });
   } catch (error) {
-    if (mapNativeAuthError(error, next)) return;
     next(error);
   }
 });
 
 router.post("/submit", validateBody(submitPasswordSchema), async (req, res, next) => {
   try {
-    await nativeAuth.submitNewPassword({
-      continuationToken: req.body.continuationToken,
-      password: req.body.password,
-      code: req.body.code
-    });
+    const verified = verifyToken(req.body.continuationToken, "password-reset-verified");
+    if (!verified) {
+      next(expired());
+      return;
+    }
+    assertConfigured();
 
-    // Wachtwoordwijziging kan een fractie vertraagd zijn aan Entra's kant - kort
-    // pollen i.p.v. de frontend hiermee te belasten.
-    let status = "pending";
-    for (let attempt = 0; attempt < 5 && status === "pending"; attempt += 1) {
-      const polled = await nativeAuth.pollPasswordResetCompletion({
-        continuationToken: req.body.continuationToken
-      });
-      status = polled.status;
-      if (status === "pending") {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      await identity.setPassword(verified.authUserId, req.body.password);
+    } catch (error) {
+      if (error instanceof identity.IdentityError && error.code === "WEAK_PASSWORD") {
+        next(new HttpError(400, error.message, { subError: "password_too_weak" }, "WEAK_PASSWORD"));
+        return;
       }
+      throw error;
     }
 
-    if (["succeeded", "completed"].includes(status) && req.body.email) {
-      // Best-effort UX (geen beveiligingsgrens): na een geslaagde reset hoeft de
-      // eerstvolgende login geen wijziging meer af te dwingen.
-      await usersRepo.clearMustChangePasswordByEmail(req.body.email).catch(() => {});
+    // Na een geslaagde reset: geen gedwongen wijziging meer bij de volgende login, en
+    // alle bestaande sessies van dit account zijn waardeloos (net als bij een reset
+    // door een beheerder).
+    const user = await usersRepo.getUserByAuthUserId(verified.authUserId);
+    if (user) {
+      await usersRepo.setMustChangePassword(user.id, false);
+      await destroySessionsForUser(user.id);
+      await logAudit({
+        companyId: user.company_id,
+        userId: user.id,
+        action: "password_reset_self_service",
+        entityType: "User",
+        entityId: user.id
+      });
     }
 
-    res.json({ status });
+    res.json({ status: "completed" });
   } catch (error) {
-    if (mapNativeAuthError(error, next)) return;
     next(error);
   }
 });

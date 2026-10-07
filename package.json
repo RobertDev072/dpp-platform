@@ -1,40 +1,47 @@
 {
   "name": "dpp-platform",
   "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "description": "VeriPasso - Digital Product Passport platform (Next.js + Express API op Vercel, Supabase Postgres/Auth/Storage)",
   "scripts": {
-    "start": "node server.js",
-    "build": "next build web",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "test:db": "node scripts/check-db-connection.js",
     "migrate": "node scripts/migrate.js",
+    "setup:storage": "node scripts/setup-supabase-storage.js",
     "seed:owner": "node scripts/seed-system-owner.js",
-    "test": "node --test"
+    "migrate:from-azure": "node scripts/migrate-from-azure.js",
+    "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@azure/identity": "^4.13.3",
-    "@azure/msal-node": "^7.0.0",
-    "@azure/storage-blob": "^12.34.0",
+    "@supabase/supabase-js": "^2.117.3",
     "@tailwindcss/postcss": "^4.3.3",
+    "@vercel/functions": "^3.9.11",
     "autoprefixer": "^10.6.1",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^18.0.4",
     "express": "^5.1.0",
     "express-rate-limit": "^8.7.0",
-    "mssql": "^12.7.2",
-    "multer": "^2.4.0",
     "next": "^16.3.6",
     "pdfkit": "^0.20.2",
+    "pg": "^8.23.1",
     "postcss": "^8.5.28",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
     "zod": "^4.6.5"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "devDependencies": {
+    "@azure/identity": "^4.13.3",
+    "@azure/storage-blob": "^12.34.0",
+    "mssql": "^12.7.4"
   }
 }

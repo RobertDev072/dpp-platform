@@ -8,11 +8,14 @@ const submitCodeSchema = z.object({
 });
 const submitPasswordSchema = z.object({
   continuationToken: z.string().min(1),
-  password: z.string().min(12, "Wachtwoord moet minimaal 12 tekens zijn"),
-  code: z.string().min(1),
-  // Optioneel, alleen voor UX: na een geslaagde zelfbedieningsreset vervalt een
-  // eventuele gedwongen-wijziging-vlag, zodat de eerstvolgende login niet nóg een
-  // wijziging afdwingt.
+  password: z
+    .string()
+    .min(12, "Wachtwoord moet minimaal 12 tekens zijn")
+    .max(256, "Wachtwoord mag maximaal 256 tekens zijn"),
+  // Worden door de (bestaande) frontend nog meegestuurd maar niet meer gebruikt: de
+  // code is in de vorige stap al door Supabase gecontroleerd en het account staat
+  // in het ondertekende continuationToken.
+  code: z.string().optional(),
   email: z.string().email().optional()
 });
 

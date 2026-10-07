@@ -1,5 +1,4 @@
 const express = require("express");
-const multer = require("multer");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateBody, validateQuery } = require("../middleware/validate");
 const { listProductsQuerySchema } = require("../schemas/productsQuery.schema");
@@ -18,47 +17,16 @@ const documentsRepo = require("../repositories/documents.repository");
 const { assertCompanyAccess } = require("../utils/tenant");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const { getQrBaseUrl } = require("../utils/baseUrl");
+const { getPassportUrl } = require("../utils/baseUrl");
 const {
   generateQrPngBuffer,
   generateQrSvgString,
   generateLabelPdfBuffer
 } = require("../services/qrCode.service");
-const {
-  uploadProductPhoto,
-  downloadProductPhoto,
-  ALLOWED_IMAGE_MIME_TYPES,
-  ALLOWED_DOCUMENT_MIME_TYPES,
-  uploadProductDocument,
-  downloadProductDocument
-} = require("../services/blobStorage.service");
+const storageService = require("../services/storage.service");
+const { photoUploadRequestSchema, photoUploadCompleteSchema, documentUploadRequestSchema, documentUploadCompleteSchema } = require("../schemas/uploads.schema");
 
 const router = express.Router();
-
-const photoUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (!ALLOWED_IMAGE_MIME_TYPES[file.mimetype]) {
-      cb(new HttpError(400, "Alleen JPEG, PNG, WEBP of GIF-afbeeldingen zijn toegestaan."));
-      return;
-    }
-    cb(null, true);
-  }
-});
-
-const DOCUMENT_MAX_MB = 10;
-const documentUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: DOCUMENT_MAX_MB * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (!ALLOWED_DOCUMENT_MIME_TYPES[file.mimetype]) {
-      cb(new HttpError(400, "Alleen PDF, JPEG, PNG, SVG of WEBP-bestanden zijn toegestaan."));
-      return;
-    }
-    cb(null, true);
-  }
-});
 
 const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
 
@@ -175,22 +143,12 @@ router.patch(
   }
 );
 
+// Foto-upload in twee stappen (zie storage.service.js: Vercel laat geen bestanden
+// > 4,5 MB door een function lopen). Stap 1: upload-URL aanvragen.
 router.post(
-  "/:id/photo",
+  "/:id/photo/upload-url",
   requireRole(...EDITOR_ROLES),
-  (req, res, next) => {
-    photoUpload.single("photo")(req, res, (err) => {
-      if (!err) {
-        next();
-        return;
-      }
-      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
-        next(new HttpError(400, "De afbeelding is te groot (max 5 MB)."));
-        return;
-      }
-      next(err);
-    });
-  },
+  validateBody(photoUploadRequestSchema),
   async (req, res, next) => {
     try {
       const id = Number(req.params.id);
@@ -201,14 +159,42 @@ router.post(
       }
       assertCompanyAccess(req.user, existing.company_id);
 
-      if (!req.file) {
-        next(new HttpError(400, "Geen bestand ontvangen."));
+      const target = await storageService.createUploadTarget({
+        kind: "photo",
+        companyId: existing.company_id,
+        productId: id,
+        mimeType: req.body.mimeType,
+        size: req.body.size
+      });
+      res.status(201).json(target);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Stap 2 (nadat de browser het bestand naar de upload-URL heeft gestuurd): controleren
+// en vastleggen.
+router.post(
+  "/:id/photo",
+  requireRole(...EDITOR_ROLES),
+  validateBody(photoUploadCompleteSchema),
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const existing = await productsRepo.getProductById(id);
+      if (!existing) {
+        next(new HttpError(404, "Niet gevonden"));
         return;
       }
+      assertCompanyAccess(req.user, existing.company_id);
 
-      const photoBlobName = await uploadProductPhoto({
-        buffer: req.file.buffer,
-        mimeType: req.file.mimetype
+      const photoBlobName = req.body.path;
+      await storageService.assertUploadedObject({
+        kind: "photo",
+        companyId: existing.company_id,
+        productId: id,
+        path: photoBlobName
       });
 
       // Een upload vervangt een eventueel eerder geplakte externe URL - er kan maar één
@@ -217,6 +203,10 @@ router.post(
         photoBlobName,
         photoUrl: null
       });
+
+      if (existing.photo_blob_name && existing.photo_blob_name !== photoBlobName) {
+        await storageService.removeObject("photo", existing.photo_blob_name);
+      }
 
       await logAudit({
         companyId: existing.company_id,
@@ -245,14 +235,7 @@ router.get("/:id/photo", requireRole(...ALL_ROLES), async (req, res, next) => {
     assertCompanyAccess(req.user, product.company_id);
 
     if (product.photo_blob_name) {
-      const { stream, contentType, contentLength } = await downloadProductPhoto(
-        product.photo_blob_name
-      );
-      res.set("Content-Type", contentType || "application/octet-stream");
-      if (contentLength) res.set("Content-Length", String(contentLength));
-      res.set("Cache-Control", "private, max-age=300");
-      stream.on("error", () => res.destroy());
-      stream.pipe(res);
+      await storageService.redirectToObject(res, "photo", product.photo_blob_name);
       return;
     }
 
@@ -568,29 +551,12 @@ router.post(
   }
 );
 
-// Documentupload (PDF/JPEG/PNG/SVG/WEBP, max 10 MB) naar de private
-// documenten-container; zelfde patroon als de foto-upload.
+// Documentupload (PDF/JPEG/PNG/SVG/WEBP, max 10 MB) naar de privé documenten-bucket;
+// zelfde tweestapspatroon als de foto-upload. Stap 1: upload-URL aanvragen.
 router.post(
-  "/:id/documents/upload",
+  "/:id/documents/upload-url",
   requireRole(...EDITOR_ROLES),
-  (req, res, next) => {
-    documentUpload.single("file")(req, res, (err) => {
-      if (!err) {
-        next();
-        return;
-      }
-      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
-        next(
-          new HttpError(
-            400,
-            `Het bestand is te groot (max ${DOCUMENT_MAX_MB} MB). Verklein de PDF (bijv. comprimeren of splitsen) en probeer opnieuw.`
-          )
-        );
-        return;
-      }
-      next(err);
-    });
-  },
+  validateBody(documentUploadRequestSchema),
   async (req, res, next) => {
     try {
       const id = Number(req.params.id);
@@ -601,32 +567,53 @@ router.post(
       }
       assertCompanyAccess(req.user, product.company_id);
 
-      if (!req.file) {
-        next(new HttpError(400, "Geen bestand ontvangen."));
-        return;
-      }
-      const title = (req.body.title || "").trim();
-      if (!title) {
-        next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { title: ["Vul een titel in"] } }));
-        return;
-      }
+      const target = await storageService.createUploadTarget({
+        kind: "document",
+        companyId: product.company_id,
+        productId: id,
+        mimeType: req.body.mimeType,
+        size: req.body.size
+      });
+      res.status(201).json(target);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
-      const blobName = await uploadProductDocument({
-        buffer: req.file.buffer,
-        mimeType: req.file.mimetype
+// Stap 2: geüpload bestand controleren en het document aanmaken.
+router.post(
+  "/:id/documents/upload",
+  requireRole(...EDITOR_ROLES),
+  validateBody(documentUploadCompleteSchema),
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const product = await productsRepo.getProductById(id);
+      if (!product) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+      assertCompanyAccess(req.user, product.company_id);
+
+      const { size, contentType } = await storageService.assertUploadedObject({
+        kind: "document",
+        companyId: product.company_id,
+        productId: id,
+        path: req.body.path
       });
 
       const document = await documentsRepo.createDocument({
         companyId: product.company_id,
         productId: id,
-        type: req.body.type || req.file.mimetype.split("/")[1] || "document",
-        title,
+        type: req.body.type || contentType.split("/")[1] || "document",
+        title: req.body.title,
         language: req.body.language || null,
-        blobName,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        isPublic: req.body.isPublic === "true" || req.body.isPublic === "1",
-        category: ["document", "manual", "video", "3d_model"].includes(req.body.category) ? req.body.category : "document"
+        blobName: req.body.path,
+        fileSize: size,
+        mimeType: contentType,
+        isPublic: req.body.isPublic,
+        category: req.body.category
       });
 
       await logAudit({
@@ -635,7 +622,7 @@ router.post(
         action: "create",
         entityType: "Document",
         entityId: document.id,
-        metadata: { upload: true, fileSize: req.file.size, mimeType: req.file.mimetype }
+        metadata: { upload: true, fileSize: size, mimeType: contentType }
       });
 
       res.status(201).json(document);
@@ -664,11 +651,7 @@ router.get("/:id/documents/:documentId/file", requireRole(...ALL_ROLES), async (
     }
 
     if (document.blob_name) {
-      const { stream, contentType, contentLength } = await downloadProductDocument(document.blob_name);
-      res.setHeader("Content-Type", contentType || document.mime_type || "application/octet-stream");
-      if (contentLength) res.setHeader("Content-Length", contentLength);
-      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(document.title)}.${(document.mime_type || "").split("/")[1] || "bin"}"`);
-      stream.pipe(res);
+      await storageService.redirectToObject(res, "document", document.blob_name);
       return;
     }
     if (document.storage_url) {
@@ -694,7 +677,17 @@ router.delete(
       }
       assertCompanyAccess(req.user, product.company_id);
 
-      const deleted = await documentsRepo.deleteDocument(Number(req.params.documentId));
+      const documentId = Number(req.params.documentId);
+      const document = await documentsRepo.getDocumentById(documentId);
+      if (!document || document.product_id !== id) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+
+      const deleted = await documentsRepo.deleteDocument(documentId);
+      if (deleted?.blob_name) {
+        await storageService.removeObject("document", deleted.blob_name);
+      }
 
       await logAudit({
         companyId: product.company_id,
@@ -704,7 +697,7 @@ router.delete(
         entityId: req.params.documentId
       });
 
-      res.json(deleted || { id: Number(req.params.documentId) });
+      res.json({ id: documentId });
     } catch (error) {
       next(error);
     }
@@ -725,7 +718,7 @@ router.get("/:id/qr.png", requireRole(...ALL_ROLES), async (req, res, next) => {
       return;
     }
 
-    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
+    const url = getPassportUrl(req, product.public_id);
     const buffer = await generateQrPngBuffer(url);
 
     res.set("Content-Type", "image/png");
@@ -749,7 +742,7 @@ router.get("/:id/qr.svg", requireRole(...ALL_ROLES), async (req, res, next) => {
       return;
     }
 
-    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
+    const url = getPassportUrl(req, product.public_id);
     const svg = await generateQrSvgString(url);
 
     res.set("Content-Type", "image/svg+xml");
@@ -773,7 +766,7 @@ router.get("/:id/qr-label.pdf", requireRole(...ALL_ROLES), async (req, res, next
       return;
     }
 
-    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
+    const url = getPassportUrl(req, product.public_id);
     const qrPngBuffer = await generateQrPngBuffer(url);
     const pdfBuffer = await generateLabelPdfBuffer({ product, qrPngBuffer });
 

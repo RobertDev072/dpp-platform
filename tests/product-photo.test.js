@@ -1,7 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql } = require("../src/config/db");
-const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
+const { closePool } = require("../src/config/db");
+const { startTestServer, stopTestServer, request, directUpload } = require("./helpers/testServer");
+const { isSupabaseConfigured } = require("../src/config/supabase");
 const {
   createTestCompany,
   createTestUser,
@@ -9,15 +10,13 @@ const {
   cleanupTestData
 } = require("./helpers/fixtures");
 
-// Een echte upload/download tegen Azure Blob Storage vereist DefaultAzureCredential die
-// hier iets weet te authenticeren (Managed Identity in Azure, of lokaal `az login`/een
-// service principal - zie README.md). Zonder AZURE_STORAGE_ACCOUNT_NAME wordt dat deel
-// overgeslagen; de rest van dit bestand (schema/tenant-isolatie op de foto-routes) heeft
-// geen Azure-verbinding nodig en draait altijd.
-const hasStorageConfigured = Boolean(process.env.AZURE_STORAGE_ACCOUNT_NAME);
-const storageSkipReason = hasStorageConfigured
+// Een echte upload/download tegen Supabase Storage vereist SUPABASE_URL en
+// SUPABASE_SERVICE_ROLE_KEY (en de buckets uit `npm run setup:storage`). Zonder die
+// configuratie wordt dat deel overgeslagen; de rest van dit bestand (schema/tenant-
+// isolatie op de foto-routes) heeft geen Supabase-verbinding nodig en draait altijd.
+const storageSkipReason = isSupabaseConfigured()
   ? false
-  : "AZURE_STORAGE_ACCOUNT_NAME niet gezet - zie README.md voor lokale Blob Storage-setup";
+  : "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY niet gezet - zie README.md";
 
 async function login(baseUrl, user) {
   const res = await request(baseUrl, "POST", "/api/auth/login", {
@@ -43,7 +42,7 @@ test("productfoto: URL-optie, tenant-isolatie en het afgeschermde photoBlobName-
       productIds: [productA]
     });
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   const adminACookie = await login(baseUrl, adminA);
@@ -124,7 +123,7 @@ test("productfoto: URL-optie, tenant-isolatie en het afgeschermde photoBlobName-
 });
 
 test(
-  "productfoto: upload naar Azure Blob Storage en het media-endpoint streamt hem terug",
+  "productfoto: directe upload naar Supabase Storage en het media-endpoint geeft hem terug",
   { skip: storageSkipReason },
   async (t) => {
     const { server, baseUrl } = await startTestServer();
@@ -136,7 +135,7 @@ test(
     t.after(async () => {
       await cleanupTestData({ companyIds: [company], userIds: [admin.id], productIds: [productId] });
       await stopTestServer(server);
-      await sql.close();
+      await closePool();
     });
 
     const cookie = await login(baseUrl, admin);
@@ -145,24 +144,26 @@ test(
       "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000a49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082",
       "hex"
     );
-    const formData = new FormData();
-    formData.append("photo", new Blob([pngBytes], { type: "image/png" }), "test.png");
-
-    const uploadResponse = await fetch(`${baseUrl}/api/products/${productId}/photo`, {
-      method: "POST",
-      headers: { Cookie: cookie },
-      body: formData
+    const uploaded = await directUpload(baseUrl, {
+      cookie,
+      requestPath: `/api/products/${productId}/photo/upload-url`,
+      completePath: `/api/products/${productId}/photo`,
+      buffer: pngBytes,
+      mimeType: "image/png"
     });
-    const uploaded = await uploadResponse.json();
-    assert.equal(uploadResponse.status, 200);
-    assert.ok(uploaded.photo_blob_name, "server moet een blobnaam teruggeven");
-    assert.equal(uploaded.photo_url, null, "een upload vervangt een eerder geplakte externe URL");
+    assert.equal(uploaded.status, 200);
+    assert.ok(uploaded.data.photo_blob_name, "server moet een objectpad teruggeven");
+    assert.ok(uploaded.data.photo_blob_name.startsWith(`${company}/${productId}/`), "pad hoort bij bedrijf/product");
+    assert.equal(uploaded.data.photo_url, null, "een upload vervangt een eerder geplakte externe URL");
 
-    const photoResponse = await fetch(`${baseUrl}/api/products/${productId}/photo`, {
-      headers: { Cookie: cookie }
-    });
+    // Het media-endpoint stuurt door naar een kortlevende signed URL (geen streaming
+    // via de function: Vercel-limiet 4,5 MB).
+    const redirect = await request(baseUrl, "GET", `/api/products/${productId}/photo`, { cookie, redirect: "manual" });
+    assert.equal(redirect.status, 302);
+    assert.match(redirect.location, /\/storage\/v1\/object\/sign\//);
+
+    const photoResponse = await fetch(redirect.location);
     assert.equal(photoResponse.status, 200);
-    assert.equal(photoResponse.headers.get("content-type"), "image/png");
     const bytesBack = Buffer.from(await photoResponse.arrayBuffer());
     assert.deepEqual(bytesBack, pngBytes, "de gestreamde bytes moeten identiek zijn aan de upload");
   }

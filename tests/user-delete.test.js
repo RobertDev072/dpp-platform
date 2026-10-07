@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql } = require("../src/config/db");
+const { closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
@@ -28,7 +28,7 @@ test("gebruiker verwijderen: owner-only, soft delete blokkeert login, admins arc
   t.after(async () => {
     await cleanupTestData({ companyIds: [companyId], userIds: [owner.id, admin.id, medewerker.id] });
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   const ownerCookie = await login(baseUrl, owner);

@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
@@ -19,28 +19,24 @@ async function login(baseUrl, user) {
 
 test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (t) => {
   const { server, baseUrl } = await startTestServer();
-  const pool = await getPool();
 
   // Twee plannen: één dat partners mogen toewijzen, één intern.
-  const planResult = await pool.request().query(`
-    INSERT INTO dbo.Plans (name, max_users, max_products, partner_assignable)
-    OUTPUT INSERTED.id VALUES ('Test Partnerplan', 3, 5, 1)
-  `);
-  const partnerPlanId = planResult.recordset[0].id;
-  const internResult = await pool.request().query(`
-    INSERT INTO dbo.Plans (name, max_users, max_products, partner_assignable)
-    OUTPUT INSERTED.id VALUES ('Test Intern Plan', 3, 5, 0)
-  `);
-  const internPlanId = internResult.recordset[0].id;
+  const planResult = await query(`
+    INSERT INTO plans (name, max_users, max_products, partner_assignable)
+    VALUES ('Test Partnerplan', 3, 5, TRUE) RETURNING id`);
+  const partnerPlanId = planResult.rows[0].id;
+  const internResult = await query(`
+    INSERT INTO plans (name, max_users, max_products, partner_assignable)
+    VALUES ('Test Intern Plan', 3, 5, FALSE) RETURNING id`);
+  const internPlanId = internResult.rows[0].id;
 
   // Twee partnerbedrijven met elk een partner_admin, plus een klant van partner 1.
   const partnerCo1 = await createTestCompany("Partner Een");
   const partnerCo2 = await createTestCompany("Partner Twee");
-  await pool.request().query(`UPDATE dbo.Companies SET kind = 'partner' WHERE id IN (${partnerCo1}, ${partnerCo2})`);
+  await query(`UPDATE companies SET kind = 'partner' WHERE id IN (${partnerCo1}, ${partnerCo2})`);
 
   const klantCo = await createTestCompany("Klant Van Een");
-  await pool.request().input("pid", sql.Int, partnerCo1).input("cid", sql.Int, klantCo)
-    .query("UPDATE dbo.Companies SET kind = 'customer', partner_id = @pid WHERE id = @cid");
+  await query("UPDATE companies SET kind = 'customer', partner_id = $1 WHERE id = $2", [partnerCo1, klantCo]);
 
   const owner = await createTestUser({ companyId: null, role: "platform_owner" });
   const partner1 = await createTestUser({ companyId: partnerCo1, role: "partner_admin" });
@@ -59,9 +55,9 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
       companyIds: [partnerCo1, partnerCo2, klantCo, ...extraCleanup.companyIds],
       userIds: [owner.id, partner1.id, partner2.id, klantAdmin.id, nepPartner.id, partnerMedewerker.id, ...extraCleanup.userIds]
     });
-    await pool.request().query(`DELETE FROM dbo.Plans WHERE id IN (${partnerPlanId}, ${internPlanId})`);
+    await query(`DELETE FROM plans WHERE id IN (${partnerPlanId}, ${internPlanId})`);
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   const ownerCookie = await login(baseUrl, owner);
@@ -123,8 +119,7 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
 
   // --- Licentie-inzage per klant ---
   await t.test("partner ziet het licentieverbruik van de eigen klant; andermans klant is 404", async () => {
-    await pool.request().input("pid", sql.Int, partnerPlanId).input("cid", sql.Int, klantCo)
-      .query("UPDATE dbo.Companies SET plan_id = @pid WHERE id = @cid");
+    await query("UPDATE companies SET plan_id = $1 WHERE id = $2", [partnerPlanId, klantCo]);
 
     const eigen = await request(baseUrl, "GET", `/api/partner/customers/${klantCo}/license`, { cookie: partner1Cookie });
     assert.equal(eigen.status, 200);
@@ -221,7 +216,7 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
     assert.equal(opKlant.status, 400);
     assert.ok(opKlant.data.error.details.fieldErrors.companyId);
 
-    // Promotie binnen een partnerbedrijf mag wél (bestaande gebruiker, geen Entra-call).
+    // Promotie binnen een partnerbedrijf mag wél (bestaande gebruiker, geen Supabase-call).
     const promotie = await request(baseUrl, "PATCH", `/api/users/${partnerMedewerker.id}`, {
       cookie: ownerCookie,
       body: { role: "partner_admin" }

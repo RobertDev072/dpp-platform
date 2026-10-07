@@ -1,7 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sql } = require("../src/config/db");
-const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
+const { closePool } = require("../src/config/db");
+const { startTestServer, stopTestServer, request, directUpload } = require("./helpers/testServer");
+const { isSupabaseConfigured } = require("../src/config/supabase");
 const {
   createTestCompany,
   createTestUser,
@@ -9,16 +10,14 @@ const {
   cleanupTestData
 } = require("./helpers/fixtures");
 
-// Documentupload naar Azure Blob Storage. Zelfde voorwaarde als de fototest: zonder
-// AZURE_STORAGE_ACCOUNT_NAME (en werkende DefaultAzureCredential) worden de echte
+// Documentupload rechtstreeks naar Supabase Storage. Zelfde voorwaarde als de
+// fototest: zonder SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY worden de echte
 // upload/downloaddelen overgeslagen; validatie en tenant-isolatie draaien altijd.
-const hasStorageConfigured = Boolean(process.env.AZURE_STORAGE_ACCOUNT_NAME);
-const storageSkipReason = hasStorageConfigured
+const storageSkipReason = isSupabaseConfigured()
   ? false
-  : "AZURE_STORAGE_ACCOUNT_NAME niet gezet - zie README.md voor lokale Blob Storage-setup";
+  : "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY niet gezet - zie README.md";
 
-// Kleinst mogelijke geldige PDF-bytes (header volstaat voor de mimetype-flow; multer
-// controleert het door de client meegegeven type, de inhoud is hier niet relevant).
+// Kleinst mogelijke PDF-bytes (de inhoud is hier niet relevant, alleen type/grootte).
 const PDF_BYTES = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF");
 
 async function login(baseUrl, user) {
@@ -29,17 +28,15 @@ async function login(baseUrl, user) {
   return res.cookie;
 }
 
-async function uploadDocument(baseUrl, { productId, cookie, buffer, mimeType, filename, fields = {} }) {
-  const form = new FormData();
-  form.append("file", new Blob([buffer], { type: mimeType }), filename);
-  for (const [k, v] of Object.entries(fields)) form.append(k, v);
-  const response = await fetch(`${baseUrl}/api/products/${productId}/documents/upload`, {
-    method: "POST",
-    headers: { Cookie: cookie },
-    body: form
+function uploadDocument(baseUrl, { productId, cookie, buffer, mimeType, fields = {} }) {
+  return directUpload(baseUrl, {
+    cookie,
+    requestPath: `/api/products/${productId}/documents/upload-url`,
+    completePath: `/api/products/${productId}/documents/upload`,
+    buffer,
+    mimeType,
+    fields
   });
-  const data = await response.json().catch(() => ({}));
-  return { status: response.status, data };
 }
 
 test("productdocumenten: upload, validatie, download en publieke zichtbaarheid", async (t) => {
@@ -58,7 +55,7 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
       productIds: [productA]
     });
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   const adminACookie = await login(baseUrl, adminA);
@@ -71,7 +68,6 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
       cookie: adminACookie,
       buffer: big,
       mimeType: "application/pdf",
-      filename: "groot.pdf",
       fields: { title: "Te groot" }
     });
     assert.equal(res.status, 400);
@@ -84,23 +80,27 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
       cookie: adminACookie,
       buffer: Buffer.from("MZ..."),
       mimeType: "application/x-msdownload",
-      filename: "virus.exe",
       fields: { title: "Foute boel" }
     });
     assert.equal(res.status, 400);
     assert.match(res.data.error.message, /PDF, JPEG, PNG, SVG of WEBP/);
   });
 
-  await t.test("ontbrekende titel geeft een veldfout", { skip: storageSkipReason }, async () => {
-    const res = await uploadDocument(baseUrl, {
-      productId: productA,
+  await t.test("ontbrekende titel geeft een veldfout (bij het afronden)", async () => {
+    const res = await request(baseUrl, "POST", `/api/products/${productA}/documents/upload`, {
       cookie: adminACookie,
-      buffer: PDF_BYTES,
-      mimeType: "application/pdf",
-      filename: "handleiding.pdf"
+      body: { path: `${companyA}/${productA}/00000000-0000-0000-0000-000000000000.pdf` }
     });
     assert.equal(res.status, 400);
     assert.ok(res.data.error.details?.fieldErrors?.title);
+  });
+
+  await t.test("afronden met een pad van een ander product wordt geweigerd", { skip: storageSkipReason }, async () => {
+    const res = await request(baseUrl, "POST", `/api/products/${productA}/documents/upload`, {
+      cookie: adminACookie,
+      body: { path: `${companyB}/999/00000000-0000-0000-0000-000000000000.pdf`, title: "Kaping" }
+    });
+    assert.equal(res.status, 400);
   });
 
   await t.test("cross-tenant upload geeft 404", async () => {
@@ -109,7 +109,6 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
       cookie: adminBCookie,
       buffer: PDF_BYTES,
       mimeType: "application/pdf",
-      filename: "handleiding.pdf",
       fields: { title: "Hack" }
     });
     assert.equal(res.status, 404);
@@ -121,14 +120,13 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
       cookie: adminACookie,
       buffer: PDF_BYTES,
       mimeType: "application/pdf",
-      filename: "handleiding.pdf",
-      fields: { title: "Handleiding", category: "manual", isPublic: "true" }
+      fields: { title: "Handleiding", category: "manual", isPublic: true }
     });
     assert.equal(up.status, 201);
     assert.ok(up.data.blob_name);
     assert.equal(up.data.file_size, PDF_BYTES.length);
 
-    // Eigen (ingelogde) download
+    // Eigen (ingelogde) download: redirect naar een kortlevende signed URL
     const file = await fetch(`${baseUrl}/api/products/${productA}/documents/${up.data.id}/file`, {
       headers: { Cookie: adminACookie }
     });
@@ -137,7 +135,8 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
 
     // Cross-tenant download geeft 404
     const cross = await fetch(`${baseUrl}/api/products/${productA}/documents/${up.data.id}/file`, {
-      headers: { Cookie: adminBCookie }
+      headers: { Cookie: adminBCookie },
+      redirect: "manual"
     });
     assert.equal(cross.status, 404);
 
@@ -160,8 +159,7 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
       cookie: adminACookie,
       buffer: PDF_BYTES,
       mimeType: "application/pdf",
-      filename: "intern.pdf",
-      fields: { title: "Intern document", isPublic: "false" }
+      fields: { title: "Intern document", isPublic: false }
     });
     assert.equal(up2.status, 201);
     const pub2 = await request(baseUrl, "GET", `/api/public/products/${publish.data.public_id}`);

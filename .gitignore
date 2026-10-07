@@ -1,3 +1,7 @@
 node_modules/
 .env
-web/.next/build-info.json
+.env*.local
+.next/
+.vercel/
+# Uitvoer van scripts/migrate-from-azure.js (bevat tijdelijke wachtwoorden!)
+migration-output/

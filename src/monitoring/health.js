@@ -1,8 +1,10 @@
 // Lichtgewicht healthchecks voor de essentiële onderdelen. Elke check is bewust
-// klein (SELECT 1, container-exists, configuratie-aanwezigheid) en het geheel
-// wordt 30s gecachet zodat auto-refresh op het dashboard nooit load veroorzaakt.
+// klein (SELECT 1, bucket-bestaat, Auth-health-endpoint) en het geheel wordt 30s
+// gecachet (per function-instance) zodat auto-refresh op het dashboard nooit load
+// veroorzaakt.
 
-const { getPool } = require("../config/db");
+const { query } = require("../config/db");
+const { isSupabaseConfigured, getSupabaseAdmin, IMAGES_BUCKET } = require("../config/supabase");
 const { THRESHOLDS } = require("../config/monitoring");
 const { sanitizeErrorMessage } = require("./requestMetrics");
 
@@ -36,10 +38,7 @@ async function timed(fn) {
 
 async function checkDatabase() {
   try {
-    const ms = await timed(async () => {
-      const pool = await getPool();
-      await pool.request().query("SELECT 1 AS ok");
-    });
+    const ms = await timed(() => query("SELECT 1 AS ok"));
     noteResult("database", true);
     return { status: statusFromLatency(ms), latencyMs: ms };
   } catch (error) {
@@ -48,38 +47,50 @@ async function checkDatabase() {
   }
 }
 
-async function checkBlobStorage() {
-  const { isBlobStorageConfigured, ACCOUNT_NAME } = require("../config/storage");
-  if (!isBlobStorageConfigured()) {
+async function checkStorage() {
+  if (!isSupabaseConfigured()) {
     return { status: "not_configured", latencyMs: null };
   }
   try {
-    const { BlobServiceClient } = require("@azure/storage-blob");
-    const { DefaultAzureCredential } = require("@azure/identity");
-    const { IMAGES_CONTAINER } = require("../services/blobStorage.service");
-    const client = new BlobServiceClient(`https://${ACCOUNT_NAME}.blob.core.windows.net`, new DefaultAzureCredential());
-    const ms = await timed(() => client.getContainerClient(IMAGES_CONTAINER).exists());
-    noteResult("blob", true);
+    const ms = await timed(async () => {
+      const { error } = await getSupabaseAdmin().storage.getBucket(IMAGES_BUCKET);
+      if (error) throw new Error(error.message);
+    });
+    noteResult("storage", true);
     return { status: statusFromLatency(ms), latencyMs: ms };
   } catch (error) {
-    noteResult("blob", false, error.message);
+    noteResult("storage", false, error.message);
     return { status: "down", latencyMs: null };
   }
 }
 
-function checkEntra() {
-  // Configuratiecheck (geen live Graph-call bij elke refresh: dat zou onnodige
-  // tokens/latency kosten; echte Graph-fouten verschijnen via de foutenmonitor).
-  const { isEntraConfigured, isEntraLoginConfigured } = require("../config/entra");
-  return {
-    graphProvisioning: { status: isEntraConfigured() ? "ok" : "not_configured", latencyMs: null },
-    login: { status: isEntraLoginConfigured() ? "ok" : "not_configured", latencyMs: null }
-  };
+// Supabase Auth heeft een eigen, goedkoop health-endpoint.
+async function checkAuthentication() {
+  if (!isSupabaseConfigured()) {
+    return { status: "not_configured", latencyMs: null };
+  }
+  try {
+    const ms = await timed(async () => {
+      const response = await fetch(`${process.env.SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/health`, {
+        headers: { apikey: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY },
+        signal: AbortSignal.timeout(10000)
+      });
+      if (!response.ok) throw new Error(`Supabase Auth health: HTTP ${response.status}`);
+    });
+    noteResult("authentication", true);
+    return { status: statusFromLatency(ms), latencyMs: ms };
+  } catch (error) {
+    noteResult("authentication", false, error.message);
+    return { status: "down", latencyMs: null };
+  }
 }
 
 function checkEmail() {
-  // Bewust niet geconfigureerd (besluit Platform Owner: geen SMTP). Eerlijk tonen.
-  return { status: "not_configured", latencyMs: null };
+  // E-mail (alleen de "wachtwoord vergeten"-code) verstuurt Supabase Auth via de SMTP-
+  // instellingen van het Supabase-project; de app zelf verstuurt niets. Of daar een
+  // eigen SMTP-server staat is vanuit de app niet te zien - eerlijk als
+  // "niet geconfigureerd" tonen tenzij expliciet bevestigd via SUPABASE_SMTP_CONFIGURED.
+  return { status: process.env.SUPABASE_SMTP_CONFIGURED === "true" ? "ok" : "not_configured", latencyMs: null };
 }
 
 function checkBaseUrls() {
@@ -98,15 +109,17 @@ function decorate(component, result) {
 async function runHealthChecks() {
   if (cachedResult && Date.now() - cachedAt < CACHE_MS) return cachedResult;
 
-  const [database, blob] = await Promise.all([checkDatabase(), checkBlobStorage()]);
-  const entra = checkEntra();
+  const [database, storage, authentication] = await Promise.all([
+    checkDatabase(),
+    checkStorage(),
+    checkAuthentication()
+  ]);
 
   const components = {
     app: decorate("app", { status: "ok", latencyMs: 0 }),
     database: decorate("database", database),
-    blobStorage: decorate("blob", blob),
-    entraGraph: decorate("entraGraph", entra.graphProvisioning),
-    authentication: decorate("authentication", entra.login),
+    blobStorage: decorate("storage", storage),
+    authentication: decorate("authentication", authentication),
     email: decorate("email", checkEmail()),
     baseUrls: decorate("baseUrls", checkBaseUrls())
   };

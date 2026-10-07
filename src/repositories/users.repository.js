@@ -1,60 +1,49 @@
-const { getPool, sql } = require("../config/db");
+const { query, queryRows, queryOne, withTransaction } = require("../config/db");
 
-const PUBLIC_COLUMNS = `id, company_id, email, first_name, last_name, role, status, entra_object_id, entra_subject_id, created_at, updated_at`;
+const PUBLIC_COLUMNS = `id, company_id, email, first_name, last_name, role, status, auth_user_id, created_at, updated_at`;
 
 async function listUsers({ companyId, includeDeleted = false } = {}) {
-  const pool = await getPool();
-  const request = pool.request();
-
+  const params = [];
   // Definitief verwijderde accounts horen niet in beheerlijsten thuis (de rijen
   // blijven alleen bestaan voor audit-historie).
   const clauses = includeDeleted ? [] : ["u.status <> 'deleted'"];
   if (companyId !== undefined) {
-    request.input("companyId", sql.Int, companyId);
-    clauses.push("u.company_id = @companyId");
+    params.push(companyId);
+    clauses.push(`u.company_id = $${params.length}`);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const columns = PUBLIC_COLUMNS.split(", ").map((c) => `u.${c}`).join(", ");
-  const result = await request.query(`
+  return queryRows(
+    `
     SELECT ${columns},
            c.name AS company_name,
-           CASE WHEN u.password_hash IS NULL THEN 'entra' ELSE 'local' END AS auth_provider,
-           (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.user_id = u.id) AS last_activity
-    FROM dbo.Users u
-    LEFT JOIN dbo.Companies c ON c.id = u.company_id
+           CASE WHEN u.password_hash IS NULL THEN 'supabase' ELSE 'local' END AS auth_provider,
+           (SELECT MAX(a.timestamp) FROM audit_logs a WHERE a.user_id = u.id) AS last_activity
+    FROM users u
+    LEFT JOIN companies c ON c.id = u.company_id
     ${where}
     ORDER BY u.email
-  `);
-  return result.recordset;
+  `,
+    params
+  );
 }
 
 async function getUserById(id) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .query(`SELECT ${PUBLIC_COLUMNS} FROM dbo.Users WHERE id = @id`);
-  return result.recordset[0] || null;
+  return queryOne(`SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = $1`, [id]);
 }
 
 // Alleen voor de admin-wachtwoordreset: welke wachtwoordmethode heeft dit account
 // (zonder ooit de hash zelf uit de repository te laten lekken).
 async function getUserAuthInfo(id) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .query(`
-      SELECT entra_object_id,
-             CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password,
-             must_change_password
-      FROM dbo.Users WHERE id = @id
-    `);
-  const row = result.recordset[0];
+  const row = await queryOne(
+    `SELECT auth_user_id, password_hash IS NOT NULL AS has_local_password, must_change_password
+     FROM users WHERE id = $1`,
+    [id]
+  );
   return row
     ? {
-        entraObjectId: row.entra_object_id,
+        authUserId: row.auth_user_id,
         hasLocalPassword: Boolean(row.has_local_password),
         mustChangePassword: Boolean(row.must_change_password)
       }
@@ -62,214 +51,128 @@ async function getUserAuthInfo(id) {
 }
 
 async function setMustChangePassword(id, value) {
-  const pool = await getPool();
-  await pool
-    .request()
-    .input("id", sql.Int, id)
-    .input("value", sql.Bit, value ? 1 : 0)
-    .query("UPDATE dbo.Users SET must_change_password = @value, updated_at = SYSUTCDATETIME() WHERE id = @id");
+  await query("UPDATE users SET must_change_password = $2, updated_at = now() WHERE id = $1", [id, Boolean(value)]);
 }
 
 async function clearMustChangePasswordByEmail(email) {
-  const pool = await getPool();
-  await pool
-    .request()
-    .input("email", sql.NVarChar(256), email)
-    .query("UPDATE dbo.Users SET must_change_password = 0, updated_at = SYSUTCDATETIME() WHERE email = @email");
+  await query("UPDATE users SET must_change_password = FALSE, updated_at = now() WHERE email = $1", [email]);
 }
 
 async function updatePasswordHash(id, passwordHash) {
-  const pool = await getPool();
-  await pool
-    .request()
-    .input("id", sql.Int, id)
-    .input("passwordHash", sql.NVarChar(255), passwordHash)
-    .query("UPDATE dbo.Users SET password_hash = @passwordHash, updated_at = SYSUTCDATETIME() WHERE id = @id");
+  await query("UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1", [id, passwordHash]);
+}
+
+async function setAuthUserId(id, authUserId) {
+  await query("UPDATE users SET auth_user_id = $2, updated_at = now() WHERE id = $1", [id, authUserId]);
 }
 
 async function getUserByEmail(email) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("email", sql.NVarChar(256), email)
-    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password FROM dbo.Users WHERE email = @email`);
-  return result.recordset[0] || null;
+  return queryOne(
+    `SELECT id, company_id, email, password_hash, auth_user_id, role, status, must_change_password
+     FROM users WHERE email = $1`,
+    [email]
+  );
 }
 
-async function getUserByEntraSubjectId(entraSubjectId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("sub", sql.NVarChar(255), entraSubjectId)
-    .query(`
-      SELECT id, company_id, email, role, status
-      FROM dbo.Users
-      WHERE entra_subject_id = @sub
-    `);
-  return result.recordset[0] || null;
-}
-
-// Voor de "just-in-time" koppeling bij een eerste Entra-login: een account dat door een
-// admin is aangemaakt (bekend email, nog geen sub gekoppeld) en actief is.
-async function getUnlinkedUserByEmail(email) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("email", sql.NVarChar(256), email)
-    .query(`
-      SELECT id, company_id, email, role, status
-      FROM dbo.Users
-      WHERE email = @email AND entra_subject_id IS NULL AND status = 'active'
-    `);
-  return result.recordset[0] || null;
-}
-
-// Koppelt een sub-claim één keer aan een account. De WHERE-clausule met
-// "entra_subject_id IS NULL" is de race-guard: als twee logins gelijktijdig proberen te
-// koppelen, wint er maar één (rowsAffected = 0 bij de verliezer, die dan opnieuw moet
-// opvragen in plaats van blind te overschrijven).
-async function linkEntraSubjectId(userId, entraSubjectId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, userId)
-    .input("sub", sql.NVarChar(255), entraSubjectId)
-    .query(`
-      UPDATE dbo.Users
-      SET entra_subject_id = @sub, updated_at = SYSUTCDATETIME()
-      OUTPUT INSERTED.id, INSERTED.company_id, INSERTED.email, INSERTED.role, INSERTED.status
-      WHERE id = @id AND entra_subject_id IS NULL
-    `);
-  return result.recordset[0] || null;
+// Na een geslaagde Supabase Auth-login: de "sub" van het account is auth_user_id.
+async function getUserByAuthUserId(authUserId) {
+  return queryOne(`SELECT id, company_id, email, role, status FROM users WHERE auth_user_id = $1`, [authUserId]);
 }
 
 // Snelle, niet-lockende telling voor een "fail fast"-check vóórdat er (kostbare, lastig
-// terug te draaien) externe calls zoals Graph-usercreatie worden gedaan. De autoritatieve,
-// race-veilige check zit in createUserWithSeatLimit hieronder.
+// terug te draaien) externe calls zoals het aanmaken van een Supabase Auth-account
+// worden gedaan. De autoritatieve, race-veilige check zit in createUserWithSeatLimit.
 async function countActiveUsers(companyId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .query(`SELECT COUNT(*) AS activeCount FROM dbo.Users WHERE company_id = @companyId AND status = 'active'`);
-  return result.recordset[0].activeCount;
+  const row = await queryOne(
+    `SELECT COUNT(*) AS "activeCount" FROM users WHERE company_id = $1 AND status = 'active'`,
+    [companyId]
+  );
+  return row.activeCount;
 }
 
 async function countOtherActiveCompanyAdmins(companyId, excludeUserId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .input("excludeUserId", sql.Int, excludeUserId)
-    .query(`
-      SELECT COUNT(*) AS adminCount FROM dbo.Users
-      WHERE company_id = @companyId AND role = 'company_admin'
-        AND status = 'active' AND id <> @excludeUserId
-    `);
-  return result.recordset[0].adminCount;
+  const row = await queryOne(
+    `SELECT COUNT(*) AS "adminCount" FROM users
+     WHERE company_id = $1 AND role = 'company_admin' AND status = 'active' AND id <> $2`,
+    [companyId, excludeUserId]
+  );
+  return row.adminCount;
 }
 
 async function countAllActiveUsers() {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .query(`SELECT COUNT(*) AS activeCount FROM dbo.Users WHERE status = 'active'`);
-  return result.recordset[0].activeCount;
+  const row = await queryOne(`SELECT COUNT(*) AS "activeCount" FROM users WHERE status = 'active'`);
+  return row.activeCount;
 }
 
-// Telt actieve users binnen een company met UPDLOCK+HOLDLOCK zodat twee gelijktijdige
-// "user aanmaken"-requests niet allebei de limiet-check kunnen passeren voordat een van
-// beide zijn insert heeft gecommit (voorkomt een race over de seat-limiet).
+// Seat-limiet race-veilig: een transactie-advisory-lock per bedrijf zorgt dat twee
+// gelijktijdige "gebruiker aanmaken"-requests niet allebei de limietcheck passeren
+// voordat een van beide zijn insert heeft gecommit (vervangt UPDLOCK/HOLDLOCK uit
+// de SQL Server-versie).
+const SEAT_LOCK_NAMESPACE = 41001;
+
 async function createUserWithSeatLimit({ companyId, maxUsers, ...userFields }) {
-  const pool = await getPool();
-  const transaction = new sql.Transaction(pool);
-  await transaction.begin();
-
-  try {
+  return withTransaction(async (client) => {
     if (maxUsers != null) {
-      const countResult = await new sql.Request(transaction)
-        .input("companyId", sql.Int, companyId)
-        .query(`
-          SELECT COUNT(*) AS activeCount
-          FROM dbo.Users WITH (UPDLOCK, HOLDLOCK)
-          WHERE company_id = @companyId AND status = 'active'
-        `);
-
-      if (countResult.recordset[0].activeCount >= maxUsers) {
-        await transaction.rollback();
+      await client.query("SELECT pg_advisory_xact_lock($1, $2)", [SEAT_LOCK_NAMESPACE, companyId]);
+      const countResult = await client.query(
+        `SELECT COUNT(*) AS "activeCount" FROM users WHERE company_id = $1 AND status = 'active'`,
+        [companyId]
+      );
+      if (countResult.rows[0].activeCount >= maxUsers) {
         return { limitReached: true, user: null };
       }
     }
 
-    const insertResult = await new sql.Request(transaction)
-      .input("companyId", sql.Int, companyId)
-      .input("email", sql.NVarChar(256), userFields.email)
-      .input("passwordHash", sql.NVarChar(255), userFields.passwordHash ?? null)
-      .input("entraObjectId", sql.NVarChar(255), userFields.entraObjectId ?? null)
-      .input("firstName", sql.NVarChar(100), userFields.firstName ?? null)
-      .input("lastName", sql.NVarChar(100), userFields.lastName ?? null)
-      .input("role", sql.NVarChar(30), userFields.role)
-      .input("status", sql.NVarChar(20), userFields.status || "active")
-      .query(`
-        INSERT INTO dbo.Users
-          (company_id, email, password_hash, entra_object_id, first_name, last_name, role, status)
-        OUTPUT ${PUBLIC_COLUMNS.split(", ").map((c) => `INSERTED.${c}`).join(", ")}
-        VALUES (@companyId, @email, @passwordHash, @entraObjectId, @firstName, @lastName, @role, @status)
-      `);
+    const insertResult = await client.query(
+      `INSERT INTO users
+         (company_id, email, password_hash, auth_user_id, first_name, last_name, role, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING ${PUBLIC_COLUMNS}`,
+      [
+        companyId,
+        userFields.email,
+        userFields.passwordHash ?? null,
+        userFields.authUserId ?? null,
+        userFields.firstName ?? null,
+        userFields.lastName ?? null,
+        userFields.role,
+        userFields.status || "active"
+      ]
+    );
 
-    await transaction.commit();
-    return { limitReached: false, user: insertResult.recordset[0] };
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+    return { limitReached: false, user: insertResult.rows[0] };
+  });
 }
 
 const UPDATABLE_FIELDS = ["firstName", "lastName", "role", "status"];
 const FIELD_TO_COLUMN = { firstName: "first_name", lastName: "last_name", role: "role", status: "status" };
 
 async function updateUser(id, fields) {
-  const pool = await getPool();
-  const request = pool.request().input("id", sql.Int, id);
-
+  const params = [id];
   const setClauses = [];
   for (const field of UPDATABLE_FIELDS) {
     if (!(field in fields)) continue;
-    const column = FIELD_TO_COLUMN[field];
-    setClauses.push(`${column} = @${field}`);
-
-    if (field === "role") {
-      request.input(field, sql.NVarChar(30), fields[field]);
-    } else if (field === "status") {
-      request.input(field, sql.NVarChar(20), fields[field]);
-    } else {
-      request.input(field, sql.NVarChar(100), fields[field]);
-    }
+    params.push(fields[field]);
+    setClauses.push(`${FIELD_TO_COLUMN[field]} = $${params.length}`);
   }
 
   if (setClauses.length === 0) {
     return getUserById(id);
   }
 
-  setClauses.push("updated_at = SYSUTCDATETIME()");
+  setClauses.push("updated_at = now()");
 
-  const result = await request.query(`
-    UPDATE dbo.Users
-    SET ${setClauses.join(", ")}
-    OUTPUT ${PUBLIC_COLUMNS.split(", ").map((c) => `INSERTED.${c}`).join(", ")}
-    WHERE id = @id
-  `);
-
-  return result.recordset[0] || null;
+  return queryOne(
+    `UPDATE users SET ${setClauses.join(", ")} WHERE id = $1 RETURNING ${PUBLIC_COLUMNS}`,
+    params
+  );
 }
 
 module.exports = {
   listUsers,
   getUserById,
   getUserByEmail,
-  getUserByEntraSubjectId,
-  getUnlinkedUserByEmail,
-  linkEntraSubjectId,
+  getUserByAuthUserId,
   countActiveUsers,
   countOtherActiveCompanyAdmins,
   countAllActiveUsers,
@@ -277,6 +180,7 @@ module.exports = {
   updateUser,
   getUserAuthInfo,
   updatePasswordHash,
+  setAuthUserId,
   setMustChangePassword,
   clearMustChangePasswordByEmail
 };

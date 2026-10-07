@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("crypto");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
@@ -15,48 +15,36 @@ async function login(baseUrl, user) {
 
 test("license limit: nieuwe gebruiker boven max_users geeft LICENSE_LIMIT_REACHED", async (t) => {
   const { server, baseUrl } = await startTestServer();
-  const pool = await getPool();
 
-  const planResult = await pool
-    .request()
-    .input("name", sql.NVarChar(100), "Test Plan")
-    .input("maxUsers", sql.Int, 1)
-    .query(`
-      INSERT INTO dbo.Plans (name, max_users, max_products)
-      OUTPUT INSERTED.id
-      VALUES (@name, @maxUsers, 10)
-    `);
-  const planId = planResult.recordset[0].id;
+  const planResult = await query(`
+      INSERT INTO plans (name, max_users, max_products)
+      VALUES ($1, $2, 10) RETURNING id`, ["Test Plan", 1]);
+  const planId = planResult.rows[0].id;
 
   const companyId = await createTestCompany("License Limit Co");
-  await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .input("planId", sql.Int, planId)
-    .query("UPDATE dbo.Companies SET plan_id = @planId WHERE id = @companyId");
+  await query("UPDATE companies SET plan_id = $1 WHERE id = $2", [planId, companyId]);
 
   const admin = await createTestUser({ companyId, role: "company_admin" });
   const userIds = [admin.id];
   let createdUserId;
-  let createdEntraObjectId;
+  let createdAuthUserId;
 
   t.after(async () => {
     if (createdUserId) userIds.push(createdUserId);
     await cleanupTestData({ companyIds: [companyId], userIds });
-    await pool.request().input("planId", sql.Int, planId).query("DELETE FROM dbo.Plans WHERE id = @planId");
-    // Met Entra-provisioning geconfigureerd maakt de succesvolle aanmaak een ECHT
-    // Entra-account aan - dat moet mee opgeruimd worden, anders slibt de tenant
-    // dicht met testaccounts (scripts/cleanup-test-data.js veegt achterblijvers).
-    if (createdEntraObjectId) {
+    await query("DELETE FROM plans WHERE id = $1", [planId]);
+    // Met Supabase Auth geconfigureerd maakt de succesvolle aanmaak een ECHT
+    // Supabase-account aan - dat moet mee opgeruimd worden (scripts/cleanup-test-data.js
+    // veegt achterblijvers).
+    if (createdAuthUserId) {
       try {
-        const graphClient = require("../src/services/graphClient");
-        await graphClient.deleteEntraUser(createdEntraObjectId);
+        await require("../src/services/identity.service").deleteAuthUser(createdAuthUserId);
       } catch (error) {
-        console.error("Entra-testaccount opruimen mislukt:", error.message);
+        console.error("Supabase-testaccount opruimen mislukt:", error.message);
       }
     }
     await stopTestServer(server);
-    await sql.close();
+    await closePool();
   });
 
   const adminCookie = await login(baseUrl, admin);
@@ -77,7 +65,7 @@ test("license limit: nieuwe gebruiker boven max_users geeft LICENSE_LIMIT_REACHE
   });
 
   await t.test("na verhogen van max_users lukt aanmaken wel", async () => {
-    await pool.request().input("planId", sql.Int, planId).query("UPDATE dbo.Plans SET max_users = 5 WHERE id = @planId");
+    await query("UPDATE plans SET max_users = 5 WHERE id = $1", [planId]);
 
     const suffix = crypto.randomBytes(4).toString("hex");
     const res = await request(baseUrl, "POST", "/api/users", {
@@ -91,6 +79,6 @@ test("license limit: nieuwe gebruiker boven max_users geeft LICENSE_LIMIT_REACHE
 
     assert.equal(res.status, 201);
     createdUserId = res.data.id;
-    createdEntraObjectId = res.data.entra_object_id || null;
+    createdAuthUserId = res.data.auth_user_id || null;
   });
 });

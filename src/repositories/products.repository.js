@@ -1,11 +1,12 @@
 const crypto = require("crypto");
-const { getPool, sql } = require("../config/db");
+const { query, queryRows, queryOne } = require("../config/db");
 
 const PUBLIC_COLUMNS = `
   id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
   manufacturer, country_of_origin, photo_url, photo_blob_name, status, highlights, public_id,
   published_at, created_by, created_at, updated_at
 `;
+const PUBLIC_COLUMN_LIST = PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => c.trim());
 
 // Whitelist: voorkomt dat sort/order ooit rauw in de SQL belanden.
 const SORTABLE_COLUMNS = {
@@ -15,44 +16,57 @@ const SORTABLE_COLUMNS = {
   category: "p.category_label"
 };
 
+// public_id's komen uit QR-codes/URL's. Geprinte QR-codes van vóór de migratie
+// bevatten de GUID in HOOFDLETTERS (zo gaf SQL Server hem terug); het uuid-type van
+// Postgres vergelijkt hoofdletterongevoelig, dus die blijven gewoon werken. Alles wat
+// geen geldige uuid is, is per definitie geen bestaand paspoort (en zou anders een
+// cast-fout/500 geven).
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function isValidPublicId(value) {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
 function escapeLike(value) {
-  return value.replace(/[\\%_\[]/g, (m) => `\\${m}`);
+  return value.replace(/[\\%_]/g, (m) => `\\${m}`);
 }
 
 // Compleetheid van een productpaspoort: zes gelijkwaardige criteria (foto,
 // omschrijving, categorie, duurzaamheidsdata, compliance-data, minimaal één
-// document). Als CROSS APPLY berekend zodat de losse vlaggen teruggegeven kunnen
+// document). Als LATERAL-join berekend zodat de losse vlaggen teruggegeven kunnen
 // worden ("wat ontbreekt er nog?") én er in WHERE en aggregaties op gefilterd/geteld
-// kan worden - subqueries mogen in SQL Server niet rechtstreeks binnen een SUM().
-const CHECKS_APPLY = `CROSS APPLY (SELECT
-  CASE WHEN (p.photo_url IS NOT NULL AND LEN(p.photo_url) > 0) OR p.photo_blob_name IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
-  CASE WHEN p.description IS NOT NULL AND LEN(p.description) > 0 THEN 1 ELSE 0 END AS has_description,
-  CASE WHEN p.category_label IS NOT NULL AND LEN(p.category_label) > 0 THEN 1 ELSE 0 END AS has_category,
-  CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductSustainability ps WHERE ps.product_id = p.id) THEN 1 ELSE 0 END AS has_sustainability,
-  CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductCompliance pc WHERE pc.product_id = p.id) THEN 1 ELSE 0 END AS has_compliance,
-  CASE WHEN EXISTS (SELECT 1 FROM dbo.Documents d WHERE d.product_id = p.id) THEN 1 ELSE 0 END AS has_documents
+// kan worden.
+const CHECKS_JOIN = `CROSS JOIN LATERAL (SELECT
+  CASE WHEN (p.photo_url IS NOT NULL AND length(p.photo_url) > 0) OR p.photo_blob_name IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
+  CASE WHEN p.description IS NOT NULL AND length(p.description) > 0 THEN 1 ELSE 0 END AS has_description,
+  CASE WHEN p.category_label IS NOT NULL AND length(p.category_label) > 0 THEN 1 ELSE 0 END AS has_category,
+  CASE WHEN EXISTS (SELECT 1 FROM product_sustainability ps WHERE ps.product_id = p.id) THEN 1 ELSE 0 END AS has_sustainability,
+  CASE WHEN EXISTS (SELECT 1 FROM product_compliance pc WHERE pc.product_id = p.id) THEN 1 ELSE 0 END AS has_compliance,
+  CASE WHEN EXISTS (SELECT 1 FROM documents d WHERE d.product_id = p.id) THEN 1 ELSE 0 END AS has_documents
 ) checks`;
 
 const COMPLETENESS_EXPR =
   "(checks.has_photo + checks.has_description + checks.has_category + checks.has_sustainability + checks.has_compliance + checks.has_documents) * 100 / 6";
 
-function buildProductFilters({ companyId, q, status, category, doc }, request) {
+function buildProductFilters({ companyId, q, status, category, doc }, params) {
   const where = [];
   if (companyId !== undefined) {
-    request.input("companyId", sql.Int, companyId);
-    where.push("p.company_id = @companyId");
+    params.push(companyId);
+    where.push(`p.company_id = $${params.length}`);
   }
   if (q) {
-    request.input("q", sql.NVarChar(220), `%${escapeLike(q)}%`);
-    where.push("(p.name LIKE @q ESCAPE '\\' OR p.sku LIKE @q ESCAPE '\\' OR p.gtin LIKE @q ESCAPE '\\' OR p.brand LIKE @q ESCAPE '\\')");
+    // ILIKE: SQL Server zocht hoofdletterongevoelig (collatie), Postgres' LIKE niet.
+    params.push(`%${escapeLike(q)}%`);
+    const n = params.length;
+    where.push(`(p.name ILIKE $${n} OR p.sku ILIKE $${n} OR p.gtin ILIKE $${n} OR p.brand ILIKE $${n})`);
   }
   if (status) {
-    request.input("status", sql.NVarChar(20), status);
-    where.push("p.status = @status");
+    params.push(status);
+    where.push(`p.status = $${params.length}`);
   }
   if (category) {
-    request.input("category", sql.NVarChar(100), category);
-    where.push("p.category_label = @category");
+    params.push(category);
+    where.push(`p.category_label = $${params.length}`);
   }
   if (doc === "compleet") {
     where.push(`${COMPLETENESS_EXPR} = 100`);
@@ -73,33 +87,34 @@ async function listProducts({
   page = 1,
   pageSize = 25
 } = {}) {
-  const pool = await getPool();
-  const request = pool.request();
-
-  const whereSql = buildProductFilters({ companyId, q, status, category, doc }, request);
+  const params = [];
+  const whereSql = buildProductFilters({ companyId, q, status, category, doc }, params);
   const sortSql = SORTABLE_COLUMNS[sort] || SORTABLE_COLUMNS.name;
   const orderSql = order === "desc" ? "DESC" : "ASC";
-  request.input("offset", sql.Int, (page - 1) * pageSize);
-  request.input("limit", sql.Int, pageSize);
+  params.push(pageSize, (page - 1) * pageSize);
+  const limitParam = params.length - 1;
+  const offsetParam = params.length;
 
-  const selectColumns = PUBLIC_COLUMNS.split(",").map((c) => `p.${c.trim()}`).join(", ");
+  const selectColumns = PUBLIC_COLUMN_LIST.map((c) => `p.${c}`).join(", ");
 
-  const result = await request.query(`
+  const rows = await queryRows(
+    `
     SELECT ${selectColumns},
            creator.email AS created_by_email,
            checks.has_photo, checks.has_description, checks.has_category,
            checks.has_sustainability, checks.has_compliance, checks.has_documents,
            ${COMPLETENESS_EXPR} AS completeness,
            COUNT(*) OVER() AS total
-    FROM dbo.Products p
-    ${CHECKS_APPLY}
-    LEFT JOIN dbo.Users creator ON creator.id = p.created_by
+    FROM products p
+    ${CHECKS_JOIN}
+    LEFT JOIN users creator ON creator.id = p.created_by
     ${whereSql}
     ORDER BY ${sortSql} ${orderSql}, p.id ASC
-    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
-  `);
+    LIMIT $${limitParam} OFFSET $${offsetParam}
+  `,
+    params
+  );
 
-  const rows = result.recordset;
   const total = rows.length ? rows[0].total : 0;
   const items = rows.map(({ total: _ignored, ...row }) => ({
     ...row,
@@ -119,28 +134,29 @@ async function listProducts({
 
 // Statistieken voor de dashboard-tegels van het productoverzicht.
 async function getProductStats({ companyId } = {}) {
-  const pool = await getPool();
-  const request = pool.request();
+  const params = [];
   let where = "";
   if (companyId !== undefined) {
-    request.input("companyId", sql.Int, companyId);
-    where = "WHERE p.company_id = @companyId";
+    params.push(companyId);
+    where = "WHERE p.company_id = $1";
   }
 
-  const result = await request.query(`
+  const row = await queryOne(
+    `
     SELECT
       COUNT(*) AS total,
       SUM(CASE WHEN p.status = 'published' THEN 1 ELSE 0 END) AS published,
       SUM(CASE WHEN p.status = 'draft' THEN 1 ELSE 0 END) AS drafts,
       SUM(CASE WHEN ${COMPLETENESS_EXPR} < 100 THEN 1 ELSE 0 END) AS action_required,
-      SUM(CASE WHEN p.created_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS created_this_month,
-      SUM(CASE WHEN p.published_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS published_this_month
-    FROM dbo.Products p
-    ${CHECKS_APPLY}
+      SUM(CASE WHEN p.created_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' THEN 1 ELSE 0 END) AS created_this_month,
+      SUM(CASE WHEN p.published_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' THEN 1 ELSE 0 END) AS published_this_month
+    FROM products p
+    ${CHECKS_JOIN}
     ${where}
-  `);
+  `,
+    params
+  );
 
-  const row = result.recordset[0];
   return {
     total: row.total || 0,
     published: row.published || 0,
@@ -154,36 +170,31 @@ async function getProductStats({ companyId } = {}) {
 // Aantal producten dat meetelt voor de licentielimiet (gearchiveerde niet: die
 // bestaan alleen nog voor QR-continuïteit en audit-historie).
 async function countProductsForCompany(companyId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .query("SELECT COUNT(*) AS n FROM dbo.Products WHERE company_id = @companyId AND status <> 'archived'");
-  return result.recordset[0].n;
+  const row = await queryOne(
+    "SELECT COUNT(*) AS n FROM products WHERE company_id = $1 AND status <> 'archived'",
+    [companyId]
+  );
+  return row.n;
 }
 
 // Onderscheiden categorielabels voor het filter in het productoverzicht.
 async function listCategories({ companyId } = {}) {
-  const pool = await getPool();
-  const request = pool.request();
+  const params = [];
   let where = "WHERE category_label IS NOT NULL AND category_label <> ''";
   if (companyId !== undefined) {
-    request.input("companyId", sql.Int, companyId);
-    where += " AND company_id = @companyId";
+    params.push(companyId);
+    where += " AND company_id = $1";
   }
-  const result = await request.query(`
-    SELECT DISTINCT category_label FROM dbo.Products ${where} ORDER BY category_label
-  `);
-  return result.recordset.map((r) => r.category_label);
+  const rows = await queryRows(
+    `SELECT DISTINCT category_label FROM products ${where} ORDER BY category_label`,
+    params
+  );
+  return rows.map((r) => r.category_label);
 }
 
 async function getProductById(id) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .query(`SELECT ${PUBLIC_COLUMNS} FROM dbo.Products WHERE id = @id`);
-  return result.recordset[0] || null;
+  if (!Number.isInteger(id)) return null;
+  return queryOne(`SELECT ${PUBLIC_COLUMNS} FROM products WHERE id = $1`, [id]);
 }
 
 async function createProduct({
@@ -199,28 +210,27 @@ async function createProduct({
   photoUrl,
   createdBy
 }) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .input("createdBy", sql.Int, createdBy ?? null)
-    .input("name", sql.NVarChar(200), name)
-    .input("brand", sql.NVarChar(150), brand ?? null)
-    .input("model", sql.NVarChar(150), model ?? null)
-    .input("sku", sql.NVarChar(100), sku ?? null)
-    .input("gtin", sql.NVarChar(50), gtin ?? null)
-    .input("description", sql.NVarChar(sql.MAX), description ?? null)
-    .input("manufacturer", sql.NVarChar(200), manufacturer ?? null)
-    .input("countryOfOrigin", sql.NVarChar(100), countryOfOrigin ?? null)
-    .input("photoUrl", sql.NVarChar(1000), photoUrl ?? null)
-    .query(`
-      INSERT INTO dbo.Products
-        (company_id, name, brand, model, sku, gtin, description, manufacturer, country_of_origin, photo_url, created_by, status)
-      OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
-      VALUES
-        (@companyId, @name, @brand, @model, @sku, @gtin, @description, @manufacturer, @countryOfOrigin, @photoUrl, @createdBy, 'draft')
-    `);
-  return result.recordset[0];
+  return queryOne(
+    `
+    INSERT INTO products
+      (company_id, name, brand, model, sku, gtin, description, manufacturer, country_of_origin, photo_url, created_by, status)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'draft')
+    RETURNING ${PUBLIC_COLUMNS}
+  `,
+    [
+      companyId,
+      name,
+      brand ?? null,
+      model ?? null,
+      sku ?? null,
+      gtin ?? null,
+      description ?? null,
+      manufacturer ?? null,
+      countryOfOrigin ?? null,
+      photoUrl ?? null,
+      createdBy ?? null
+    ]
+  );
 }
 
 const UPDATABLE_FIELDS = [
@@ -249,109 +259,75 @@ const FIELD_TO_COLUMN = {
   photoBlobName: "photo_blob_name",
   status: "status"
 };
-const FIELD_TO_SQL_TYPE = {
-  name: () => sql.NVarChar(200),
-  brand: () => sql.NVarChar(150),
-  model: () => sql.NVarChar(150),
-  sku: () => sql.NVarChar(100),
-  gtin: () => sql.NVarChar(50),
-  description: () => sql.NVarChar(sql.MAX),
-  manufacturer: () => sql.NVarChar(200),
-  countryOfOrigin: () => sql.NVarChar(100),
-  photoUrl: () => sql.NVarChar(1000),
-  photoBlobName: () => sql.NVarChar(255),
-  status: () => sql.NVarChar(20)
-};
 
 async function updateProduct(id, fields) {
-  const pool = await getPool();
-  const request = pool.request().input("id", sql.Int, id);
-
+  const params = [id];
   const setClauses = [];
   for (const field of UPDATABLE_FIELDS) {
     if (!(field in fields)) continue;
-    setClauses.push(`${FIELD_TO_COLUMN[field]} = @${field}`);
-    request.input(field, FIELD_TO_SQL_TYPE[field](), fields[field]);
+    params.push(fields[field] ?? null);
+    setClauses.push(`${FIELD_TO_COLUMN[field]} = $${params.length}`);
   }
 
   if (setClauses.length === 0) {
     return getProductById(id);
   }
 
-  setClauses.push("updated_at = SYSUTCDATETIME()");
+  setClauses.push("updated_at = now()");
 
-  const result = await request.query(`
-    UPDATE dbo.Products
-    SET ${setClauses.join(", ")}
-    OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
-    WHERE id = @id
-  `);
-
-  return result.recordset[0] || null;
+  return queryOne(
+    `UPDATE products SET ${setClauses.join(", ")} WHERE id = $1 RETURNING ${PUBLIC_COLUMNS}`,
+    params
+  );
 }
 
 async function getProductByPublicId(publicId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("publicId", sql.UniqueIdentifier, publicId)
-    .query(`
-      SELECT ${PUBLIC_COLUMNS}
-      FROM dbo.Products
-      WHERE public_id = @publicId AND status IN ('published', 'archived')
-    `);
+  if (!isValidPublicId(publicId)) return null;
   // 'archived' hoort hierbij: een gedrukte/gegraveerde QR-code verwijst permanent naar
   // deze public_id en mag nooit stoppen met werken, ook niet nadat het product intern is
   // gearchiveerd. Alleen 'draft' (nooit gepubliceerd, heeft sowieso geen public_id) blijft
   // buiten beeld.
-  return result.recordset[0] || null;
+  return queryOne(
+    `SELECT ${PUBLIC_COLUMNS} FROM products WHERE public_id = $1 AND status IN ('published', 'archived')`,
+    [publicId]
+  );
 }
 
 async function publishProduct(id) {
-  const pool = await getPool();
   const existing = await getProductById(id);
   if (!existing) {
     return null;
   }
 
+  // Een eenmaal uitgegeven public_id blijft voor altijd hetzelfde (QR-codes).
   const publicId = existing.public_id || crypto.randomUUID();
 
-  const result = await pool
-    .request()
-    .input("id", sql.Int, id)
-    .input("publicId", sql.UniqueIdentifier, publicId)
-    .query(`
-      UPDATE dbo.Products
-      SET public_id = @publicId,
-          status = 'published',
-          published_at = SYSUTCDATETIME(),
-          updated_at = SYSUTCDATETIME()
-      OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
-      WHERE id = @id
-    `);
-
-  return result.recordset[0] || null;
+  return queryOne(
+    `
+    UPDATE products
+    SET public_id = $2,
+        status = 'published',
+        published_at = now(),
+        updated_at = now()
+    WHERE id = $1
+    RETURNING ${PUBLIC_COLUMNS}
+  `,
+    [id, publicId]
+  );
 }
 
 async function countProductsByStatus({ companyId } = {}) {
-  const pool = await getPool();
-  const request = pool.request();
-
+  const params = [];
   let where = "";
   if (companyId !== undefined) {
-    request.input("companyId", sql.Int, companyId);
-    where = "WHERE company_id = @companyId";
+    params.push(companyId);
+    where = "WHERE company_id = $1";
   }
 
-  const result = await request.query(`
-    SELECT status, COUNT(*) AS total
-    FROM dbo.Products
-    ${where}
-    GROUP BY status
-  `);
+  const rows = await queryRows(`SELECT status, COUNT(*) AS total FROM products ${where} GROUP BY status`, params);
 
   const counts = { draft: 0, published: 0, archived: 0 };
-  for (const row of result.recordset) {
+  for (const row of rows) {
     counts[row.status] = row.total;
   }
   return counts;
@@ -367,5 +343,6 @@ module.exports = {
   updateProduct,
   getProductByPublicId,
   publishProduct,
-  countProductsByStatus
+  countProductsByStatus,
+  isValidPublicId
 };

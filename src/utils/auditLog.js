@@ -1,21 +1,22 @@
-const { getPool, sql } = require("../config/db");
+const { query } = require("../config/db");
 
 async function logAudit({ companyId, userId, impersonatorUserId, action, entityType, entityId, metadata }) {
   try {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("companyId", sql.Int, companyId ?? null)
-      .input("userId", sql.Int, userId ?? null)
-      .input("impersonatorUserId", sql.Int, impersonatorUserId ?? null)
-      .input("action", sql.NVarChar(100), action)
-      .input("entityType", sql.NVarChar(50), entityType)
-      .input("entityId", sql.NVarChar(50), entityId != null ? String(entityId) : null)
-      .input("metadata", sql.NVarChar(sql.MAX), metadata ? JSON.stringify(metadata) : null)
-      .query(`
-        INSERT INTO dbo.AuditLogs (company_id, user_id, impersonator_user_id, action, entity_type, entity_id, metadata)
-        VALUES (@companyId, @userId, @impersonatorUserId, @action, @entityType, @entityId, @metadata)
-      `);
+    await query(
+      `
+      INSERT INTO audit_logs (company_id, user_id, impersonator_user_id, action, entity_type, entity_id, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `,
+      [
+        companyId ?? null,
+        userId ?? null,
+        impersonatorUserId ?? null,
+        action,
+        entityType,
+        entityId != null ? String(entityId) : null,
+        metadata ? JSON.stringify(metadata) : null
+      ]
+    );
   } catch (error) {
     // Een audit-log die faalt mag de eigenlijke actie nooit blokkeren.
     console.error("Audit log mislukt:", error.message);

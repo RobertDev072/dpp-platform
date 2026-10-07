@@ -1,8 +1,11 @@
-const { getPool, sql } = require("../src/config/db");
+const { queryOne, query, closePool } = require("../src/config/db");
 const { hashPassword } = require("../src/utils/password");
 
 const MIN_PASSWORD_LENGTH = 12;
 
+// Het Platform Owner-account is bewust een lokaal (bcrypt) account en géén Supabase
+// Auth-account: zo blijft inloggen als break-glass werken, ook als Supabase Auth
+// verkeerd geconfigureerd of onbereikbaar is.
 async function seedSystemOwner() {
   const email = process.env.SYSTEM_OWNER_EMAIL;
   const password = process.env.SYSTEM_OWNER_PASSWORD;
@@ -20,53 +23,36 @@ async function seedSystemOwner() {
     throw new Error(`SYSTEM_OWNER_PASSWORD moet minimaal ${MIN_PASSWORD_LENGTH} tekens lang zijn.`);
   }
 
-  const pool = await getPool();
   const passwordHash = await hashPassword(password);
+  const existing = await queryOne("SELECT id FROM users WHERE email = $1", [email]);
 
-  const existing = await pool
-    .request()
-    .input("email", sql.NVarChar(256), email)
-    .query("SELECT id FROM dbo.Users WHERE email = @email");
-
-  if (existing.recordset.length > 0) {
-    await pool
-      .request()
-      .input("email", sql.NVarChar(256), email)
-      .input("passwordHash", sql.NVarChar(255), passwordHash)
-      .input("firstName", sql.NVarChar(100), firstName)
-      .input("lastName", sql.NVarChar(100), lastName)
-      .query(`
-        UPDATE dbo.Users
-        SET password_hash = @passwordHash,
-            first_name = @firstName,
-            last_name = @lastName,
-            role = 'platform_owner',
-            status = 'active',
-            updated_at = SYSUTCDATETIME()
-        WHERE email = @email
-      `);
-    console.log(`✅ Bestaande System Owner bijgewerkt: ${email}`);
+  if (existing) {
+    await query(
+      `UPDATE users
+       SET password_hash = $2, first_name = $3, last_name = $4,
+           role = 'platform_owner', status = 'active', must_change_password = FALSE,
+           updated_at = now()
+       WHERE email = $1`,
+      [email, passwordHash, firstName, lastName]
+    );
+    console.log(`✅ Bestaande Platform Owner bijgewerkt: ${email}`);
     return;
   }
 
-  await pool
-    .request()
-    .input("email", sql.NVarChar(256), email)
-    .input("passwordHash", sql.NVarChar(255), passwordHash)
-    .input("firstName", sql.NVarChar(100), firstName)
-    .input("lastName", sql.NVarChar(100), lastName)
-    .query(`
-      INSERT INTO dbo.Users (company_id, email, password_hash, first_name, last_name, role, status)
-      VALUES (NULL, @email, @passwordHash, @firstName, @lastName, 'platform_owner', 'active')
-    `);
+  await query(
+    `INSERT INTO users (company_id, email, password_hash, first_name, last_name, role, status)
+     VALUES (NULL, $1, $2, $3, $4, 'platform_owner', 'active')`,
+    [email, passwordHash, firstName, lastName]
+  );
 
-  console.log(`✅ System Owner aangemaakt: ${email}`);
+  console.log(`✅ Platform Owner aangemaakt: ${email}`);
 }
 
 seedSystemOwner()
-  .then(() => process.exit(0))
-  .catch((error) => {
+  .then(() => closePool())
+  .catch(async (error) => {
     console.error("❌ Seed mislukt:");
     console.error(error.message);
+    await closePool().catch(() => {});
     process.exit(1);
   });

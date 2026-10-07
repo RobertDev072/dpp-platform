@@ -52,7 +52,7 @@ router.post("/", validateBody(createCompanySchema), async (req, res, next) => {
 
     res.status(201).json(company);
   } catch (error) {
-    if (error.number === 2627 || error.number === 2601) {
+    if (error.code === "23505") {
       next(new HttpError(409, "Slug is al in gebruik"));
       return;
     }
@@ -99,7 +99,7 @@ router.patch("/:id", validateBody(updateCompanySchema), async (req, res, next) =
 
     res.json(updated);
   } catch (error) {
-    if (error.number === 2627 || error.number === 2601) {
+    if (error.code === "23505") {
       next(new HttpError(409, "Slug is al in gebruik"));
       return;
     }
@@ -157,7 +157,7 @@ router.post("/:id/invites", validateBody(createInviteSchema), async (req, res, n
     const activationUrl = `${getAppBaseUrl(req)}/activate?token=${token}`;
     res.status(201).json({ ...invite, activationUrl });
   } catch (error) {
-    if (error.number === 2627 || error.number === 2601) {
+    if (error.code === "23505") {
       next(new HttpError(409, "Er is al een openstaande uitnodiging voor dit e-mailadres"));
       return;
     }

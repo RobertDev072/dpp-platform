@@ -1,35 +1,20 @@
-const { getPool, sql } = require("../config/db");
+const { queryRows, queryOne } = require("../config/db");
+
+const COLUMNS = "id, product_id, company_id, batch_number, production_date, quantity, created_at";
 
 async function listBatchesForProduct(productId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("productId", sql.Int, productId)
-    .query(`
-      SELECT id, product_id, company_id, batch_number, production_date, quantity, created_at
-      FROM dbo.ProductBatches
-      WHERE product_id = @productId
-      ORDER BY id
-    `);
-  return result.recordset;
+  return queryRows(`SELECT ${COLUMNS} FROM product_batches WHERE product_id = $1 ORDER BY id`, [productId]);
 }
 
 async function createBatch({ productId, companyId, batchNumber, productionDate, quantity }) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("productId", sql.Int, productId)
-    .input("companyId", sql.Int, companyId)
-    .input("batchNumber", sql.NVarChar(100), batchNumber)
-    .input("productionDate", sql.Date, productionDate ?? null)
-    .input("quantity", sql.Int, quantity ?? null)
-    .query(`
-      INSERT INTO dbo.ProductBatches (product_id, company_id, batch_number, production_date, quantity)
-      OUTPUT INSERTED.id, INSERTED.product_id, INSERTED.company_id, INSERTED.batch_number,
-             INSERTED.production_date, INSERTED.quantity, INSERTED.created_at
-      VALUES (@productId, @companyId, @batchNumber, @productionDate, @quantity)
-    `);
-  return result.recordset[0];
+  return queryOne(
+    `
+    INSERT INTO product_batches (product_id, company_id, batch_number, production_date, quantity)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING ${COLUMNS}
+  `,
+    [productId, companyId, batchNumber, productionDate ?? null, quantity ?? null]
+  );
 }
 
 module.exports = { listBatchesForProduct, createBatch };

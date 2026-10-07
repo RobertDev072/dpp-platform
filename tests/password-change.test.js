@@ -1,7 +1,7 @@
 const test = require("node:test");
 const { after } = require("node:test");
 const assert = require("node:assert/strict");
-const { sql, getPool } = require("../src/config/db");
+const { query, closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
 const { createTestCompany, createTestUser, cleanupTestData } = require("./helpers/fixtures");
 
@@ -15,12 +15,7 @@ test("gedwongen wachtwoordwijziging: login blokkeert tot een nieuw wachtwoord is
   const companyId = await createTestCompany("MustChange Co");
   const user = await createTestUser({ companyId, role: "company_user" });
   const NEW_PASSWORD = "SplinterNieuwWachtwoord1!";
-
-  const pool = await getPool();
-  await pool
-    .request()
-    .input("id", sql.Int, user.id)
-    .query("UPDATE dbo.Users SET must_change_password = 1 WHERE id = @id");
+  await query("UPDATE users SET must_change_password = TRUE WHERE id = $1", [user.id]);
 
   t.after(async () => {
     await cleanupTestData({ companyIds: [companyId], userIds: [user.id] });
@@ -84,5 +79,5 @@ test("gedwongen wachtwoordwijziging: login blokkeert tot een nieuw wachtwoord is
 });
 
 after(async () => {
-  await sql.close();
+  await closePool();
 });
