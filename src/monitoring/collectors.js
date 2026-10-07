@@ -310,6 +310,8 @@ async function takeSnapshot() {
               @userCount, @activeUserCount, @productCount, @documentCount, @auditLogCount,
               @scanEventCount, @inviteCount, @tableStats, @blobStats)
     `);
+  // Anders toont het dashboard direct na "Nu meten" nog een minuut de vorige snapshot.
+  cache.delete("latestSnapshot");
 }
 
 async function getLatestSnapshot() {

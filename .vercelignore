@@ -1,0 +1,7 @@
+.env
+.env*
+!.env.example
+node_modules
+.next
+web/.next
+temp-passwords-*.csv

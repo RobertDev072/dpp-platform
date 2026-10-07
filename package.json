@@ -12,7 +12,7 @@
     "seed:owner": "node scripts/seed-system-owner.js",
     "temp-passwords": "node scripts/issue-temp-passwords.js",
     "migrate:from-azure": "node scripts/migrate-from-azure.js",
-    "test": "node --test"
+    "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\""
   },
   "keywords": [],
   "author": "",

@@ -54,6 +54,14 @@ async function createTestProduct({ companyId, name = "Test Product" }) {
   return result.recordset[0].id;
 }
 
+// Alles wat via een FK aan producten hangt (scans, documenten, onderdelen, ...) moet
+// weg vóór de producten zelf. productIds: kommalijst of subquery.
+async function deleteProductChildren(pool, productIds) {
+  for (const table of ["ScanEvents", "Documents", "ProductParts", "ProductBatches", "ProductSustainability", "ProductCompliance"]) {
+    await pool.request().query(`DELETE FROM dbo.${table} WHERE product_id IN (${productIds})`);
+  }
+}
+
 async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] }) {
   const pool = await getPool();
   const companies = companyIds.map(Number);
@@ -70,14 +78,11 @@ async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] 
     await pool.request().query(`DELETE FROM dbo.CompanyAdminInvites WHERE company_id IN (${companies.join(",")})`);
     // ScanEvents heeft een FK naar Products - moet weg vóór de Products zelf verwijderd
     // worden (raakt gevuld zodra een test de publieke paspoortpagina bezoekt).
-    await pool.request().query(`
-      DELETE FROM dbo.ScanEvents
-      WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${companies.join(",")}))
-    `);
+    await deleteProductChildren(pool, `SELECT id FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
     await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
   }
   if (products.length) {
-    await pool.request().query(`DELETE FROM dbo.ScanEvents WHERE product_id IN (${products.join(",")})`);
+    await deleteProductChildren(pool, products.join(","));
     await pool.request().query(`DELETE FROM dbo.Products WHERE id IN (${products.join(",")})`);
   }
   if (users.length) {
