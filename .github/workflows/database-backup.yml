@@ -1,0 +1,72 @@
+# Dagelijkse database-back-up. Het gratis Supabase-plan maakt zelf geen back-ups;
+# deze workflow maakt elke nacht een dump van schema "dbo" (alle VeriPasso-data),
+# versleutelt die met AES-256 en bewaart hem 14 dagen als artifact in GitHub.
+#
+# Eenmalig instellen (GitHub → repo → Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL     Session pooler-URL (poort 5432) uit Supabase → Connect
+#   BACKUP_PASSPHRASE   lange random string; bewaar hem ook in je wachtwoordmanager,
+#                       zonder deze kun je de back-up niet openen
+# Zonder die secrets slaat de workflow zichzelf netjes over.
+#
+# Terugzetten (lokaal, met PostgreSQL 17-tools):
+#   gpg --decrypt veripasso-dbo.dump.gpg > veripasso-dbo.dump
+#   pg_restore --no-owner --clean --if-exists -d "<DATABASE_URL>" veripasso-dbo.dump
+#
+# Let op: dit dekt de database, niet de bestanden in Supabase Storage.
+
+name: Database-back-up
+
+on:
+  schedule:
+    - cron: "40 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Secrets aanwezig?
+        id: check
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "::warning::SUPABASE_DB_URL en/of BACKUP_PASSPHRASE ontbreken - back-up overgeslagen."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # pg_dump moet minstens zo nieuw zijn als de server (Supabase draait PostgreSQL 17).
+      - name: PostgreSQL 17-client installeren
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Dump maken en versleutelen
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" \
+            --schema=dbo --no-owner --no-privileges --format=custom \
+            --file=veripasso-dbo.dump
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "$PASSPHRASE" \
+            --output veripasso-dbo.dump.gpg veripasso-dbo.dump
+          rm veripasso-dbo.dump
+          ls -lh veripasso-dbo.dump.gpg
+
+      - name: Bewaren (14 dagen)
+        if: steps.check.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: veripasso-dbo-${{ github.run_id }}
+          path: veripasso-dbo.dump.gpg
+          retention-days: 14

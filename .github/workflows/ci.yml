@@ -1,0 +1,32 @@
+# Controle bij elke push en pull request: installeert exact de lockfile en bouwt de
+# app. Faalt de build, dan zie je dat hier vóórdat Vercel een kapotte versie deployt.
+# De testsuite draait bewust niet hier: die heeft een echte database nodig en draait
+# lokaal (npm test) vóór elke push.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"

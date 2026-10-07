@@ -7,7 +7,8 @@ productpaspoort zonder account.
 
 Laatst bijgewerkt: 2026-10-07. Dit document beschrijft hoe het platform nú werkt:
 gehost op **Vercel**, met **Supabase** (Postgres + Storage) als database en
-bestandsopslag. Azure (App Service, Azure SQL, Blob Storage, Entra/Graph) is
+bestandsopslag (inrichting en instellingen: [docs/infrastructuur.md](docs/infrastructuur.md)).
+Azure (App Service, Azure SQL, Blob Storage, Entra/Graph) is
 uitgefaseerd; het draaiboek voor die overstap staat in
 [docs/migratie-azure-naar-vercel-supabase.md](docs/migratie-azure-naar-vercel-supabase.md).
 
