@@ -217,7 +217,7 @@ infrastructuur (geen betaalde telemetriedienst):
    # Supabase Postgres. Supabase → Project → Connect → "Transaction pooler"
    # (poort 6543) voor de app; voor migraties/scripts mag ook "Session pooler"
    # of de directe verbinding (poort 5432).
-   DATABASE_URL=postgresql://postgres.<ref>:<wachtwoord>@aws-0-eu-central-1.pooler.supabase.com:6543/postgres
+   DATABASE_URL=postgresql://postgres.<ref>:<wachtwoord>@aws-0-eu-west-1.pooler.supabase.com:6543/postgres
    # Optioneel: CA-certificaat (Supabase → Database → SSL) voor volledige
    # certificaatcontrole; zonder dit is de verbinding wel versleuteld.
    DATABASE_CA_CERT=
@@ -265,7 +265,7 @@ falen alle TLS-verbindingen (Supabase, tests).
 
 Geen van onderstaande gegevens is een secret.
 
-- **Hosting: Vercel**, één project, framework Next.js, regio `fra1` (Frankfurt,
+- **Hosting: Vercel**, één project, framework Next.js, regio `dub1` (Dublin,
   dicht bij de database; EU-data). Next.js draait de pagina's; de complete
   Express-API zit in één functie: `pages/api/[[...path]].js` → `src/app.js`.
   Config in `vercel.json` (regio, max. 30 s per request, dagelijkse cron).
@@ -280,7 +280,7 @@ Geen van onderstaande gegevens is een secret.
   - Het oude `dpp-platform-dev-h2dag0asawh9eyhg.centralus-01.azurewebsites.net`
     werkt alleen zolang er in Azure iets draait; zie het draaiboek voor QR-codes
     die (eventueel) met dat adres zijn gedrukt.
-- **Database: Supabase Postgres** (regio `eu-central-1`). Alle tabellen staan in
+- **Database: Supabase Postgres** (regio `eu-west-1`, Ierland). Alle tabellen staan in
   schema `dbo` — níet in `public`, dus onbereikbaar via Supabase's publieke Data
   API; RLS staat daarnaast aan zonder policies. De app verbindt via de
   Supavisor-pooler (transaction mode) met maximaal 3 verbindingen per instance.

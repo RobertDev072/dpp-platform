@@ -6,15 +6,15 @@ document beschrijft de eenmalige overstap.
 
 | Was (Azure) | Wordt |
 |---|---|
-| App Service `dpp-platform-dev` (B1, Central US) | Vercel-project, regio `fra1` |
-| Azure SQL serverless | Supabase Postgres (`eu-central-1`), schema `dbo` |
+| App Service `dpp-platform-dev` (B1, Central US) | Vercel-project, regio `dub1` (Dublin) |
+| Azure SQL serverless | Supabase Postgres (`eu-west-1`, Ierland), schema `dbo` |
 | Blob Storage `stveripassodev01` (Managed Identity) | Supabase Storage, privé-buckets |
 | Entra External ID + Graph | Lokale wachtwoorden (bcrypt); Entra alleen nog tijdelijk als overgang |
 | GitHub Actions → `az webapp deploy` | Git-koppeling van Vercel |
 | In-process scheduler | Vercel Cron (`/api/cron/daily`) + flush na requests |
 | App Service Managed Certificates | Automatische certificaten van Vercel |
 
-Bijkomend voordeel: data staat voortaan in de EU (Frankfurt) i.p.v. Central US.
+Bijkomend voordeel: data staat voortaan in de EU (Ierland) i.p.v. Central US.
 
 ---
 
@@ -29,7 +29,7 @@ Bijkomend voordeel: data staat voortaan in de EU (Frankfurt) i.p.v. Central US.
 
 ## 1. Supabase inrichten
 
-1. Nieuw project, regio **Central EU (Frankfurt)**, sterk databasewachtwoord.
+1. Nieuw project, regio **West EU (Ireland)**, sterk databasewachtwoord.
 2. Noteer (Project → Connect / Settings → API):
    - `DATABASE_URL` → **Transaction pooler** (poort 6543) voor Vercel;
    - de **Session pooler** of directe URL (poort 5432) voor migraties/scripts;
