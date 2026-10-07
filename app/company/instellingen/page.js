@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useForm } from "@/lib/useForm";
@@ -199,6 +200,17 @@ export default function InstellingenPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-slate-900">Bedrijfsinstellingen</h1>
+
+      <Link
+        href="/company/instellingen/print"
+        className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 hover:border-emerald-300 hover:bg-emerald-50"
+      >
+        <span>
+          <span className="block text-sm font-semibold text-slate-900">Print & labels</span>
+          <span className="block text-sm text-slate-500">Printprofielen voor QR-labels: papier, labelindeling, QR-formaat en template.</span>
+        </span>
+        <span aria-hidden="true" className="text-slate-400">→</span>
+      </Link>
 
       <Card>
         <h2 className="mb-4 text-sm font-semibold text-slate-900">Bedrijfsprofiel</h2>

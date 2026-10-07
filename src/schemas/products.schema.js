@@ -23,6 +23,8 @@ const updateProductSchema = z
     manufacturer: z.string().max(200).optional(),
     countryOfOrigin: z.string().max(100).optional(),
     photoUrl: z.string().max(1000).optional(),
+    categoryLabel: z.string().trim().max(100).nullable().optional(),
+    highlights: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
     // photoBlobName is bewust geen onderdeel van dit schema: die kolom mag alleen door
     // de server gezet worden na een geverifieerde upload (products.routes.js), nooit
     // rechtstreeks door een client - anders zou een company-gebruiker een willekeurige

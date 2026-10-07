@@ -41,6 +41,7 @@ router.get("/daily", async (req, res, next) => {
     }
     await collectors.pruneOldMetrics(SCHEDULE);
     await pruneExpiredRateLimits();
+    await require("../services/productImport.service").expireStaleJobs();
     res.json({ ok: true, snapshot });
   } catch (error) {
     next(error);

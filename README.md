@@ -141,6 +141,23 @@ Aanvullende regels (afgedwongen in code én database):
   - de `public_id` staat in de QR-URL in **hoofdletters** — zo gaf Azure SQL hem
     terug, dus een opnieuw gedownloade QR is identiek aan een al geprinte. De lookup
     is hoofdletterongevoelig (Postgres-`uuid`), dus beide schrijfwijzen werken.
+- **QR reserveren vóór publicatie**: een concept kan al een `public_id` krijgen
+  (knop "QR genereren", ook in bulk) zodat labels vooraf geprint kunnen worden. Die
+  URL toont "nog niet gepubliceerd" tot het product gepubliceerd is.
+- **Import** (`/company/import`, historie in `/company/imports`): Excel (.xlsx) of
+  CSV wordt in de browser gelezen; rijen gaan in blokken van 250 naar
+  `/api/imports/:id/rows`, waar de server alles opnieuw valideert, duplicaten op
+  SKU/GTIN herkent (overslaan / bijwerken / toch aanmaken) en licentielimieten
+  bewaakt. Geïmporteerde producten zijn altijd concept. Max. 20.000 rijen per import.
+- **Bulkacties** (`POST /api/products/bulk`): publiceren (alleen complete
+  producten), archiveren, herstellen, categorie, QR reserveren — op een selectie of
+  op "alle resultaten van dit filter", max. 1.000 per actie, altijd binnen het
+  bedrijf uit de sessie.
+- **Print & labels** (`/company/instellingen/print`): printprofielen per bedrijf
+  (papier/labelindeling, media, printer, QR-grootte/foutcorrectie/kleur, template).
+  Te kleine QR (< 10 mm) of te weinig contrast wordt geweigerd, twijfelgevallen
+  geven een waarschuwing. PDF/PNG/SVG-ZIP worden in de browser gemaakt (vector-QR in
+  de PDF); de server levert de officiële QR-URL.
 - De publieke paspoortpagina (`/p/[id]`) roept de paspoort-service rechtstreeks aan
   (geen tweede HTTP-call naar de eigen API) en registreert een scan in `scan_events`
   (user-agent/referrer, geen persoonsgegevens) — bron voor de QR-statistieken.
@@ -153,10 +170,11 @@ Aanvullende regels (afgedwongen in code én database):
   Abonnementen, Auditlog, Systeemstatus, Instellingen.
 - **Partner Admin**: Overzicht, Mijn klanten, Uitnodigingen, Licenties
   (Klantlicenties), Activiteiten, Instellingen, Help & support.
-- **Bedrijfsbeheerder**: Overzicht, Producten, Documenten, QR-codes, Medewerkers,
-  Abonnement, Bedrijfsinstellingen, Help & support.
-- **Medewerker**: Overzicht, Producten, Documenten, QR-codes, Mijn profiel,
-  Help & support.
+- **Bedrijfsbeheerder**: Overzicht, Producten, Documenten, QR-codes, Importeren,
+  Print & labels, Medewerkers, Abonnement, Bedrijfsinstellingen, Help & support.
+- **Medewerker**: Overzicht, Producten, Documenten, QR-codes, Importeren,
+  Print & labels (alleen gebruiken, niet wijzigen), Mijn profiel, Help & support.
+- Header (alle rollen): globale zoekfunctie (`/` of Ctrl+K) en meldingen.
 
 Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
 
@@ -304,7 +322,7 @@ docs/                          migratie-azure-naar-vercel-supabase.md (draaiboek
 
 - `npm test` — volledige suite tegen de database uit `DATABASE_URL` (een lokale/
   wegwerp-Postgres; fixtures ruimen zichzelf op via `tests/helpers/fixtures.js`).
-  Stand 2026-10-07: **110 geslaagd, 0 gefaald, 4 overgeslagen** (de overgeslagen
+  Stand 2026-10-07: **138 tests: 134 geslaagd, 0 gefaald, 4 overgeslagen** (de overgeslagen
   tests vereisen een echt Supabase-project voor Auth/Storage en draaien zodra
   `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` gezet zijn). CI draait dezelfde suite.
 - Live rooktest tegen de echte omgeving (wegwerp-testaccounts, ruimt álles op:
@@ -343,6 +361,13 @@ Bijgewerkt 2026-10-07.
 - [ ] "Geschiedenis"-tab per product (auditdata bestaat al, UI ontbreekt).
 - [ ] Retentiebeleid auditlogs (geen automatische verwijdering zonder akkoord).
 - [ ] Eventueel MFA terug (Supabase Auth ondersteunt TOTP).
+
+### UX-traject (zie `docs/ux-implementatieplan.md`)
+- [ ] Na deploy: `npm run migrate` draaien voor `002_import_and_print.sql`
+      (tabellen `import_jobs`, `print_profiles` + indexen; alleen toevoegingen).
+- [ ] Customer 360, partnerdashboard-uitbreiding, gebruikerssessies, facturatie.
+- [ ] Documentversies en vervaldatums (schemawijziging).
+- [ ] Toegankelijkheids-/responsive-review van de oudere admin- en partnerpagina's.
 
 ### Infra / later
 - [ ] Aparte Supabase-omgeving voor preview-deployments.

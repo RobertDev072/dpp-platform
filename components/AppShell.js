@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { roleLabel } from "@/lib/labels";
 import { homeHrefForRole } from "@/lib/nav";
 import { VeriPassoWordmark } from "@/components/landing/VeriPassoLogo";
+import { GlobalSearch, NotificationsMenu } from "@/components/HeaderTools";
 
 // Kleine, met de hand getekende 20px stroke-iconen (geen icon-library).
 const NAV_ICONS = {
@@ -108,6 +109,19 @@ const NAV_ICONS = {
       <path d="M2.5 10.5h3l2-5 3 9 2-5.5 1 1.5h4" />
     </>
   ),
+  upload: (
+    <>
+      <path d="M10 13V3.5M6 7.5l4-4 4 4" />
+      <path d="M3.5 13v2.5A1.5 1.5 0 0 0 5 17h10a1.5 1.5 0 0 0 1.5-1.5V13" />
+    </>
+  ),
+  printer: (
+    <>
+      <path d="M5.5 7.5V3h9v4.5" />
+      <rect x="2.5" y="7.5" width="15" height="6.5" rx="1.5" />
+      <path d="M5.5 12h9v5h-9z" />
+    </>
+  ),
   help: (
     <>
       <circle cx="10" cy="10" r="7.5" />
@@ -146,7 +160,8 @@ const EXTRA_SEGMENT_LABELS = {
   uitnodigen: "Uitnodigen",
   profiel: "Profiel",
   products: "Producten",
-  rapportages: "Rapportages"
+  rapportages: "Rapportages",
+  print: "Print & labels"
 };
 
 function looksLikeId(segment) {
@@ -271,6 +286,15 @@ export default function AppShell({ menu, children }) {
   const visibleMenu = menu.filter((item) => !item.roles || item.roles.includes(user.role));
   const rootHref = menu[0]?.href;
   const breadcrumb = buildBreadcrumb(pathname, visibleMenu);
+  // Langste overeenkomende menu-item is actief (bijv. Print & labels binnen Bedrijfsinstellingen).
+  const activeHref = visibleMenu
+    .filter(
+      (item) =>
+        pathname === item.href ||
+        (item.href !== rootHref && pathname.startsWith(`${item.href}/`)) ||
+        (item.href === "/company/imports" && pathname === "/company/import")
+    )
+    .reduce((best, item) => (best && best.length >= item.href.length ? best : item.href), null);
   const profileHref = `${homeHrefForRole(user.role)}/profiel`;
   const initials = initialsOf(user);
   const displayName = displayNameOf(user);
@@ -327,9 +351,7 @@ export default function AppShell({ menu, children }) {
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3">
           {visibleMenu.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href !== rootHref && pathname.startsWith(`${item.href}/`));
+            const isActive = item.href === activeHref;
             return (
               <Link
                 key={item.href}
@@ -433,27 +455,10 @@ export default function AppShell({ menu, children }) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              title="Meldingen (binnenkort beschikbaar)"
-              aria-label="Meldingen"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M10 3a4.5 4.5 0 0 0-4.5 4.5c0 3.5-1.5 5-1.5 5h12s-1.5-1.5-1.5-5A4.5 4.5 0 0 0 10 3Z" />
-                <path d="M8.5 15.5a1.6 1.6 0 0 0 3 0" />
-              </svg>
-            </button>
+            <div className="hidden sm:block">
+              <GlobalSearch />
+            </div>
+            <NotificationsMenu pathname={pathname} />
 
             <div ref={userMenuRef} className="relative">
               <button

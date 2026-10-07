@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useForm } from "@/lib/useForm";
 import Card from "@/components/ui/Card";
@@ -13,11 +14,19 @@ import SubmitButton from "@/components/ui/SubmitButton";
 import FormError from "@/components/ui/FormError";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import EmptyState from "@/components/ui/EmptyState";
+import IconButton from "@/components/ui/IconButton";
 import NumberField from "@/components/products/NumberField";
 import DocumentsTab from "@/components/products/DocumentsTab";
+import ProductCompleteness from "@/components/products/ProductCompleteness";
+import { PublishStepper, QrStatusBadge } from "@/components/products/ProductStatus";
+import ActionButton from "@/components/ui/ActionButton";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { CopyIcon, DownloadIcon, ExternalIcon, QrIcon } from "@/components/ui/icons";
+import PrintLabelsButton from "@/components/print/PrintLabelsButton";
 
 const TABS = [
-  { key: "overview", label: "Overzicht" },
+  { key: "overview", label: "Basisinformatie" },
   { key: "sustainability", label: "Duurzaamheid" },
   { key: "compliance", label: "Compliance" },
   { key: "documents", label: "Documenten" },
@@ -50,35 +59,79 @@ function nonNegativeValidator(value) {
 
 export default function ProductDetailPage() {
   const { id } = useParams();
+  const searchParams = useSearchParams();
+  const toast = useToast();
+  const [confirm, confirmDialog] = useConfirm();
   const [product, setProduct] = useState(null);
+  const [completeness, setCompleteness] = useState(null);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("overview");
+  const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState(() => {
+    const requested = searchParams.get("tab");
+    return TABS.some((t) => t.key === requested) ? requested : "overview";
+  });
 
-  async function loadProduct() {
-    const data = await api.get(`/api/products/${id}`);
+  const loadProduct = useCallback(async () => {
+    const [data, checks] = await Promise.all([
+      api.get(`/api/products/${id}`),
+      api.get(`/api/products/${id}/completeness`)
+    ]);
     setProduct(data);
-  }
+    setCompleteness(checks);
+  }, [id]);
+
+  // Na opslaan in een tab: score/checklist verversen zonder de hele pagina te herladen.
+  const refreshCompleteness = useCallback(async () => {
+    try {
+      setCompleteness(await api.get(`/api/products/${id}/completeness`));
+    } catch {
+      /* niet kritiek */
+    }
+  }, [id]);
 
   useEffect(() => {
     loadProduct().catch((err) => setError(err.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [loadProduct]);
 
   async function handlePublish() {
+    const incomplete = completeness && completeness.completeness < 100;
+    const ok = await confirm({
+      title: "Product publiceren?",
+      description: incomplete
+        ? `Dit product is pas ${completeness.completeness}% compleet. Na publicatie is het paspoort via de QR-code openbaar zichtbaar — ook de ontbrekende onderdelen vallen dan op.`
+        : "Na publicatie is het paspoort via de QR-code openbaar zichtbaar.",
+      confirmLabel: incomplete ? "Toch publiceren" : "Publiceren"
+    });
+    if (!ok) return;
+    setBusy(true);
     try {
       await api.post(`/api/products/${id}/publish`);
+      toast.success("Product gepubliceerd");
       await loadProduct();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleArchive() {
+    const ok = await confirm({
+      title: "Product archiveren?",
+      description: "Het product telt niet meer mee voor je limiet. Een bestaande QR-code blijft werken en toont 'gearchiveerd'.",
+      confirmLabel: "Archiveren",
+      tone: "danger"
+    });
+    if (!ok) return;
+    setBusy(true);
     try {
       await api.delete(`/api/products/${id}`);
+      toast.success("Product gearchiveerd");
       await loadProduct();
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -87,44 +140,87 @@ export default function ProductDetailPage() {
   }
 
   if (!product) {
-    return <div className="text-sm text-slate-500">Laden...</div>;
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-72" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
   }
+
+  const stageProduct = { ...product, completeness: completeness?.completeness ?? 0 };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">{product.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <Badge variant={product.status === "published" ? "success" : "neutral"}>
-              {product.status}
-            </Badge>
-            {product.public_id && (
-              <span className="text-xs text-slate-500">public id: {product.public_id}</span>
-            )}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <Link href="/company/products" className="text-sm text-slate-500 hover:text-slate-700">
+            ← Producten
+          </Link>
+          <h1 className="mt-1 truncate text-xl font-semibold text-slate-900 sm:text-2xl">{product.name}</h1>
+          <p className="mt-0.5 text-sm text-slate-500">
+            {[product.sku && `SKU ${product.sku}`, product.gtin && `GTIN ${product.gtin}`, product.category_label]
+              .filter(Boolean)
+              .join(" · ") || "Nog geen SKU, GTIN of categorie"}
+          </p>
+          <div className="mt-3">
+            <PublishStepper product={stageProduct} />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {product.status !== "published" && (
-            <Button onClick={handlePublish}>Publiceren</Button>
+          {product.public_id && product.status === "published" && (
+            <ActionButton href={`/p/${product.public_id}`} target="_blank" icon={<ExternalIcon />} title="Publiek paspoort openen">
+              Bekijken
+            </ActionButton>
           )}
           {product.status !== "archived" && (
-            <Button variant="outline" onClick={handleArchive}>
+            <ActionButton variant="danger" onClick={handleArchive} disabled={busy}>
               Archiveren
-            </Button>
+            </ActionButton>
+          )}
+          {product.status !== "published" && product.status !== "archived" && (
+            <ActionButton variant="primary" onClick={handlePublish} disabled={busy}>
+              Publiceren
+            </ActionButton>
           )}
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-4">
+          <div className="overflow-x-auto">
+            <Tabs tabs={TABS} active={tab} onChange={setTab} />
+          </div>
+
+          {tab === "overview" && (
+            <OverviewTab
+              product={product}
+              onSaved={async () => {
+                await loadProduct();
+              }}
+            />
+          )}
+          {tab === "sustainability" && <SustainabilityTab productId={id} onSaved={refreshCompleteness} />}
+          {tab === "compliance" && <ComplianceTab productId={id} onSaved={refreshCompleteness} />}
+          {tab === "documents" && <DocumentsTab productId={id} />}
+          {tab === "qr" && <QrTab product={product} onChanged={loadProduct} />}
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+          {completeness && (
+            <ProductCompleteness
+              completeness={completeness.completeness}
+              checks={completeness.checks}
+              onNavigate={(key) => {
+                setTab(key);
+                if (key === "documents") refreshCompleteness();
+              }}
+            />
+          )}
+        </aside>
       </div>
 
-      {tab === "overview" && <OverviewTab product={product} onSaved={loadProduct} />}
-      {tab === "sustainability" && <SustainabilityTab productId={id} />}
-      {tab === "compliance" && <ComplianceTab productId={id} />}
-      {tab === "documents" && <DocumentsTab productId={id} />}
-      {tab === "qr" && <QrTab productId={id} published={product.status === "published"} />}
+      {confirmDialog}
     </div>
   );
 }
@@ -141,7 +237,8 @@ function OverviewTab({ product, onSaved }) {
       manufacturer: product.manufacturer || "",
       countryOfOrigin: product.country_of_origin || "",
       description: product.description || "",
-      photoUrl: product.photo_url || ""
+      photoUrl: product.photo_url || "",
+      categoryLabel: product.category_label || ""
     },
     validators: {
       name: (value) => (String(value || "").trim() ? null : "Vul een naam in")
@@ -149,6 +246,11 @@ function OverviewTab({ product, onSaved }) {
   });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+
+  useEffect(() => {
+    api.get("/api/products/categories").then((list) => setCategoryOptions(Array.isArray(list) ? list : [])).catch(() => {});
+  }, []);
 
   async function handleSave(event) {
     event.preventDefault();
@@ -226,6 +328,22 @@ function OverviewTab({ product, onSaved }) {
           onChange={(e) => form.setValue("gtin", e.target.value)}
           error={form.errors.gtin}
         />
+        <div>
+          <Field
+            label="Categorie"
+            name="categoryLabel"
+            list="product-category-options"
+            placeholder="Bijv. Banken"
+            value={form.values.categoryLabel}
+            onChange={(e) => form.setValue("categoryLabel", e.target.value)}
+            error={form.errors.categoryLabel}
+          />
+          <datalist id="product-category-options">
+            {categoryOptions.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </div>
         <Field
           label="Fabrikant"
           name="manufacturer"
@@ -351,7 +469,7 @@ function ProductPhotoField({ productId, hasPhoto, urlValue, onChangeUrl, onUploa
   );
 }
 
-function SustainabilityTab({ productId }) {
+function SustainabilityTab({ productId, onSaved }) {
   const [initial, setInitial] = useState(null);
   const [loadError, setLoadError] = useState("");
 
@@ -369,7 +487,8 @@ function SustainabilityTab({ productId }) {
             recyclable: Boolean(data?.recyclable),
             reachConform: Boolean(data?.reach_conform),
             rohsConform: Boolean(data?.rohs_conform),
-            expectedLifespanYears: data?.expected_lifespan_years ?? ""
+            expectedLifespanYears: data?.expected_lifespan_years ?? "",
+            materials: (data?.materials || []).map((m) => m.material).join(", ")
           });
         }
       })
@@ -387,10 +506,10 @@ function SustainabilityTab({ productId }) {
     return <Skeleton className="h-64 w-full" />;
   }
 
-  return <SustainabilityForm productId={productId} initial={initial} />;
+  return <SustainabilityForm productId={productId} initial={initial} onSaved={onSaved} />;
 }
 
-function SustainabilityForm({ productId, initial }) {
+function SustainabilityForm({ productId, initial, onSaved }) {
   const toast = useToast();
   const form = useForm({
     initial,
@@ -414,20 +533,28 @@ function SustainabilityForm({ productId, initial }) {
     setSaving(true);
     try {
       const values = form.values;
-      const body = {};
-      if (values.co2FootprintKg !== "") body.co2FootprintKg = Number(values.co2FootprintKg);
-      if (values.co2ReductionPct !== "") body.co2ReductionPct = Number(values.co2ReductionPct);
-      if (values.recycledMaterialPct !== "")
-        body.recycledMaterialPct = Number(values.recycledMaterialPct);
-      if (values.epdUrl !== "") body.epdUrl = values.epdUrl;
-      if (values.expectedLifespanYears !== "")
-        body.expectedLifespanYears = Number(values.expectedLifespanYears);
+      // Leeg veld = wissen (null); de server laat niet-meegestuurde velden ongemoeid.
+      const numberOrNull = (v) => (v === "" || v == null ? null : Number(v));
+      const body = {
+        co2FootprintKg: numberOrNull(values.co2FootprintKg),
+        co2ReductionPct: numberOrNull(values.co2ReductionPct),
+        recycledMaterialPct: numberOrNull(values.recycledMaterialPct),
+        epdUrl: values.epdUrl ? values.epdUrl : null,
+        expectedLifespanYears: numberOrNull(values.expectedLifespanYears),
+        materials: String(values.materials || "")
+          .split(",")
+          .map((m) => m.trim())
+          .filter(Boolean)
+          .slice(0, 20)
+          .map((material) => ({ material: material.slice(0, 100), pct: null }))
+      };
       body.recyclable = values.recyclable;
       body.reachConform = values.reachConform;
       body.rohsConform = values.rohsConform;
 
       await api.put(`/api/products/${productId}/sustainability`, body);
       toast.success("Gegevens opgeslagen");
+      onSaved?.();
     } catch (err) {
       const applied = form.applyServerErrors(err);
       if (!applied) {
@@ -481,6 +608,13 @@ function SustainabilityForm({ productId, initial }) {
           error={form.errors.expectedLifespanYears}
         />
         <Field
+          label="Materialen"
+          name="materials"
+          placeholder="Bijv. eikenhout, staal"
+          value={form.values.materials}
+          onChange={(e) => form.setValue("materials", e.target.value)}
+        />
+        <Field
           label="EPD URL"
           name="epdUrl"
           placeholder="https://..."
@@ -513,7 +647,7 @@ function SustainabilityForm({ productId, initial }) {
   );
 }
 
-function ComplianceTab({ productId }) {
+function ComplianceTab({ productId, onSaved }) {
   const [initial, setInitial] = useState(null);
   const [loadError, setLoadError] = useState("");
 
@@ -543,10 +677,10 @@ function ComplianceTab({ productId }) {
     return <Skeleton className="h-40 w-full" />;
   }
 
-  return <ComplianceForm productId={productId} initial={initial} />;
+  return <ComplianceForm productId={productId} initial={initial} onSaved={onSaved} />;
 }
 
-function ComplianceForm({ productId, initial }) {
+function ComplianceForm({ productId, initial, onSaved }) {
   const toast = useToast();
   const form = useForm({ initial });
   const [saving, setSaving] = useState(false);
@@ -565,6 +699,7 @@ function ComplianceForm({ productId, initial }) {
           .filter(Boolean)
       });
       toast.success("Gegevens opgeslagen");
+      onSaved?.();
     } catch (err) {
       const applied = form.applyServerErrors(err);
       if (!applied) {
@@ -598,31 +733,103 @@ function ComplianceForm({ productId, initial }) {
   );
 }
 
-function QrTab({ productId, published }) {
-  if (!published) {
+function QrTab({ product, onChanged }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [qrUrl, setQrUrl] = useState(null);
+
+  useEffect(() => {
+    if (!product.public_id) return;
+    // De officiële QR-URL komt van de server (zelfde bron als de downloads).
+    api
+      .post("/api/qr/items", { ids: [product.id] })
+      .then((data) => setQrUrl(data.items[0]?.qr_url || null))
+      .catch(() => setQrUrl(null));
+  }, [product.id, product.public_id]);
+
+  async function handleReserve() {
+    setBusy(true);
+    try {
+      await api.post(`/api/products/${product.id}/qr`);
+      toast.success("QR-code gegenereerd");
+      await onChanged();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!product.public_id) {
     return (
       <Card>
-        <p className="text-sm text-slate-600">
-          Publiceer het product eerst om een QR-code te genereren.
-        </p>
+        <EmptyState
+          icon={<QrIcon />}
+          title="Nog geen QR-code"
+          description={
+            product.status === "archived"
+              ? "Gearchiveerde producten krijgen geen nieuwe QR-code."
+              : "Genereer de QR-code nu om labels alvast te kunnen printen. Wie scant, ziet het paspoort pas na publicatie."
+          }
+          action={
+            product.status !== "archived" && (
+              <ActionButton variant="primary" icon={<QrIcon />} onClick={handleReserve} disabled={busy}>
+                QR-code genereren
+              </ActionButton>
+            )
+          }
+        />
       </Card>
     );
   }
 
   return (
-    <Card className="space-y-4">
-      <img
-        src={`/api/products/${productId}/qr.png`}
-        alt="QR-code"
-        className="h-48 w-48 rounded-lg border border-slate-200"
-      />
-      <div className="flex flex-wrap gap-2">
-        <a href={`/api/products/${productId}/qr.svg`} target="_blank" rel="noreferrer">
-          <Button variant="outline">SVG downloaden</Button>
-        </a>
-        <a href={`/api/products/${productId}/qr-label.pdf`} target="_blank" rel="noreferrer">
-          <Button variant="outline">Label PDF downloaden</Button>
-        </a>
+    <Card>
+      <div className="flex flex-col gap-6 sm:flex-row">
+        <img
+          src={`/api/products/${product.id}/qr.png`}
+          alt={`QR-code voor ${product.name}`}
+          className="h-48 w-48 shrink-0 rounded-xl border border-slate-200 bg-white p-2"
+        />
+        <div className="min-w-0 flex-1 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <QrStatusBadge product={product} />
+            {product.status === "draft" && (
+              <span className="text-xs text-slate-500">Scannen toont "nog niet gepubliceerd" tot je publiceert.</span>
+            )}
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Publieke QR-URL</p>
+            <div className="mt-1 flex items-center gap-2">
+              <code className="min-w-0 truncate rounded bg-slate-100 px-2 py-1 text-xs text-slate-700" title={qrUrl || ""}>
+                {qrUrl || "…"}
+              </code>
+              <IconButton
+                title="URL kopiëren"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(qrUrl);
+                  toast.success("URL gekopieerd");
+                }}
+                disabled={!qrUrl}
+              >
+                <CopyIcon />
+              </IconButton>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">Deze URL staat in de QR-code en verandert nooit.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <ActionButton size="sm" href={`/api/products/${product.id}/qr.png`} download icon={<DownloadIcon size={14} />} title="PNG (512 px) voor digitaal gebruik">
+              PNG
+            </ActionButton>
+            <ActionButton size="sm" href={`/api/products/${product.id}/qr.svg`} download icon={<DownloadIcon size={14} />} title="SVG (vector) voor drukwerk en vormgeving">
+              SVG
+            </ActionButton>
+            <ActionButton size="sm" href={`/api/products/${product.id}/qr-label.pdf`} download icon={<DownloadIcon size={14} />} title="Standaard PDF-label">
+              PDF-label
+            </ActionButton>
+            <PrintLabelsButton productIds={[product.id]} size="sm" />
+          </div>
+        </div>
       </div>
     </Card>
   );

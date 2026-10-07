@@ -18,7 +18,16 @@ async function getCompliance(productId) {
   return parseRegulations(row);
 }
 
-async function upsertCompliance(productId, fields) {
+// Zelfde samenvoeg-regel als duurzaamheid: undefined = ongewijzigd, null = wissen.
+async function upsertCompliance(productId, incoming) {
+  const existing = await getCompliance(productId);
+  const fields = {
+    ceMarked: existing?.ce_marked ?? null,
+    applicableRegulations: existing?.applicable_regulations ?? null
+  };
+  for (const [key, value] of Object.entries(incoming)) {
+    if (value !== undefined) fields[key] = value;
+  }
   const row = await queryOne(
     `
     INSERT INTO product_compliance (product_id, ce_marked, applicable_regulations)
@@ -32,7 +41,7 @@ async function upsertCompliance(productId, fields) {
     [
       productId,
       fields.ceMarked ?? null,
-      fields.applicableRegulations ? JSON.stringify(fields.applicableRegulations) : null
+      fields.applicableRegulations && fields.applicableRegulations.length ? JSON.stringify(fields.applicableRegulations) : null
     ]
   );
   return parseRegulations(row);

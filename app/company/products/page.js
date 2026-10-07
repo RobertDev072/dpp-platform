@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import ActionButton from "@/components/ui/ActionButton";
+import { PlusIcon, UploadIcon, HistoryIcon } from "@/components/ui/icons";
 import { api } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import Field from "@/components/ui/Field";
@@ -9,6 +12,15 @@ import FormError from "@/components/ui/FormError";
 import { useToast } from "@/components/ui/Toast";
 import ProductsTable from "@/components/ProductsTable";
 import ProductsPageHeader from "@/components/products/ProductsPageHeader";
+
+// ?new=1 (vanuit dashboard/lege toestand) opent direct het aanmaakformulier.
+function OpenCreateFromUrl({ onOpen }) {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get("new") === "1") onOpen();
+  }, [searchParams, onOpen]);
+  return null;
+}
 
 export default function ProductsPage() {
   const toast = useToast();
@@ -21,6 +33,7 @@ export default function ProductsPage() {
   const [formError, setFormError] = useState(null);
   // Wisselt van waarde na elk aangemaakt product, zodat de tabel opnieuw laadt.
   const [reloadToken, setReloadToken] = useState(0);
+  const openCreate = useCallback(() => setShowCreate(true), []);
 
   async function handleCreate(event) {
     event.preventDefault();
@@ -47,22 +60,19 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-6">
+      <Suspense fallback={null}>
+        <OpenCreateFromUrl onOpen={openCreate} />
+      </Suspense>
       <ProductsPageHeader>
-        <button
-          type="button"
-          disabled
-          title="Binnenkort beschikbaar"
-          className="cursor-not-allowed rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-400"
-        >
+        <ActionButton href="/company/imports" variant="ghost" icon={<HistoryIcon />} title="Eerdere imports bekijken">
+          Import Center
+        </ActionButton>
+        <ActionButton href="/company/import" icon={<UploadIcon />} title="Producten importeren vanuit Excel of CSV">
           Importeren
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowCreate((prev) => !prev)}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
-        >
-          {showCreate ? "Sluiten" : "+ Nieuw product"}
-        </button>
+        </ActionButton>
+        <ActionButton variant="primary" icon={showCreate ? null : <PlusIcon />} onClick={() => setShowCreate((prev) => !prev)}>
+          {showCreate ? "Sluiten" : "Product"}
+        </ActionButton>
       </ProductsPageHeader>
 
       {showCreate && (

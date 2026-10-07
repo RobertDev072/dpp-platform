@@ -9,6 +9,8 @@ const { updateComplianceSchema } = require("../schemas/compliance.schema");
 const { createBatchSchema } = require("../schemas/batches.schema");
 const { createDocumentSchema } = require("../schemas/documents.schema");
 const productsRepo = require("../repositories/products.repository");
+const insights = require("../repositories/productInsights.repository");
+const { productBulkSchema } = require("../schemas/bulk.schema");
 const partsRepo = require("../repositories/parts.repository");
 const sustainabilityRepo = require("../repositories/sustainability.repository");
 const complianceRepo = require("../repositories/compliance.repository");
@@ -67,6 +69,38 @@ router.get("/categories", requireRole(...ALL_ROLES), async (req, res, next) => {
       : req.user.companyId;
     res.json(await productsRepo.listCategories({ companyId }));
   } catch (error) {
+    next(error);
+  }
+});
+
+// Bulkacties (publiceren, archiveren, terugzetten, categorie, QR reserveren) op een
+// selectie of op "alle resultaten van dit filter". Altijd binnen het eigen bedrijf:
+// de repository filtert op req.user.companyId, ids van andere bedrijven raken dus
+// simpelweg niets. Max. 1000 producten per keer, in één transactie.
+router.post("/bulk", requireRole(...EDITOR_ROLES), validateBody(productBulkSchema), async (req, res, next) => {
+  try {
+    const result = await insights.runBulkAction({ companyId: req.user.companyId, ...req.body });
+    await logAudit({
+      companyId: req.user.companyId,
+      userId: req.user.id,
+      impersonatorUserId: req.user.impersonator?.id ?? null,
+      action: `bulk_${req.body.action}`,
+      entityType: "Product",
+      entityId: null,
+      metadata: {
+        selected: result.selected,
+        affected: result.affected,
+        skipped: result.skipped,
+        productIds: result.ids.slice(0, 200),
+        category: req.body.category
+      }
+    });
+    res.json({ selected: result.selected, affected: result.affected, skipped: result.skipped });
+  } catch (error) {
+    if (error.code === "BULK_TOO_LARGE") {
+      next(new HttpError(400, error.message, undefined, "BULK_TOO_LARGE"));
+      return;
+    }
     next(error);
   }
 });
@@ -276,6 +310,36 @@ router.delete("/:id", requireRole(...EDITOR_ROLES), async (req, res, next) => {
   }
 });
 
+// QR-code uitgeven zonder te publiceren (labels kunnen dan al geprint worden).
+router.post("/:id/qr", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await productsRepo.getProductById(id);
+    if (!existing) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    assertCompanyAccess(req.user, existing.company_id);
+    if (existing.status === "archived") {
+      next(new HttpError(409, "Een gearchiveerd product krijgt geen nieuwe QR-code"));
+      return;
+    }
+    const updated = await insights.reserveQr(existing.company_id, id);
+    if (!existing.public_id) {
+      await logAudit({
+        companyId: existing.company_id,
+        userId: req.user.id,
+        action: "reserve_qr",
+        entityType: "Product",
+        entityId: id
+      });
+    }
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/:id/publish", requireRole(...EDITOR_ROLES), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -297,6 +361,21 @@ router.post("/:id/publish", requireRole(...EDITOR_ROLES), async (req, res, next)
     });
 
     res.json(published);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/completeness", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const product = await productsRepo.getProductById(id);
+    if (!product) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    assertCompanyAccess(req.user, product.company_id);
+    res.json(await productsRepo.getProductChecks(id));
   } catch (error) {
     next(error);
   }

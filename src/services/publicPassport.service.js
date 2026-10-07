@@ -28,11 +28,14 @@ async function getPublicPassport(publicId, { recordScan = true, userAgent, refer
   const product = await productsRepo.getProductByPublicId(publicId);
   if (!product) return null;
 
-  const [sustainability, compliance, parts, documents] = await Promise.all([
+  const { queryOne } = require("../config/db");
+  const [sustainability, compliance, parts, documents, company] = await Promise.all([
     sustainabilityRepo.getSustainability(product.id),
     complianceRepo.getCompliance(product.id),
     partsRepo.listPartsForProduct(product.id),
-    documentsRepo.listDocumentsForProduct(product.id, { onlyPublic: true })
+    documentsRepo.listDocumentsForProduct(product.id, { onlyPublic: true }),
+    // Alleen naam + logo van het bedrijf (afzender van het paspoort), niets intern.
+    queryOne("SELECT name, logo FROM companies WHERE id = $1", [product.company_id])
   ]);
 
   if (recordScan) {
@@ -53,6 +56,8 @@ async function getPublicPassport(publicId, { recordScan = true, userAgent, refer
   const base = `/api/public/products/${encodeURIComponent(publicId)}`;
 
   return {
+    companyName: company?.name || null,
+    companyLogo: company?.logo || null,
     name: product.name,
     brand: product.brand,
     model: product.model,
@@ -86,4 +91,14 @@ async function getPublicPassport(publicId, { recordScan = true, userAgent, refer
   };
 }
 
-module.exports = { getPublicPassport };
+// Bestaat er een (nog niet gepubliceerd) product met deze QR? Dan is de QR al
+// geprint maar het paspoort nog niet live: de pagina toont een nette melding in
+// plaats van "niet gevonden". Er komt bewust geen productinformatie mee.
+async function isReservedQr(publicId) {
+  if (!productsRepo.isValidPublicId(publicId)) return false;
+  const { queryOne } = require("../config/db");
+  const row = await queryOne("SELECT 1 FROM products WHERE public_id = $1 AND status = 'draft'", [publicId]);
+  return Boolean(row);
+}
+
+module.exports = { getPublicPassport, isReservedQr };

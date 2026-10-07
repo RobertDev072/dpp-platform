@@ -14,6 +14,11 @@ import Skeleton from "@/components/ui/Skeleton";
 import ProductStats from "@/components/products/ProductStats";
 import IncompleteDocsBanner from "@/components/products/IncompleteDocsBanner";
 import CompletenessBar from "@/components/products/CompletenessBar";
+import BulkActionBar, { BulkButton } from "@/components/ui/BulkActionBar";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import ProgressBar from "@/components/ui/ProgressBar";
+import { useToast } from "@/components/ui/Toast";
+import { downloadCsv, dateStamp } from "@/lib/download";
 
 const PAGE_SIZE = 25;
 const DEFAULT_SORT = "created_at";
@@ -285,6 +290,17 @@ function ProductsTableInner({
   const [companies, setCompanies] = useState([]);
   const [stats, setStats] = useState(null);
 
+  // Selectie voor bulkacties: losse ids, of "alle resultaten van dit filter".
+  const toast = useToast();
+  const [confirm, confirmDialog] = useConfirm();
+  const [selected, setSelected] = useState(() => new Set());
+  const [allMatching, setAllMatching] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [exportProgress, setExportProgress] = useState(null);
+  const [internalReload, setInternalReload] = useState(0);
+  const [categoryDialog, setCategoryDialog] = useState(null);
+  const selectable = !readOnly;
+
   // Zoekveld met 300ms debounce; elke nieuwe zoekterm springt terug naar pagina 1.
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -348,7 +364,14 @@ function ProductsTableInner({
     return () => {
       cancelled = true;
     };
-  }, [filters, showCompanyFilter, reloadToken]);
+  }, [filters, showCompanyFilter, reloadToken, internalReload]);
+
+  // Ander filter = andere resultaten: selectie wissen (anders zou een bulkactie
+  // producten raken die niet meer zichtbaar zijn).
+  useEffect(() => {
+    setSelected(new Set());
+    setAllMatching(false);
+  }, [filters.q, filters.status, filters.category, filters.doc]);
 
   // Categorieën voor het filter; bij een bedrijfsfilter de categorieën van dat bedrijf.
   useEffect(() => {
@@ -398,7 +421,7 @@ function ProductsTableInner({
     return () => {
       cancelled = true;
     };
-  }, [showStats, showCompanyFilter, filters.companyId, reloadToken]);
+  }, [showStats, showCompanyFilter, filters.companyId, reloadToken, internalReload]);
 
   const categoryOptions = useMemo(() => {
     const list = [...categories];
@@ -472,6 +495,125 @@ function ProductsTableInner({
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const pageIds = items.map((p) => p.id);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+
+  function toggleOne(id) {
+    setAllMatching(false);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePage() {
+    setAllMatching(false);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+    setAllMatching(false);
+  }
+
+  function selectionPayload() {
+    if (allMatching) {
+      const filter = {};
+      for (const key of ["q", "status", "category", "doc"]) if (filters[key]) filter[key] = filters[key];
+      return { filter };
+    }
+    return { ids: [...selected] };
+  }
+
+  const selectionCount = allMatching ? total : selected.size;
+
+  async function runBulk(action, extra = {}, labels) {
+    setBulkBusy(true);
+    try {
+      const result = await api.post("/api/products/bulk", { action, ...selectionPayload(), ...extra });
+      const skipped = result.skipped ? ` (${result.skipped} overgeslagen${labels.skippedReason ? `: ${labels.skippedReason}` : ""})` : "";
+      toast.success(`${result.affected} ${result.affected === 1 ? "product" : "producten"} ${labels.done}${skipped}`);
+      clearSelection();
+      setInternalReload((n) => n + 1);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handlePublish() {
+    const ok = await confirm({
+      title: `${selectionCount} ${selectionCount === 1 ? "product" : "producten"} publiceren?`,
+      description:
+        "Alleen producten die 100% compleet zijn worden gepubliceerd; de rest wordt overgeslagen. Gepubliceerde producten zijn via hun QR-code openbaar zichtbaar.",
+      confirmLabel: "Publiceren"
+    });
+    if (ok) await runBulk("publish", {}, { done: "gepubliceerd", skippedReason: "incompleet of gearchiveerd" });
+  }
+
+  async function handleArchive() {
+    const ok = await confirm({
+      title: `${selectionCount} ${selectionCount === 1 ? "product" : "producten"} archiveren?`,
+      description: "Gearchiveerde producten tellen niet meer mee voor je limiet. Bestaande QR-codes blijven werken en tonen 'gearchiveerd'.",
+      confirmLabel: "Archiveren",
+      tone: "danger"
+    });
+    if (ok) await runBulk("archive", {}, { done: "gearchiveerd" });
+  }
+
+  async function handleReserveQr() {
+    const ok = await confirm({
+      title: "QR-codes genereren?",
+      description:
+        "Producten zonder QR-code krijgen er een, zonder te publiceren. Je kunt de labels dan al printen; wie scant ziet 'nog niet gepubliceerd' tot je publiceert.",
+      confirmLabel: "QR-codes genereren"
+    });
+    if (ok) await runBulk("reserve_qr", {}, { done: "kregen een QR-code" });
+  }
+
+  async function handleExport() {
+    setBulkBusy(true);
+    try {
+      const rows = [];
+      if (allMatching) {
+        const pages = Math.max(1, Math.ceil(total / 100));
+        setExportProgress({ value: 0, max: total });
+        for (let page = 1; page <= pages; page += 1) {
+          const params = new URLSearchParams({ page: String(page), pageSize: "100", sort: filters.sort, order: filters.order });
+          for (const key of ["q", "status", "category", "doc"]) if (filters[key]) params.set(key, filters[key]);
+          const data = await api.get(`/api/products?${params.toString()}`);
+          rows.push(...data.items);
+          setExportProgress({ value: rows.length, max: total });
+        }
+      } else {
+        const ids = [...selected];
+        for (let i = 0; i < ids.length; i += 500) {
+          const data = await api.post("/api/qr/items", { ids: ids.slice(i, i + 500) });
+          rows.push(...data.items.map((p) => ({ ...p, completeness: null })));
+        }
+      }
+      downloadCsv(
+        `producten-${dateStamp()}.csv`,
+        ["id", "product_name", "sku", "gtin", "brand", "manufacturer", "category", "country_of_origin", "status", "completeness_pct", "public_id"],
+        rows.map((p) => [p.id, p.name, p.sku, p.gtin, p.brand, p.manufacturer, p.category_label, p.country_of_origin, p.status, p.completeness, p.public_id])
+      );
+      toast.success(`${rows.length} producten geëxporteerd`);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setExportProgress(null);
+      setBulkBusy(false);
+    }
+  }
 
   function handleRowClick(product) {
     if (readOnly) {
@@ -558,15 +700,44 @@ function ProductsTableInner({
 
       <Card>
         {!loading && items.length === 0 ? (
-          <EmptyState
-            title="Geen producten gevonden"
-            description="Pas je zoekopdracht of filters aan om producten te vinden."
-          />
+          filters.q || filters.status || filters.category || filters.doc || readOnly ? (
+            <EmptyState
+              title="Geen producten gevonden"
+              description="Pas je zoekopdracht of filters aan om producten te vinden."
+            />
+          ) : (
+            <EmptyState
+              title="Nog geen producten"
+              description="Voeg je eerste product toe, of importeer in één keer honderden producten vanuit Excel of CSV."
+              action={
+                <a href="/company/products?new=1" className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                  + Product
+                </a>
+              }
+              secondaryAction={
+                <a href="/company/import" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                  Importeren vanuit Excel
+                </a>
+              }
+            />
+          )
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500">
+                  {selectable && (
+                    <th className="w-8 py-2 pr-2">
+                      <input
+                        type="checkbox"
+                        aria-label="Alle producten op deze pagina selecteren"
+                        title="Alles op deze pagina selecteren"
+                        checked={allOnPageSelected || allMatching}
+                        onChange={togglePage}
+                        className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                      />
+                    </th>
+                  )}
                   <th className="w-14 py-2 pr-3">
                     <span className="sr-only">Foto</span>
                   </th>
@@ -593,6 +764,7 @@ function ProductsTableInner({
                 {loading
                   ? Array.from({ length: 6 }).map((_, index) => (
                       <tr key={index} className="border-b border-slate-100">
+                        {selectable && <td />}
                         <td className="py-2.5 pr-3">
                           <Skeleton className="h-10 w-10" />
                         </td>
@@ -611,6 +783,17 @@ function ProductsTableInner({
                           readOnly ? "" : "cursor-pointer transition-colors hover:bg-slate-50"
                         }`}
                       >
+                        {selectable && (
+                          <td className="py-2.5 pr-2" onClick={(event) => event.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              aria-label={`${product.name} selecteren`}
+                              checked={allMatching || selected.has(product.id)}
+                              onChange={() => toggleOne(product.id)}
+                              className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                            />
+                          </td>
+                        )}
                         <td className="py-2.5 pr-3">
                           <PhotoThumb product={product} />
                         </td>
@@ -652,6 +835,12 @@ function ProductsTableInner({
           </div>
         )}
 
+        {exportProgress && (
+          <div className="mt-3">
+            <ProgressBar label="Export voorbereiden" value={exportProgress.value} max={exportProgress.max} />
+          </div>
+        )}
+
         {!loading && items.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
             <p className="text-sm text-slate-500">
@@ -680,6 +869,81 @@ function ProductsTableInner({
           </div>
         )}
       </Card>
+
+      {selectable && (
+        <BulkActionBar
+          count={selected.size}
+          total={total}
+          allMatching={allMatching}
+          onSelectAllMatching={allOnPageSelected ? () => setAllMatching(true) : null}
+          onClear={clearSelection}
+        >
+          <BulkButton tone="primary" disabled={bulkBusy} onClick={handlePublish}>
+            Publiceren
+          </BulkButton>
+          <BulkButton disabled={bulkBusy} onClick={handleReserveQr}>
+            QR genereren
+          </BulkButton>
+          <BulkButton disabled={bulkBusy} onClick={() => setCategoryDialog({ value: "" })}>
+            Categorie wijzigen
+          </BulkButton>
+          <BulkButton disabled={bulkBusy} onClick={handleExport}>
+            Exporteren
+          </BulkButton>
+          <BulkButton tone="danger" disabled={bulkBusy} onClick={handleArchive}>
+            Archiveren
+          </BulkButton>
+        </BulkActionBar>
+      )}
+
+      {categoryDialog && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center" onClick={() => setCategoryDialog(null)}>
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-dialog-title"
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const value = categoryDialog.value.trim();
+              setCategoryDialog(null);
+              await runBulk("set_category", { category: value || null }, { done: "bijgewerkt" });
+            }}
+          >
+            <h2 id="category-dialog-title" className="text-base font-semibold text-slate-900">
+              Categorie wijzigen voor {selectionCount} {selectionCount === 1 ? "product" : "producten"}
+            </h2>
+            <label className="mt-4 block text-sm font-medium text-slate-700">
+              Nieuwe categorie
+              <input
+                autoFocus
+                list="bulk-category-options"
+                value={categoryDialog.value}
+                onChange={(event) => setCategoryDialog({ value: event.target.value })}
+                placeholder="Leeg laten = categorie verwijderen"
+                maxLength={100}
+                className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600"
+              />
+              <datalist id="bulk-category-options">
+                {categories.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setCategoryDialog(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                Annuleren
+              </button>
+              <button type="submit" className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                Toepassen
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {confirmDialog}
     </div>
   );
 }

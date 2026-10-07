@@ -244,6 +244,8 @@ const UPDATABLE_FIELDS = [
   "countryOfOrigin",
   "photoUrl",
   "photoBlobName",
+  "categoryLabel",
+  "highlights",
   "status"
 ];
 const FIELD_TO_COLUMN = {
@@ -257,6 +259,8 @@ const FIELD_TO_COLUMN = {
   countryOfOrigin: "country_of_origin",
   photoUrl: "photo_url",
   photoBlobName: "photo_blob_name",
+  categoryLabel: "category_label",
+  highlights: "highlights",
   status: "status"
 };
 
@@ -265,7 +269,10 @@ async function updateProduct(id, fields) {
   const setClauses = [];
   for (const field of UPDATABLE_FIELDS) {
     if (!(field in fields)) continue;
-    params.push(fields[field] ?? null);
+    let value = fields[field] ?? null;
+    if (field === "highlights" && Array.isArray(value)) value = JSON.stringify(value);
+    if (field === "categoryLabel" && value === "") value = null;
+    params.push(value);
     setClauses.push(`${FIELD_TO_COLUMN[field]} = $${params.length}`);
   }
 
@@ -279,6 +286,33 @@ async function updateProduct(id, fields) {
     `UPDATE products SET ${setClauses.join(", ")} WHERE id = $1 RETURNING ${PUBLIC_COLUMNS}`,
     params
   );
+}
+
+// Compleetheid + losse criteria van één product (voor de checklist in de editor).
+async function getProductChecks(id) {
+  if (!Number.isInteger(id)) return null;
+  const row = await queryOne(
+    `SELECT checks.*, ${COMPLETENESS_EXPR} AS completeness,
+            (p.sku IS NOT NULL AND p.sku <> '') OR (p.gtin IS NOT NULL AND p.gtin <> '') AS has_identification,
+            p.public_id IS NOT NULL AS has_qr
+     FROM products p ${CHECKS_JOIN} WHERE p.id = $1`,
+    [id]
+  );
+  if (!row) return null;
+  return {
+    completeness: row.completeness,
+    checks: {
+      basic: true,
+      identification: row.has_identification,
+      photo: Boolean(row.has_photo),
+      description: Boolean(row.has_description),
+      category: Boolean(row.has_category),
+      sustainability: Boolean(row.has_sustainability),
+      compliance: Boolean(row.has_compliance),
+      documents: Boolean(row.has_documents),
+      qr: row.has_qr
+    }
+  };
 }
 
 async function getProductByPublicId(publicId) {
@@ -342,7 +376,12 @@ module.exports = {
   createProduct,
   updateProduct,
   getProductByPublicId,
+  getProductChecks,
   publishProduct,
   countProductsByStatus,
-  isValidPublicId
+  isValidPublicId,
+  buildProductFilters,
+  CHECKS_JOIN,
+  COMPLETENESS_EXPR,
+  PUBLIC_COLUMNS
 };

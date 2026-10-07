@@ -4,6 +4,7 @@ const companiesRepo = require("../repositories/companies.repository");
 const usersRepo = require("../repositories/users.repository");
 const productsRepo = require("../repositories/products.repository");
 const plansRepo = require("../repositories/plans.repository");
+const { HttpError } = require("../middleware/errorHandler");
 
 const router = express.Router();
 
@@ -116,6 +117,33 @@ router.get("/stats", requireAuth, async (req, res, next) => {
       planName: plan ? plan.name : null,
       maxUsers,
       license
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Uitgebreid bedrijfsdashboard (KPI's met trend, scans-reeks, acties nodig, recente
+// producten, onboarding). Alleen voor gebruikers van een bedrijf; altijd het eigen
+// bedrijf uit de sessie.
+router.get("/overview", requireAuth, async (req, res, next) => {
+  try {
+    if (!["company_admin", "company_user"].includes(req.user.role) || req.user.companyId == null) {
+      next(new HttpError(403, "Geen toegang"));
+      return;
+    }
+    const insights = require("../repositories/productInsights.repository");
+    const { getLicenseUsage } = require("../services/license.service");
+    const [overview, license, company] = await Promise.all([
+      insights.getCompanyOverview(req.user.companyId),
+      getLicenseUsage(req.user.companyId),
+      companiesRepo.getCompanyById(req.user.companyId)
+    ]);
+    res.json({
+      firstName: req.user.firstName || null,
+      companyName: company ? company.name : null,
+      license,
+      ...overview
     });
   } catch (error) {
     next(error);

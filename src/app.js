@@ -53,7 +53,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+// Ruim genoeg voor import-blokken (250 rijen) en printprofielen, ruim onder de
+// 4,5 MB-limiet van Vercel.
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser(process.env.COOKIE_SECRET));
 
@@ -71,6 +73,10 @@ app.use("/api/admin/system", require("./routes/systemMonitoring.routes"));
 app.use("/api/partner", require("./routes/partner.routes"));
 app.use("/api/audit", require("./routes/audit.routes"));
 app.use("/api/company", require("./routes/company.routes"));
+app.use("/api/imports", require("./routes/imports.routes"));
+app.use("/api/qr", require("./routes/qr.routes"));
+app.use("/api/print-profiles", require("./routes/printProfiles.routes"));
+app.use("/api/workspace", require("./routes/workspace.routes"));
 app.use("/api/cron", require("./routes/cron.routes"));
 
 app.use(notFoundHandler);

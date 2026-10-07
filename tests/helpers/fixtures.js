@@ -51,6 +51,8 @@ async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] 
   }
   if (companies.length) {
     await query(`DELETE FROM audit_logs WHERE company_id = ANY($1::int[])`, [companies]);
+    await query(`DELETE FROM import_jobs WHERE company_id = ANY($1::int[])`, [companies]);
+    await query(`DELETE FROM print_profiles WHERE company_id = ANY($1::int[])`, [companies]);
     // Invites verwijzen naar zowel company als invited_by-user; weg vóór beide.
     await query(`DELETE FROM company_admin_invites WHERE company_id = ANY($1::int[])`, [companies]);
     // Kindtabellen van producten moeten weg vóór de producten zelf.
