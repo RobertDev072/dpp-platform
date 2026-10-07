@@ -10,7 +10,7 @@ async function listDocumentsForProduct(productId, options = {}) {
 
   let where = "WHERE product_id = @productId";
   if (options.onlyPublic) {
-    where += " AND is_public = 1";
+    where += " AND is_public = true";
   }
 
   const result = await request.query(`
@@ -52,9 +52,9 @@ async function createDocument({
     .query(`
       INSERT INTO dbo.Documents
         (company_id, product_id, type, title, language, storage_url, blob_name, file_size, mime_type, is_public, category)
-      OUTPUT ${COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
       VALUES
         (@companyId, @productId, @type, @title, @language, @storageUrl, @blobName, @fileSize, @mimeType, @isPublic, @category)
+      RETURNING ${COLUMNS}
     `);
   return result.recordset[0];
 }
@@ -75,8 +75,8 @@ async function deleteDocument(id) {
     .input("id", sql.Int, id)
     .query(`
       DELETE FROM dbo.Documents
-      OUTPUT DELETED.id
       WHERE id = @id
+      RETURNING id
     `);
   return result.recordset[0] || null;
 }

@@ -1,106 +1,15 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
+# UITGEFASEERD - VeriPasso draait niet meer op Azure App Service.
+# Deploys lopen nu via de Git-koppeling van Vercel (push naar main = productie,
+# andere branches = preview). Deze workflow draait daarom niet meer automatisch;
+# het bestand kan verwijderd worden, net als de AZUREAPPSERVICE_*-secrets in GitHub.
 
-name: Build and deploy Node.js app to Azure Web App - dpp-platform-dev
+name: (uitgefaseerd) Azure Web App deploy
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
-  build:
+  uitgefaseerd:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read #This is required for actions/checkout
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js version
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.x'
-          cache: 'npm'
-
-      # De testsuite (tests/) heeft een live Azure SQL-verbinding nodig en draait bewust
-      # niet hier: die DB-secrets staan niet in GitHub Actions. Tests draaien lokaal
-      # (npm test) vóór elke push.
-      #
-      # Deploy-model: "Run from package". Deze job bouwt het VOLLEDIGE, kant-en-klare
-      # pakket (npm ci + next build, inclusief node_modules en web/.next) en levert één
-      # zip af. Azure mount die zip read-only als /home/site/wwwroot - er draait op
-      # Azure geen Oryx-build en geen node_modules-uitpakstap meer. Dat maakt deploys
-      # snel (~2-3 min i.p.v. ~15) en atomair: een halve/kapotte wwwroot zoals bij de
-      # storing van 2026-09-29 kan in dit model niet meer bestaan. De ubuntu-runner en
-      # de App Service draaien allebei Linux + Node 22 en er zijn geen native modules,
-      # dus het pakket is 1-op-1 overdraagbaar.
-      - name: npm ci en productie-build
-        run: |
-          npm ci
-          npm run build
-
-      # De Turbopack/webpack-build-cache is honderden MB's en is op de server nutteloos
-      # (er wordt daar nooit meer gebouwd). De lege map blijft bestaan zodat next start
-      # bij het opstarten geen map hoeft aan te maken op het read-only bestandssysteem.
-      - name: Slank het pakket af (build-cache hoeft niet mee)
-        run: rm -rf web/.next/cache && mkdir -p web/.next/cache
-
-      # Deployment-info voor het monitoringdashboard (commit + bouwtijd): zo is op
-      # /admin/systeemstatus te zien welke versie draait en sinds wanneer.
-      - name: Schrijf build-info.json
-        run: |
-          echo "{\"commit\": \"${GITHUB_SHA:0:7}\", \"builtAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"run\": ${GITHUB_RUN_NUMBER}}" > build-info.json
-
-      - name: Maak deploy-zip
-        run: zip -r -q release.zip . -x ".git/*" -x ".github/*" -x "tests/*" -x "docs/*"
-
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-app
-          path: release.zip
-
-  deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: build
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
-
-    steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: node-app
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_B46AE3B10F5341C8B3BD1807671183D5 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_EC8DCA4F35AE4CCFB235E2F89E942F66 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_C7969EB9ED5842B3B86EEA44AB000568 }}
-
-      # Idempotent: zet het run-from-package-model aan en schakelt de Oryx-build op de
-      # server uit. --output none is essentieel: az zou anders ALLE app settings
-      # (inclusief secrets zoals DB_PASSWORD) in het publieke CI-log printen.
-      - name: Schakel Run-From-Package in
-        run: |
-          az webapp config appsettings set \
-            --resource-group dpp-platform-dev_group \
-            --name dpp-platform-dev \
-            --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-            --output none
-
-      - name: 'Deploy to Azure Web App'
-        id: deploy-to-webapp
-        run: |
-          az webapp deploy \
-            --resource-group dpp-platform-dev_group \
-            --name dpp-platform-dev \
-            --src-path release.zip \
-            --type zip \
-            --output none
+      - run: echo "Uitgefaseerd - deploy gaat via Vercel." && exit 1

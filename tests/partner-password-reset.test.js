@@ -175,11 +175,12 @@ test("partner-wachtwoordreset: scoping, weigeringen en volledige tijdelijk-wacht
       .input("targetId", sql.NVarChar(50), String(adminK1.id))
       .input("actorId", sql.Int, partner1.id)
       .query(`
-        SELECT TOP 1 company_id, user_id, action, metadata, timestamp
+        SELECT company_id, user_id, action, metadata, timestamp
         FROM dbo.AuditLogs
         WHERE action = 'reset_password' AND entity_type = 'User'
           AND entity_id = @targetId AND user_id = @actorId
         ORDER BY timestamp DESC
+        LIMIT 1
       `);
     const rij = audit.recordset[0];
     assert.ok(rij, "auditregel voor de reset ontbreekt");

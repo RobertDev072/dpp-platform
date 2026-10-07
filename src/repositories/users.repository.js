@@ -66,8 +66,8 @@ async function setMustChangePassword(id, value) {
   await pool
     .request()
     .input("id", sql.Int, id)
-    .input("value", sql.Bit, value ? 1 : 0)
-    .query("UPDATE dbo.Users SET must_change_password = @value, updated_at = SYSUTCDATETIME() WHERE id = @id");
+    .input("value", sql.Bit, Boolean(value))
+    .query("UPDATE dbo.Users SET must_change_password = @value, updated_at = now() WHERE id = @id");
 }
 
 async function clearMustChangePasswordByEmail(email) {
@@ -75,7 +75,7 @@ async function clearMustChangePasswordByEmail(email) {
   await pool
     .request()
     .input("email", sql.NVarChar(256), email)
-    .query("UPDATE dbo.Users SET must_change_password = 0, updated_at = SYSUTCDATETIME() WHERE email = @email");
+    .query("UPDATE dbo.Users SET must_change_password = false, updated_at = now() WHERE lower(email) = lower(@email)");
 }
 
 async function updatePasswordHash(id, passwordHash) {
@@ -84,7 +84,7 @@ async function updatePasswordHash(id, passwordHash) {
     .request()
     .input("id", sql.Int, id)
     .input("passwordHash", sql.NVarChar(255), passwordHash)
-    .query("UPDATE dbo.Users SET password_hash = @passwordHash, updated_at = SYSUTCDATETIME() WHERE id = @id");
+    .query("UPDATE dbo.Users SET password_hash = @passwordHash, updated_at = now() WHERE id = @id");
 }
 
 async function getUserByEmail(email) {
@@ -92,7 +92,7 @@ async function getUserByEmail(email) {
   const result = await pool
     .request()
     .input("email", sql.NVarChar(256), email)
-    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password FROM dbo.Users WHERE email = @email`);
+    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password FROM dbo.Users WHERE lower(email) = lower(@email)`);
   return result.recordset[0] || null;
 }
 
@@ -119,7 +119,7 @@ async function getUnlinkedUserByEmail(email) {
     .query(`
       SELECT id, company_id, email, role, status
       FROM dbo.Users
-      WHERE email = @email AND entra_subject_id IS NULL AND status = 'active'
+      WHERE lower(email) = lower(@email) AND entra_subject_id IS NULL AND status = 'active'
     `);
   return result.recordset[0] || null;
 }
@@ -136,9 +136,9 @@ async function linkEntraSubjectId(userId, entraSubjectId) {
     .input("sub", sql.NVarChar(255), entraSubjectId)
     .query(`
       UPDATE dbo.Users
-      SET entra_subject_id = @sub, updated_at = SYSUTCDATETIME()
-      OUTPUT INSERTED.id, INSERTED.company_id, INSERTED.email, INSERTED.role, INSERTED.status
+      SET entra_subject_id = @sub, updated_at = now()
       WHERE id = @id AND entra_subject_id IS NULL
+      RETURNING id, company_id, email, role, status
     `);
   return result.recordset[0] || null;
 }
@@ -151,7 +151,7 @@ async function countActiveUsers(companyId) {
   const result = await pool
     .request()
     .input("companyId", sql.Int, companyId)
-    .query(`SELECT COUNT(*) AS activeCount FROM dbo.Users WHERE company_id = @companyId AND status = 'active'`);
+    .query(`SELECT COUNT(*) AS "activeCount" FROM dbo.Users WHERE company_id = @companyId AND status = 'active'`);
   return result.recordset[0].activeCount;
 }
 
@@ -162,7 +162,7 @@ async function countOtherActiveCompanyAdmins(companyId, excludeUserId) {
     .input("companyId", sql.Int, companyId)
     .input("excludeUserId", sql.Int, excludeUserId)
     .query(`
-      SELECT COUNT(*) AS adminCount FROM dbo.Users
+      SELECT COUNT(*) AS "adminCount" FROM dbo.Users
       WHERE company_id = @companyId AND role = 'company_admin'
         AND status = 'active' AND id <> @excludeUserId
     `);
@@ -173,13 +173,17 @@ async function countAllActiveUsers() {
   const pool = await getPool();
   const result = await pool
     .request()
-    .query(`SELECT COUNT(*) AS activeCount FROM dbo.Users WHERE status = 'active'`);
+    .query(`SELECT COUNT(*) AS "activeCount" FROM dbo.Users WHERE status = 'active'`);
   return result.recordset[0].activeCount;
 }
 
-// Telt actieve users binnen een company met UPDLOCK+HOLDLOCK zodat twee gelijktijdige
-// "user aanmaken"-requests niet allebei de limiet-check kunnen passeren voordat een van
-// beide zijn insert heeft gecommit (voorkomt een race over de seat-limiet).
+// Namespace voor de advisory lock hieronder (willekeurig, maar vast).
+const SEAT_LOCK_NAMESPACE = 4242;
+
+// Telt actieve users binnen een company onder een transactie-advisory-lock per bedrijf,
+// zodat twee gelijktijdige "user aanmaken"-requests niet allebei de limiet-check kunnen
+// passeren voordat een van beide zijn insert heeft gecommit (voorkomt een race over de
+// seat-limiet). De lock vervalt automatisch bij commit/rollback.
 async function createUserWithSeatLimit({ companyId, maxUsers, ...userFields }) {
   const pool = await getPool();
   const transaction = new sql.Transaction(pool);
@@ -187,11 +191,16 @@ async function createUserWithSeatLimit({ companyId, maxUsers, ...userFields }) {
 
   try {
     if (maxUsers != null) {
+      await new sql.Request(transaction)
+        .input("namespace", sql.Int, SEAT_LOCK_NAMESPACE)
+        .input("companyId", sql.Int, companyId)
+        .query("SELECT pg_advisory_xact_lock(@namespace::int, @companyId::int)");
+
       const countResult = await new sql.Request(transaction)
         .input("companyId", sql.Int, companyId)
         .query(`
-          SELECT COUNT(*) AS activeCount
-          FROM dbo.Users WITH (UPDLOCK, HOLDLOCK)
+          SELECT COUNT(*) AS "activeCount"
+          FROM dbo.Users
           WHERE company_id = @companyId AND status = 'active'
         `);
 
@@ -213,8 +222,8 @@ async function createUserWithSeatLimit({ companyId, maxUsers, ...userFields }) {
       .query(`
         INSERT INTO dbo.Users
           (company_id, email, password_hash, entra_object_id, first_name, last_name, role, status)
-        OUTPUT ${PUBLIC_COLUMNS.split(", ").map((c) => `INSERTED.${c}`).join(", ")}
         VALUES (@companyId, @email, @passwordHash, @entraObjectId, @firstName, @lastName, @role, @status)
+        RETURNING ${PUBLIC_COLUMNS}
       `);
 
     await transaction.commit();
@@ -251,13 +260,13 @@ async function updateUser(id, fields) {
     return getUserById(id);
   }
 
-  setClauses.push("updated_at = SYSUTCDATETIME()");
+  setClauses.push("updated_at = now()");
 
   const result = await request.query(`
     UPDATE dbo.Users
     SET ${setClauses.join(", ")}
-    OUTPUT ${PUBLIC_COLUMNS.split(", ").map((c) => `INSERTED.${c}`).join(", ")}
     WHERE id = @id
+    RETURNING ${PUBLIC_COLUMNS}
   `);
 
   return result.recordset[0] || null;

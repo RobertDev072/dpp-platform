@@ -1,4 +1,4 @@
-const { getPool, sql } = require("../src/config/db");
+const { getPool, sql, close } = require("../src/config/db");
 const { hashPassword } = require("../src/utils/password");
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -26,7 +26,7 @@ async function seedSystemOwner() {
   const existing = await pool
     .request()
     .input("email", sql.NVarChar(256), email)
-    .query("SELECT id FROM dbo.Users WHERE email = @email");
+    .query("SELECT id FROM dbo.Users WHERE lower(email) = lower(@email)");
 
   if (existing.recordset.length > 0) {
     await pool
@@ -42,8 +42,8 @@ async function seedSystemOwner() {
             last_name = @lastName,
             role = 'platform_owner',
             status = 'active',
-            updated_at = SYSUTCDATETIME()
-        WHERE email = @email
+            updated_at = now()
+        WHERE lower(email) = lower(@email)
       `);
     console.log(`✅ Bestaande System Owner bijgewerkt: ${email}`);
     return;
@@ -64,7 +64,10 @@ async function seedSystemOwner() {
 }
 
 seedSystemOwner()
-  .then(() => process.exit(0))
+  .then(async () => {
+    await close();
+    process.exit(0);
+  })
   .catch((error) => {
     console.error("❌ Seed mislukt:");
     console.error(error.message);

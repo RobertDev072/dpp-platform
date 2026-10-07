@@ -84,14 +84,14 @@ async function listPartnerActivity(partnerCompanyId, { limit = 50 } = {}) {
     .input("partnerCompanyId", sql.Int, partnerCompanyId)
     .input("limit", sql.Int, Math.min(Math.max(limit, 1), 200))
     .query(`
-      SELECT TOP (@limit)
-             a.id, a.company_id, a.action, a.entity_type, a.entity_id, a.metadata, a.timestamp,
+      SELECT a.id, a.company_id, a.action, a.entity_type, a.entity_id, a.metadata, a.timestamp,
              u.email AS actor_email,
              c.name AS company_name
       FROM dbo.AuditLogs a
       JOIN dbo.Users u ON u.id = a.user_id AND u.company_id = @partnerCompanyId
       LEFT JOIN dbo.Companies c ON c.id = a.company_id
       ORDER BY a.timestamp DESC, a.id DESC
+      LIMIT @limit
     `);
   return result.recordset;
 }

@@ -4,7 +4,7 @@
 //   deze URL voorgoed, dus deze mag alleen wijzigen naar een adres dat blijvend
 //   wordt doorverwezen.
 // Zonder envvar valt beide terug op de request-host (met trust proxy geeft
-// req.protocol dan correct https achter Azure's TLS-terminatie).
+// req.protocol dan correct https achter de TLS-terminatie van Vercel).
 
 function stripTrailingSlash(value) {
   return value.replace(/\/+$/, "");
@@ -24,4 +24,12 @@ function getQrBaseUrl(req) {
   return configured ? stripTrailingSlash(configured) : requestOrigin(req);
 }
 
-module.exports = { getAppBaseUrl, getQrBaseUrl };
+// De publieke paspoortlink die in een QR-code komt. De public_id staat bewust in
+// hoofdletters: zo leverde Azure SQL de GUID aan toen de eerste codes werden gedrukt,
+// dus een opnieuw gedownloade QR-code is bit-voor-bit gelijk aan de gedrukte. (Postgres
+// geeft uuid's in kleine letters; de opzoeking werkt met beide.)
+function getPassportUrl(req, publicId) {
+  return `${getQrBaseUrl(req)}/p/${String(publicId).toUpperCase()}`;
+}
+
+module.exports = { getAppBaseUrl, getQrBaseUrl, getPassportUrl };

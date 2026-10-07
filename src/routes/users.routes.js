@@ -10,8 +10,6 @@ const { generateTempPassword } = require("../utils/tempPassword");
 const { assertCompanyAccess } = require("../utils/tenant");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const { isEntraConfigured } = require("../config/entra");
-const graphClient = require("../services/graphClient");
 const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
 const licenseService = require("../services/license.service");
 
@@ -76,36 +74,22 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
 
     const maxUsers = body.companyId != null ? await plansRepo.getMaxUsersForCompany(body.companyId) : null;
 
-    // Licentiecheck vóór een eventuele Graph-call: dekt zowel een verlopen licentie
-    // als de seat-limiet (per bedrijf). De race-veilige, autoritatieve seat-check
-    // zit daarnaast in createUserWithSeatLimit hieronder.
+    // Licentiecheck: dekt zowel een verlopen licentie als de seat-limiet (per
+    // bedrijf). De race-veilige, autoritatieve seat-check zit daarnaast in
+    // createUserWithSeatLimit hieronder.
     if (body.companyId != null) {
       await licenseService.assertCanCreate(body.companyId, "user");
     }
 
-    let passwordHash = null;
-    let entraObjectId = null;
+    // Het aanmaakformulier heeft bewust geen wachtwoordveld: de server genereert een
+    // eenmalig getoond tijdelijk wachtwoord (gedwongen wijziging bij eerste login).
     let tempPassword;
-
-    if (isEntraConfigured()) {
+    let passwordHash;
+    if (!body.password) {
       tempPassword = generateTempPassword();
-      const displayName = [body.firstName, body.lastName].filter(Boolean).join(" ") || body.email;
-      const created = await graphClient.createEntraUser({
-        email: body.email,
-        displayName,
-        tempPassword
-      });
-      entraObjectId = created.entraObjectId;
+      passwordHash = await hashPassword(tempPassword);
     } else {
-      // Legacy-modus (Entra-provisioning niet geconfigureerd): genereer zelf een
-      // tijdelijk wachtwoord i.p.v. de aanmaak te blokkeren - het nieuwe
-      // aanmaakformulier heeft bewust geen wachtwoordveld meer.
-      if (!body.password) {
-        tempPassword = generateTempPassword();
-        passwordHash = await hashPassword(tempPassword);
-      } else {
-        passwordHash = await hashPassword(body.password);
-      }
+      passwordHash = await hashPassword(body.password);
     }
 
     const { limitReached, user } = await usersRepo.createUserWithSeatLimit({
@@ -113,7 +97,6 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
       maxUsers,
       email: body.email,
       passwordHash,
-      entraObjectId,
       firstName: body.firstName,
       lastName: body.lastName,
       role: body.role,
@@ -122,9 +105,7 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
 
     if (limitReached) {
       // Zeldzame race: de snelle pre-check hierboven zag nog ruimte, maar een
-      // gelijktijdige aanvraag heeft de laatste plek net ingenomen. Het eventueel al
-      // aangemaakte Entra-account blijft dan als ongebruikt account achter in de
-      // tenant (bekende MVP-beperking, zie docs/entra-external-id-setup.md).
+      // gelijktijdige aanvraag heeft de laatste plek net ingenomen.
       next(new HttpError(409, "Licentielimiet bereikt voor dit bedrijf", undefined, "LICENSE_LIMIT_REACHED"));
       return;
     }
@@ -135,7 +116,7 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
       action: "create",
       entityType: "User",
       entityId: user.id,
-      metadata: { via: entraObjectId ? "entra" : "local" }
+      metadata: { via: "local" }
     });
 
     // Bij een gegenereerd tijdelijk wachtwoord: gedwongen wijziging bij eerste login.
@@ -260,23 +241,8 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
       }
     }
 
+    // De status-check in requireAuth (en bij het inloggen) blokkeert toegang direct.
     const updated = await usersRepo.updateUser(id, req.body);
-
-    // Best-effort: DPP's eigen status-check (in requireAuth) blokkeert toegang meteen en
-    // onafhankelijk hiervan. Een Graph-fout hier mag de DPP-statuswijziging dus nooit
-    // blokkeren. Elke niet-actieve status (blocked/suspended/archived) schakelt het
-    // Entra-account uit; terugzetten naar active schakelt het weer in.
-    if (req.body.status !== undefined && existing.entra_object_id) {
-      try {
-        if (req.body.status === "deleted") {
-          await graphClient.deleteEntraUser(existing.entra_object_id);
-        } else {
-          await graphClient.setAccountEnabled(existing.entra_object_id, req.body.status === "active");
-        }
-      } catch (error) {
-        console.error("Entra account bijwerken/verwijderen mislukt:", error.message);
-      }
-    }
 
     await logAudit({
       companyId: existing.company_id,
@@ -309,31 +275,11 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
     // Reset geeft een tijdelijk wachtwoord dat direct werkt op de loginpagina; de
     // login dwingt daarna (via must_change_password) af dat er meteen een nieuw,
     // eigen wachtwoord wordt ingesteld voordat er een sessie ontstaat.
+    // Altijd een lokaal wachtwoord; voor een nog niet overgezet Entra-account is dit
+    // meteen de overstap naar lokale login.
     const authInfo = await usersRepo.getUserAuthInfo(id);
     const tempPassword = generateTempPassword();
-
-    if (authInfo?.entraObjectId) {
-      try {
-        await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
-      } catch (error) {
-        if (/\(403\)/.test(error.message || "")) {
-          next(
-            new HttpError(
-              502,
-              "Entra weigert de wachtwoordreset: de Graph-app mist de permissie User-PasswordProfile.ReadWrite.All (met admin consent). Voeg die toe in Entra en probeer opnieuw."
-            )
-          );
-          return;
-        }
-        throw error;
-      }
-    } else if (authInfo?.hasLocalPassword) {
-      await usersRepo.updatePasswordHash(id, await hashPassword(tempPassword));
-    } else {
-      next(new HttpError(409, "Dit account heeft geen wachtwoordmethode; neem contact op met de beheerder"));
-      return;
-    }
-
+    await usersRepo.updatePasswordHash(id, await hashPassword(tempPassword));
     await usersRepo.setMustChangePassword(id, true);
 
     await logAudit({
@@ -342,7 +288,7 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
       action: "reset_password",
       entityType: "User",
       entityId: id,
-      metadata: { via: authInfo.entraObjectId ? "entra" : "lokaal" }
+      metadata: { via: "lokaal", migratedFromEntra: Boolean(authInfo && !authInfo.hasLocalPassword) }
     });
 
     res.json({ tempPassword });

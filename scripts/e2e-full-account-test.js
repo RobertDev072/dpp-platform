@@ -1,3 +1,10 @@
+// VEROUDERD: deze test controleerde elke stap ook in Microsoft Entra (Graph). Entra-
+// provisioning bestaat niet meer (alle wachtwoorden zijn lokaal), dus het script
+// stopt direct. De accountlevenscyclus wordt gedekt door tests/ (npm test) en
+// scripts/e2e-partner-reset-live.js. Dit bestand kan weg.
+console.error("e2e-full-account-test.js is verouderd (Entra/Graph-specifiek) - zie de kop van dit bestand.");
+process.exit(1);
+
 // Volledige end-to-end-test van het login- en accountsysteem tegen de LIVE omgeving.
 // Controleert per stap zowel de VeriPasso-API/database als Microsoft Entra (Graph).
 // Maakt eigen testdata aan en ruimt die aan het eind volledig op; raakt nooit
@@ -7,7 +14,7 @@ const { createTestCompany, createTestUser, createTestProduct, cleanupTestData } 
 const { getPool, sql } = require("../src/config/db");
 const { getDaemonConfidentialClient } = require("../src/services/msalClients");
 
-const BASE = process.env.E2E_BASE_URL || "https://dpp-platform-dev-h2dag0asawh9eyhg.centralus-01.azurewebsites.net";
+const BASE = process.env.E2E_BASE_URL || "https://app.veripasso.com";
 const j = JSON.stringify;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

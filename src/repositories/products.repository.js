@@ -21,13 +21,13 @@ function escapeLike(value) {
 
 // Compleetheid van een productpaspoort: zes gelijkwaardige criteria (foto,
 // omschrijving, categorie, duurzaamheidsdata, compliance-data, minimaal één
-// document). Als CROSS APPLY berekend zodat de losse vlaggen teruggegeven kunnen
+// document). Als LATERAL-join berekend zodat de losse vlaggen teruggegeven kunnen
 // worden ("wat ontbreekt er nog?") én er in WHERE en aggregaties op gefilterd/geteld
-// kan worden - subqueries mogen in SQL Server niet rechtstreeks binnen een SUM().
-const CHECKS_APPLY = `CROSS APPLY (SELECT
-  CASE WHEN (p.photo_url IS NOT NULL AND LEN(p.photo_url) > 0) OR p.photo_blob_name IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
-  CASE WHEN p.description IS NOT NULL AND LEN(p.description) > 0 THEN 1 ELSE 0 END AS has_description,
-  CASE WHEN p.category_label IS NOT NULL AND LEN(p.category_label) > 0 THEN 1 ELSE 0 END AS has_category,
+// kan worden.
+const CHECKS_APPLY = `CROSS JOIN LATERAL (SELECT
+  CASE WHEN (p.photo_url IS NOT NULL AND length(p.photo_url) > 0) OR p.photo_blob_name IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
+  CASE WHEN p.description IS NOT NULL AND length(p.description) > 0 THEN 1 ELSE 0 END AS has_description,
+  CASE WHEN p.category_label IS NOT NULL AND length(p.category_label) > 0 THEN 1 ELSE 0 END AS has_category,
   CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductSustainability ps WHERE ps.product_id = p.id) THEN 1 ELSE 0 END AS has_sustainability,
   CASE WHEN EXISTS (SELECT 1 FROM dbo.ProductCompliance pc WHERE pc.product_id = p.id) THEN 1 ELSE 0 END AS has_compliance,
   CASE WHEN EXISTS (SELECT 1 FROM dbo.Documents d WHERE d.product_id = p.id) THEN 1 ELSE 0 END AS has_documents
@@ -44,7 +44,8 @@ function buildProductFilters({ companyId, q, status, category, doc }, request) {
   }
   if (q) {
     request.input("q", sql.NVarChar(220), `%${escapeLike(q)}%`);
-    where.push("(p.name LIKE @q ESCAPE '\\' OR p.sku LIKE @q ESCAPE '\\' OR p.gtin LIKE @q ESCAPE '\\' OR p.brand LIKE @q ESCAPE '\\')");
+    // ILIKE: Azure SQL zocht hoofdletterongevoelig (collation), Postgres alleen met ILIKE.
+    where.push("(p.name ILIKE @q ESCAPE '\\' OR p.sku ILIKE @q ESCAPE '\\' OR p.gtin ILIKE @q ESCAPE '\\' OR p.brand ILIKE @q ESCAPE '\\')");
   }
   if (status) {
     request.input("status", sql.NVarChar(20), status);
@@ -133,8 +134,8 @@ async function getProductStats({ companyId } = {}) {
       SUM(CASE WHEN p.status = 'published' THEN 1 ELSE 0 END) AS published,
       SUM(CASE WHEN p.status = 'draft' THEN 1 ELSE 0 END) AS drafts,
       SUM(CASE WHEN ${COMPLETENESS_EXPR} < 100 THEN 1 ELSE 0 END) AS action_required,
-      SUM(CASE WHEN p.created_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS created_this_month,
-      SUM(CASE WHEN p.published_at >= DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1) THEN 1 ELSE 0 END) AS published_this_month
+      SUM(CASE WHEN p.created_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' THEN 1 ELSE 0 END) AS created_this_month,
+      SUM(CASE WHEN p.published_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' THEN 1 ELSE 0 END) AS published_this_month
     FROM dbo.Products p
     ${CHECKS_APPLY}
     ${where}
@@ -216,9 +217,9 @@ async function createProduct({
     .query(`
       INSERT INTO dbo.Products
         (company_id, name, brand, model, sku, gtin, description, manufacturer, country_of_origin, photo_url, created_by, status)
-      OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
       VALUES
         (@companyId, @name, @brand, @model, @sku, @gtin, @description, @manufacturer, @countryOfOrigin, @photoUrl, @createdBy, 'draft')
+      RETURNING ${PUBLIC_COLUMNS}
     `);
   return result.recordset[0];
 }
@@ -278,19 +279,27 @@ async function updateProduct(id, fields) {
     return getProductById(id);
   }
 
-  setClauses.push("updated_at = SYSUTCDATETIME()");
+  setClauses.push("updated_at = now()");
 
   const result = await request.query(`
     UPDATE dbo.Products
     SET ${setClauses.join(", ")}
-    OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
     WHERE id = @id
+    RETURNING ${PUBLIC_COLUMNS}
   `);
 
   return result.recordset[0] || null;
 }
 
+// public_id is een uuid-kolom: een kapotte/geraden id uit een URL zou in Postgres
+// een castfout (500) geven i.p.v. "niet gevonden". Hoofdletters (zo staan ze in de
+// al gedrukte QR-codes, Azure SQL gaf GUID's in hoofdletters) zijn prima.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function getProductByPublicId(publicId) {
+  if (!UUID_PATTERN.test(String(publicId || ""))) {
+    return null;
+  }
   const pool = await getPool();
   const result = await pool
     .request()
@@ -324,10 +333,10 @@ async function publishProduct(id) {
       UPDATE dbo.Products
       SET public_id = @publicId,
           status = 'published',
-          published_at = SYSUTCDATETIME(),
-          updated_at = SYSUTCDATETIME()
-      OUTPUT ${PUBLIC_COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
+          published_at = now(),
+          updated_at = now()
       WHERE id = @id
+      RETURNING ${PUBLIC_COLUMNS}
     `);
 
   return result.recordset[0] || null;

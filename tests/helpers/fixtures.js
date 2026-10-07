@@ -15,8 +15,7 @@ async function createTestCompany(name = "Test Company") {
     .input("slug", sql.NVarChar(100), `test-${suffix}`)
     .query(`
       INSERT INTO dbo.Companies (name, slug)
-      OUTPUT INSERTED.id
-      VALUES (@name, @slug)
+      VALUES (@name, @slug) RETURNING id
     `);
   return result.recordset[0].id;
 }
@@ -35,8 +34,7 @@ async function createTestUser({ companyId = null, role, password = "TestPassword
     .input("role", sql.NVarChar(30), role)
     .query(`
       INSERT INTO dbo.Users (company_id, email, password_hash, role, status)
-      OUTPUT INSERTED.id
-      VALUES (@companyId, @email, @passwordHash, @role, 'active')
+      VALUES (@companyId, @email, @passwordHash, @role, 'active') RETURNING id
     `);
 
   return { id: result.recordset[0].id, email, password, companyId, role };
@@ -51,8 +49,7 @@ async function createTestProduct({ companyId, name = "Test Product" }) {
     .input("name", sql.NVarChar(200), `${name} ${suffix}`)
     .query(`
       INSERT INTO dbo.Products (company_id, name, status)
-      OUTPUT INSERTED.id
-      VALUES (@companyId, @name, 'draft')
+      VALUES (@companyId, @name, 'draft') RETURNING id
     `);
   return result.recordset[0].id;
 }

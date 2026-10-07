@@ -25,9 +25,8 @@ async function createBatch({ productId, companyId, batchNumber, productionDate, 
     .input("quantity", sql.Int, quantity ?? null)
     .query(`
       INSERT INTO dbo.ProductBatches (product_id, company_id, batch_number, production_date, quantity)
-      OUTPUT INSERTED.id, INSERTED.product_id, INSERTED.company_id, INSERTED.batch_number,
-             INSERTED.production_date, INSERTED.quantity, INSERTED.created_at
       VALUES (@productId, @companyId, @batchNumber, @productionDate, @quantity)
+      RETURNING id, product_id, company_id, batch_number, production_date, quantity, created_at
     `);
   return result.recordset[0];
 }

@@ -43,37 +43,28 @@ function buildRequest(pool, productId, fields) {
 async function upsertSustainability(productId, fields) {
   const pool = await getPool();
 
-  const updateResult = await buildRequest(pool, productId, fields).query(`
-    UPDATE dbo.ProductSustainability
-    SET co2_footprint_kg = @co2FootprintKg,
-        co2_reduction_pct = @co2ReductionPct,
-        recycled_material_pct = @recycledMaterialPct,
-        materials = @materials,
-        epd_url = @epdUrl,
-        recyclable = @recyclable,
-        reach_conform = @reachConform,
-        rohs_conform = @rohsConform,
-        expected_lifespan_years = @expectedLifespanYears,
-        updated_at = SYSUTCDATETIME()
-    OUTPUT ${COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
-    WHERE product_id = @productId
-  `);
-
-  if (updateResult.rowsAffected[0] > 0) {
-    return parseMaterials(updateResult.recordset[0]);
-  }
-
-  const insertResult = await buildRequest(pool, productId, fields).query(`
+  const result = await buildRequest(pool, productId, fields).query(`
     INSERT INTO dbo.ProductSustainability
       (product_id, co2_footprint_kg, co2_reduction_pct, recycled_material_pct, materials,
        epd_url, recyclable, reach_conform, rohs_conform, expected_lifespan_years)
-    OUTPUT ${COLUMNS.trim().split(/,\s*/).map((c) => `INSERTED.${c.trim()}`).join(", ")}
     VALUES
       (@productId, @co2FootprintKg, @co2ReductionPct, @recycledMaterialPct, @materials,
        @epdUrl, @recyclable, @reachConform, @rohsConform, @expectedLifespanYears)
+    ON CONFLICT (product_id) DO UPDATE
+      SET co2_footprint_kg = EXCLUDED.co2_footprint_kg,
+          co2_reduction_pct = EXCLUDED.co2_reduction_pct,
+          recycled_material_pct = EXCLUDED.recycled_material_pct,
+          materials = EXCLUDED.materials,
+          epd_url = EXCLUDED.epd_url,
+          recyclable = EXCLUDED.recyclable,
+          reach_conform = EXCLUDED.reach_conform,
+          rohs_conform = EXCLUDED.rohs_conform,
+          expected_lifespan_years = EXCLUDED.expected_lifespan_years,
+          updated_at = now()
+    RETURNING ${COLUMNS}
   `);
 
-  return parseMaterials(insertResult.recordset[0]);
+  return parseMaterials(result.recordset[0]);
 }
 
 module.exports = { getSustainability, upsertSustainability };

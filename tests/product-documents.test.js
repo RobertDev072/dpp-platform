@@ -9,13 +9,13 @@ const {
   cleanupTestData
 } = require("./helpers/fixtures");
 
-// Documentupload naar Azure Blob Storage. Zelfde voorwaarde als de fototest: zonder
-// AZURE_STORAGE_ACCOUNT_NAME (en werkende DefaultAzureCredential) worden de echte
+// Documentupload naar Supabase Storage. Zelfde voorwaarde als de fototest: zonder
+// SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY worden de echte
 // upload/downloaddelen overgeslagen; validatie en tenant-isolatie draaien altijd.
-const hasStorageConfigured = Boolean(process.env.AZURE_STORAGE_ACCOUNT_NAME);
+const hasStorageConfigured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const storageSkipReason = hasStorageConfigured
   ? false
-  : "AZURE_STORAGE_ACCOUNT_NAME niet gezet - zie README.md voor lokale Blob Storage-setup";
+  : "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY niet gezet - zie README.md";
 
 // Kleinst mogelijke geldige PDF-bytes (header volstaat voor de mimetype-flow; multer
 // controleert het door de client meegegeven type, de inhoud is hier niet relevant).

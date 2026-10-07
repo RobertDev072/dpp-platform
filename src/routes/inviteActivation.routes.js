@@ -6,11 +6,8 @@ const companiesRepo = require("../repositories/companies.repository");
 const usersRepo = require("../repositories/users.repository");
 const plansRepo = require("../repositories/plans.repository");
 const { hashPassword } = require("../utils/password");
-const { generateTempPassword } = require("../utils/tempPassword");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const { isEntraConfigured } = require("../config/entra");
-const graphClient = require("../services/graphClient");
 
 const router = express.Router();
 
@@ -35,7 +32,8 @@ router.get("/:token", async (req, res, next) => {
     res.json({
       email: invite.email,
       companyName: company ? company.name : null,
-      requiresPassword: !isEntraConfigured()
+      // De nieuwe beheerder kiest bij activatie direct een eigen wachtwoord.
+      requiresPassword: true
     });
   } catch (error) {
     next(error);
@@ -59,32 +57,17 @@ router.post("/:token/accept", validateBody(acceptInviteSchema), async (req, res,
 
     const maxUsers = await plansRepo.getMaxUsersForCompany(invite.company_id);
 
-    let passwordHash = null;
-    let entraObjectId = null;
-
-    if (isEntraConfigured()) {
-      const tempPassword = generateTempPassword();
-      const displayName = [invite.first_name, invite.last_name].filter(Boolean).join(" ") || invite.email;
-      const created = await graphClient.createEntraUser({
-        email: invite.email,
-        displayName,
-        tempPassword
-      });
-      entraObjectId = created.entraObjectId;
-    } else {
-      if (!req.body.password) {
-        next(new HttpError(400, "password is verplicht zolang Entra niet is geconfigureerd"));
-        return;
-      }
-      passwordHash = await hashPassword(req.body.password);
+    if (!req.body.password) {
+      next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { password: ["Kies een wachtwoord"] } }));
+      return;
     }
+    const passwordHash = await hashPassword(req.body.password);
 
     const { limitReached, user } = await usersRepo.createUserWithSeatLimit({
       companyId: invite.company_id,
       maxUsers,
       email: invite.email,
       passwordHash,
-      entraObjectId,
       firstName: invite.first_name,
       lastName: invite.last_name,
       role: "company_admin",
@@ -113,11 +96,7 @@ router.post("/:token/accept", validateBody(acceptInviteSchema), async (req, res,
       entityId: user.id
     });
 
-    // Bij Entra-provisioning heeft de gebruiker nog geen bruikbaar wachtwoord (het
-    // Graph-aanroep vereist er wel één, maar die wordt nooit getoond of gedeeld) -
-    // stuur de frontend expliciet door naar de wachtwoord-instellen-flow i.p.v. direct
-    // naar /login, waar hij anders vast zou lopen.
-    res.status(201).json({ email: user.email, mustSetPassword: entraObjectId !== null });
+    res.status(201).json({ email: user.email, mustSetPassword: false });
   } catch (error) {
     next(error);
   }

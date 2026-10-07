@@ -6,18 +6,38 @@ const {
   submitPasswordSchema
 } = require("../schemas/passwordReset.schema");
 const nativeAuth = require("../services/nativeAuth.service");
+const { isLegacyEntraConfigured } = require("../config/entra");
 const { HttpError } = require("../middleware/errorHandler");
 const { resetLimiter } = require("../middleware/rateLimit");
 const usersRepo = require("../repositories/users.repository");
+const { hashPassword } = require("../utils/password");
+const { logAudit } = require("../utils/auditLog");
 
 const router = express.Router();
 
 router.use(resetLimiter);
 
-// Volledig publiek (geen requireAuth), zelfde stijl als inviteActivation.routes.js:
-// dit is precies de "wachtwoord vergeten"-/eerste-wachtwoord-flow, die per definitie
-// vóór het inloggen gebeurt. Elke stap is een dunne proxy naar Entra's SSPR-API -
-// DPP slaat nergens een wachtwoord of continuation_token op.
+// Zelfservice "wachtwoord vergeten" bestaat alleen tijdens de Entra-overgangsfase
+// (Entra verstuurt de verificatiecode per e-mail; VeriPasso heeft bewust geen eigen
+// e-mailverzending). Daarna: wachtwoordreset via de beheerder (tijdelijk wachtwoord).
+router.use((req, res, next) => {
+  if (!isLegacyEntraConfigured()) {
+    next(
+      new HttpError(
+        503,
+        "Wachtwoord herstellen via e-mail is niet beschikbaar. Vraag je beheerder om een tijdelijk wachtwoord.",
+        undefined,
+        "SELF_SERVICE_RESET_UNAVAILABLE"
+      )
+    );
+    return;
+  }
+  next();
+});
+
+// Volledig publiek (geen requireAuth), zelfde stijl als inviteActivation.routes.js.
+// Elke stap is een dunne proxy naar Entra's SSPR-API - DPP slaat nergens een
+// continuation_token op.
 
 function mapNativeAuthError(error, next) {
   if (error instanceof nativeAuth.NativeAuthError) {
@@ -63,6 +83,31 @@ router.post("/verify-code", validateBody(submitCodeSchema), async (req, res, nex
   }
 });
 
+// Neemt een bij Entra geslaagde reset over als lokaal wachtwoord. Het e-mailadres in
+// de body is NIET te vertrouwen (de continuation_token zegt niet van wie hij is), dus
+// eerst bij Entra bevestigen dat precies dit adres met precies dit nieuwe wachtwoord
+// inlogt. Pas dan wordt de lokale hash gezet.
+async function adoptResetPassword(email, password) {
+  if (!email) return;
+  const user = await usersRepo.getUserByEmail(email);
+  if (!user || user.status !== "active") return;
+  try {
+    await nativeAuth.verifyPassword({ email: user.email, password });
+  } catch {
+    return;
+  }
+  await usersRepo.updatePasswordHash(user.id, await hashPassword(password));
+  await usersRepo.setMustChangePassword(user.id, false);
+  await logAudit({
+    companyId: user.company_id,
+    userId: user.id,
+    action: "password_migrated",
+    entityType: "User",
+    entityId: user.id,
+    metadata: { from: "entra-sspr" }
+  });
+}
+
 router.post("/submit", validateBody(submitPasswordSchema), async (req, res, next) => {
   try {
     await nativeAuth.submitNewPassword({
@@ -84,10 +129,10 @@ router.post("/submit", validateBody(submitPasswordSchema), async (req, res, next
       }
     }
 
-    if (["succeeded", "completed"].includes(status) && req.body.email) {
-      // Best-effort UX (geen beveiligingsgrens): na een geslaagde reset hoeft de
-      // eerstvolgende login geen wijziging meer af te dwingen.
-      await usersRepo.clearMustChangePasswordByEmail(req.body.email).catch(() => {});
+    if (["succeeded", "completed"].includes(status)) {
+      await adoptResetPassword(req.body.email, req.body.password).catch((error) => {
+        console.error("Wachtwoord overnemen na Entra-reset mislukt:", error.message);
+      });
     }
 
     res.json({ status });

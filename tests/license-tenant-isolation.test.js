@@ -24,7 +24,7 @@ test("licenties en adminrechten: per-tenant limieten, verlopen licentie en rolgu
   // Plan met 2 gebruikers / 1 product.
   const planResult = await pool.request().query(`
     INSERT INTO dbo.Plans (name, max_users, max_products)
-    OUTPUT INSERTED.id VALUES ('Test Krap Plan', 2, 1)
+    VALUES ('Test Krap Plan', 2, 1) RETURNING id
   `);
   const planId = planResult.recordset[0].id;
 
@@ -97,7 +97,7 @@ test("licenties en adminrechten: per-tenant limieten, verlopen licentie en rolgu
   // --- Verlopen licentie blokkeert aanmaken, bestaande blijft werken ---
   await t.test("verlopen licentie blokkeert product- en gebruikersaanmaak met duidelijke code", async () => {
     await pool.request().input("cid", sql.Int, companyB)
-      .query("UPDATE dbo.Companies SET license_end = DATEADD(day, -1, CAST(SYSUTCDATETIME() AS date)) WHERE id = @cid");
+      .query("UPDATE dbo.Companies SET license_end = current_date - 1 WHERE id = @cid");
 
     const product = await request(baseUrl, "POST", "/api/products", {
       cookie: adminBCookie,

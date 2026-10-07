@@ -38,10 +38,9 @@ async function createCompany({ name, slug, planId, status, kind, partnerId, lice
     .input("licenseEnd", sql.Date, licenseEnd ?? null)
     .query(`
       INSERT INTO dbo.Companies (name, slug, plan_id, status, kind, partner_id, license_start, license_end)
-      OUTPUT INSERTED.id, INSERTED.name, INSERTED.slug, INSERTED.status, INSERTED.plan_id,
-             INSERTED.kind, INSERTED.partner_id, INSERTED.license_start, INSERTED.license_end,
-             INSERTED.created_at, INSERTED.updated_at
       VALUES (@name, @slug, @planId, @status, @kind, @partnerId, @licenseStart, @licenseEnd)
+      RETURNING id, name, slug, status, plan_id, kind, partner_id, license_start, license_end,
+                created_at, updated_at
     `);
   return result.recordset[0];
 }
@@ -81,9 +80,9 @@ async function listCompaniesWithStats({ partnerId, kind } = {}) {
            pl.name AS plan_name, pl.max_users, pl.max_products,
            (SELECT COUNT(*) FROM dbo.Products p WHERE p.company_id = c.id AND p.status <> 'archived') AS product_count,
            (SELECT COUNT(*) FROM dbo.Users u WHERE u.company_id = c.id AND u.status = 'active') AS active_user_count,
-           (SELECT TOP 1 u.email FROM dbo.Users u
+           (SELECT u.email FROM dbo.Users u
              WHERE u.company_id = c.id AND u.role = 'company_admin' AND u.status = 'active'
-             ORDER BY u.id) AS admin_email,
+             ORDER BY u.id LIMIT 1) AS admin_email,
            (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.company_id = c.id) AS last_activity
     FROM dbo.Companies c
     LEFT JOIN dbo.Plans pl ON pl.id = c.plan_id
@@ -121,14 +120,13 @@ async function updateCompany(id, fields) {
     return getCompanyById(id);
   }
 
-  setClauses.push("updated_at = SYSUTCDATETIME()");
+  setClauses.push("updated_at = now()");
 
   const result = await request.query(`
     UPDATE dbo.Companies
     SET ${setClauses.join(", ")}
-    OUTPUT INSERTED.id, INSERTED.name, INSERTED.slug, INSERTED.status, INSERTED.plan_id,
-           INSERTED.created_at, INSERTED.updated_at
     WHERE id = @id
+    RETURNING id, name, slug, status, plan_id, created_at, updated_at
   `);
 
   return result.recordset[0] || null;

@@ -49,16 +49,13 @@ async function checkDatabase() {
 }
 
 async function checkBlobStorage() {
-  const { isBlobStorageConfigured, ACCOUNT_NAME } = require("../config/storage");
-  if (!isBlobStorageConfigured()) {
+  const { isStorageConfigured } = require("../config/storage");
+  if (!isStorageConfigured()) {
     return { status: "not_configured", latencyMs: null };
   }
   try {
-    const { BlobServiceClient } = require("@azure/storage-blob");
-    const { DefaultAzureCredential } = require("@azure/identity");
-    const { IMAGES_CONTAINER } = require("../services/blobStorage.service");
-    const client = new BlobServiceClient(`https://${ACCOUNT_NAME}.blob.core.windows.net`, new DefaultAzureCredential());
-    const ms = await timed(() => client.getContainerClient(IMAGES_CONTAINER).exists());
+    const { pingStorage } = require("../services/blobStorage.service");
+    const ms = await timed(pingStorage);
     noteResult("blob", true);
     return { status: statusFromLatency(ms), latencyMs: ms };
   } catch (error) {
@@ -67,13 +64,13 @@ async function checkBlobStorage() {
   }
 }
 
-function checkEntra() {
-  // Configuratiecheck (geen live Graph-call bij elke refresh: dat zou onnodige
-  // tokens/latency kosten; echte Graph-fouten verschijnen via de foutenmonitor).
-  const { isEntraConfigured, isEntraLoginConfigured } = require("../config/entra");
+function checkAuthentication() {
+  // Inloggen is lokaal (bcrypt + sessies in de database): werkt zodra de database
+  // werkt. Het Entra-overgangspad wordt alleen als configuratie gerapporteerd.
+  const { isLegacyEntraConfigured } = require("../config/entra");
   return {
-    graphProvisioning: { status: isEntraConfigured() ? "ok" : "not_configured", latencyMs: null },
-    login: { status: isEntraLoginConfigured() ? "ok" : "not_configured", latencyMs: null }
+    login: { status: "ok", latencyMs: null },
+    legacyEntra: { status: isLegacyEntraConfigured() ? "ok" : "not_configured", latencyMs: null }
   };
 }
 
@@ -99,25 +96,25 @@ async function runHealthChecks() {
   if (cachedResult && Date.now() - cachedAt < CACHE_MS) return cachedResult;
 
   const [database, blob] = await Promise.all([checkDatabase(), checkBlobStorage()]);
-  const entra = checkEntra();
+  const auth = checkAuthentication();
 
   const components = {
     app: decorate("app", { status: "ok", latencyMs: 0 }),
     database: decorate("database", database),
     blobStorage: decorate("blob", blob),
-    entraGraph: decorate("entraGraph", entra.graphProvisioning),
-    authentication: decorate("authentication", entra.login),
+    legacyEntra: decorate("legacyEntra", auth.legacyEntra),
+    authentication: decorate("authentication", database.status === "down" ? { status: "down", latencyMs: null } : auth.login),
     email: decorate("email", checkEmail()),
     baseUrls: decorate("baseUrls", checkBaseUrls())
   };
 
   // Totaalstatus: database plat = storing; iets anders plat/traag = verminderd.
-  // "not_configured" (e-mail) telt niet als probleem - dat is een bewuste keuze.
+  // "not_configured" (e-mail, Entra-overgang) telt niet als probleem - bewuste keuzes.
   let overall = "ok";
   if (components.database.status === "down") {
     overall = "down";
   } else {
-    const relevant = Object.entries(components).filter(([name]) => name !== "email");
+    const relevant = Object.entries(components).filter(([name]) => name !== "email" && name !== "legacyEntra");
     if (relevant.some(([, c]) => c.status === "down" || c.status === "degraded")) {
       overall = "degraded";
     }

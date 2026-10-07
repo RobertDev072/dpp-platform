@@ -8,7 +8,6 @@ const companiesRepo = require("../repositories/companies.repository");
 const plansRepo = require("../repositories/plans.repository");
 const invitesRepo = require("../repositories/invites.repository");
 const usersRepo = require("../repositories/users.repository");
-const graphClient = require("../services/graphClient");
 const { hashPassword } = require("../utils/password");
 const { generateTempPassword } = require("../utils/tempPassword");
 const { buildUsage, getLicenseUsage } = require("../services/license.service");
@@ -225,39 +224,9 @@ router.post(
         return;
       }
 
-      const authInfo = await usersRepo.getUserAuthInfo(target.id);
+      // Altijd een lokaal wachtwoord (ook voor een nog niet overgezet Entra-account).
       const tempPassword = generateTempPassword();
-
-      if (authInfo?.entraObjectId) {
-        try {
-          await graphClient.resetPassword(authInfo.entraObjectId, tempPassword);
-        } catch (error) {
-          await logAudit({
-            companyId: customer.id,
-            userId: req.user.id,
-            action: "reset_password",
-            entityType: "User",
-            entityId: target.id,
-            metadata: { via: "partner", partnerCompanyId: req.user.companyId, targetEmail: target.email, result: "mislukt" }
-          });
-          if (/\(403\)/.test(error.message || "")) {
-            next(
-              new HttpError(
-                502,
-                "Entra weigert de wachtwoordreset: de Graph-app mist de permissie User-PasswordProfile.ReadWrite.All (met admin consent). Voeg die toe in Entra en probeer opnieuw."
-              )
-            );
-            return;
-          }
-          throw error;
-        }
-      } else if (authInfo?.hasLocalPassword) {
-        await usersRepo.updatePasswordHash(target.id, await hashPassword(tempPassword));
-      } else {
-        next(new HttpError(409, "Dit account heeft geen wachtwoordmethode; neem contact op met de beheerder"));
-        return;
-      }
-
+      await usersRepo.updatePasswordHash(target.id, await hashPassword(tempPassword));
       await usersRepo.setMustChangePassword(target.id, true);
 
       // Best-effort: het oude wachtwoord is al waardeloos; lopende sessies horen

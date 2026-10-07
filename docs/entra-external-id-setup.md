@@ -1,3 +1,8 @@
+> **Uitgefaseerd (2026-10-07).** VeriPasso gebruikt Entra niet meer voor accounts of
+> provisioning. Alleen de web-app-registratie (tenantnaam + client-id) is nog nodig
+> tijdens de overgangsfase; zie README §2 en docs/migratie-azure-naar-vercel-supabase.md §7.
+> Onderstaande tekst is historisch.
+
 # Microsoft Entra External ID — handmatige Azure-configuratie
 
 Deze stappen kan alleen jij uitvoeren (Azure/Entra-portaltoegang). De code in deze repo

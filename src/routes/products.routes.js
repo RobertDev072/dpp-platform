@@ -18,7 +18,7 @@ const documentsRepo = require("../repositories/documents.repository");
 const { assertCompanyAccess } = require("../utils/tenant");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const { getQrBaseUrl } = require("../utils/baseUrl");
+const { getPassportUrl } = require("../utils/baseUrl");
 const {
   generateQrPngBuffer,
   generateQrSvgString,
@@ -26,11 +26,15 @@ const {
 } = require("../services/qrCode.service");
 const {
   uploadProductPhoto,
-  downloadProductPhoto,
+  getProductPhotoUrl,
   ALLOWED_IMAGE_MIME_TYPES,
   ALLOWED_DOCUMENT_MIME_TYPES,
   uploadProductDocument,
-  downloadProductDocument
+  getProductDocumentUrl,
+  createPhotoUpload,
+  createDocumentUpload,
+  verifyUploadedPhoto,
+  verifyUploadedDocument
 } = require("../services/blobStorage.service");
 
 const router = express.Router();
@@ -207,32 +211,79 @@ router.post(
       }
 
       const photoBlobName = await uploadProductPhoto({
+        productId: id,
         buffer: req.file.buffer,
         mimeType: req.file.mimetype
       });
 
-      // Een upload vervangt een eventueel eerder geplakte externe URL - er kan maar één
-      // actieve foto-bron tegelijk zijn.
-      const updated = await productsRepo.updateProduct(id, {
-        photoBlobName,
-        photoUrl: null
-      });
-
-      await logAudit({
-        companyId: existing.company_id,
-        userId: req.user.id,
-        action: "update",
-        entityType: "Product",
-        entityId: id,
-        metadata: { photoBlobName }
-      });
-
-      res.json(updated);
+      res.json(await savePhoto(req, existing, photoBlobName));
     } catch (error) {
       next(error);
     }
   }
 );
+
+// Een upload vervangt een eventueel eerder geplakte externe URL - er kan maar één
+// actieve foto-bron tegelijk zijn.
+async function savePhoto(req, product, photoBlobName) {
+  const updated = await productsRepo.updateProduct(product.id, {
+    photoBlobName,
+    photoUrl: null
+  });
+
+  await logAudit({
+    companyId: product.company_id,
+    userId: req.user.id,
+    action: "update",
+    entityType: "Product",
+    entityId: product.id,
+    metadata: { photoBlobName }
+  });
+
+  return updated;
+}
+
+// Laadt het product en controleert de tenant; null (met 404 al afgehandeld) als het
+// niet bestaat.
+async function loadEditableProduct(req, next) {
+  const product = await productsRepo.getProductById(Number(req.params.id));
+  if (!product) {
+    next(new HttpError(404, "Niet gevonden"));
+    return null;
+  }
+  assertCompanyAccess(req.user, product.company_id);
+  return product;
+}
+
+// Directe foto-upload (stap 1): eenmalige upload-URL voor precies één object.
+router.post("/:id/photo/upload-url", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadEditableProduct(req, next);
+    if (!product) return;
+    res.json(
+      await createPhotoUpload({
+        productId: product.id,
+        mimeType: req.body?.mimeType,
+        size: Number(req.body?.size)
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Directe foto-upload (stap 2): controleren en aan het product koppelen.
+router.post("/:id/photo/complete", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadEditableProduct(req, next);
+    if (!product) return;
+    const objectName = req.body?.objectName;
+    await verifyUploadedPhoto({ objectName, productId: product.id });
+    res.json(await savePhoto(req, product, objectName));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/:id/photo", requireRole(...ALL_ROLES), async (req, res, next) => {
   try {
@@ -245,14 +296,9 @@ router.get("/:id/photo", requireRole(...ALL_ROLES), async (req, res, next) => {
     assertCompanyAccess(req.user, product.company_id);
 
     if (product.photo_blob_name) {
-      const { stream, contentType, contentLength } = await downloadProductPhoto(
-        product.photo_blob_name
-      );
-      res.set("Content-Type", contentType || "application/octet-stream");
-      if (contentLength) res.set("Content-Length", String(contentLength));
-      res.set("Cache-Control", "private, max-age=300");
-      stream.on("error", () => res.destroy());
-      stream.pipe(res);
+      // Kortlevende signed URL; de browser cachet de doorverwijzing maar heel even.
+      res.set("Cache-Control", "private, max-age=60");
+      res.redirect(302, await getProductPhotoUrl(product.photo_blob_name));
       return;
     }
 
@@ -612,38 +658,90 @@ router.post(
       }
 
       const blobName = await uploadProductDocument({
+        productId: id,
         buffer: req.file.buffer,
         mimeType: req.file.mimetype
       });
 
-      const document = await documentsRepo.createDocument({
-        companyId: product.company_id,
-        productId: id,
-        type: req.body.type || req.file.mimetype.split("/")[1] || "document",
-        title,
-        language: req.body.language || null,
+      const document = await saveUploadedDocument(req, product, {
         blobName,
         fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        isPublic: req.body.isPublic === "true" || req.body.isPublic === "1",
-        category: ["document", "manual", "video", "3d_model"].includes(req.body.category) ? req.body.category : "document"
+        mimeType: req.file.mimetype
       });
-
-      await logAudit({
-        companyId: product.company_id,
-        userId: req.user.id,
-        action: "create",
-        entityType: "Document",
-        entityId: document.id,
-        metadata: { upload: true, fileSize: req.file.size, mimeType: req.file.mimetype }
-      });
-
       res.status(201).json(document);
     } catch (error) {
       next(error);
     }
   }
 );
+
+const DOCUMENT_CATEGORIES = ["document", "manual", "video", "3d_model"];
+
+async function saveUploadedDocument(req, product, { blobName, fileSize, mimeType }) {
+  const isPublic = req.body.isPublic === true || req.body.isPublic === "true" || req.body.isPublic === "1";
+  const document = await documentsRepo.createDocument({
+    companyId: product.company_id,
+    productId: product.id,
+    type: req.body.type || mimeType.split("/")[1] || "document",
+    title: String(req.body.title || "").trim(),
+    language: req.body.language || null,
+    blobName,
+    fileSize,
+    mimeType,
+    isPublic,
+    category: DOCUMENT_CATEGORIES.includes(req.body.category) ? req.body.category : "document"
+  });
+
+  await logAudit({
+    companyId: product.company_id,
+    userId: req.user.id,
+    action: "create",
+    entityType: "Document",
+    entityId: document.id,
+    metadata: { upload: true, fileSize, mimeType }
+  });
+
+  return document;
+}
+
+function missingTitle(req, next) {
+  if (String(req.body?.title || "").trim()) return false;
+  next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { title: ["Vul een titel in"] } }));
+  return true;
+}
+
+// Directe documentupload (stap 1): titel vooraf valideren, dan een eenmalige upload-URL.
+router.post("/:id/documents/upload-url", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadEditableProduct(req, next);
+    if (!product) return;
+    if (missingTitle(req, next)) return;
+    res.json(
+      await createDocumentUpload({
+        productId: product.id,
+        mimeType: req.body.mimeType,
+        size: Number(req.body.size)
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Directe documentupload (stap 2): object controleren en het document vastleggen.
+router.post("/:id/documents/complete", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadEditableProduct(req, next);
+    if (!product) return;
+    if (missingTitle(req, next)) return;
+    const objectName = req.body.objectName;
+    const { size, mimeType } = await verifyUploadedDocument({ objectName, productId: product.id });
+    const document = await saveUploadedDocument(req, product, { blobName: objectName, fileSize: size, mimeType });
+    res.status(201).json(document);
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Geüpload document (of URL-document via redirect) ophalen - zelfde
 // toegangsregels als de rest van het product.
@@ -664,11 +762,8 @@ router.get("/:id/documents/:documentId/file", requireRole(...ALL_ROLES), async (
     }
 
     if (document.blob_name) {
-      const { stream, contentType, contentLength } = await downloadProductDocument(document.blob_name);
-      res.setHeader("Content-Type", contentType || document.mime_type || "application/octet-stream");
-      if (contentLength) res.setHeader("Content-Length", contentLength);
-      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(document.title)}.${(document.mime_type || "").split("/")[1] || "bin"}"`);
-      stream.pipe(res);
+      res.set("Cache-Control", "private, max-age=60");
+      res.redirect(302, await getProductDocumentUrl(document.blob_name));
       return;
     }
     if (document.storage_url) {
@@ -725,7 +820,7 @@ router.get("/:id/qr.png", requireRole(...ALL_ROLES), async (req, res, next) => {
       return;
     }
 
-    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
+    const url = getPassportUrl(req, product.public_id);
     const buffer = await generateQrPngBuffer(url);
 
     res.set("Content-Type", "image/png");
@@ -749,7 +844,7 @@ router.get("/:id/qr.svg", requireRole(...ALL_ROLES), async (req, res, next) => {
       return;
     }
 
-    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
+    const url = getPassportUrl(req, product.public_id);
     const svg = await generateQrSvgString(url);
 
     res.set("Content-Type", "image/svg+xml");
@@ -773,7 +868,7 @@ router.get("/:id/qr-label.pdf", requireRole(...ALL_ROLES), async (req, res, next
       return;
     }
 
-    const url = `${getQrBaseUrl(req)}/p/${product.public_id}`;
+    const url = getPassportUrl(req, product.public_id);
     const qrPngBuffer = await generateQrPngBuffer(url);
     const pdfBuffer = await generateLabelPdfBuffer({ product, qrPngBuffer });
 

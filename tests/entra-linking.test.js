@@ -25,8 +25,7 @@ test("entra login: just-in-time koppeling van sub aan bestaand DPP-account", asy
     .input("role", sql.NVarChar(30), "company_user")
     .query(`
       INSERT INTO dbo.Users (company_id, email, password_hash, entra_object_id, role, status)
-      OUTPUT INSERTED.id
-      VALUES (@companyId, @email, NULL, 'fake-graph-object-id', @role, 'active')
+      VALUES (@companyId, @email, NULL, 'fake-graph-object-id', @role, 'active') RETURNING id
     `);
   const userId = insertResult.recordset[0].id;
   const userIds = [userId];

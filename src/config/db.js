@@ -1,52 +1,188 @@
 require("dotenv").config();
-const sql = require("mssql");
+const { Pool, types } = require("pg");
 
-const config = {
-  server: process.env.DB_SERVER,
-  database: process.env.DB_DATABASE,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+// Supabase Postgres via DATABASE_URL. Op Vercel altijd de Supavisor-pooler in
+// transaction mode (poort 6543): elke serverless-instance houdt maar een paar
+// verbindingen open, de pooler deelt ze. Lokaal/scripts mag ook de directe
+// verbinding (poort 5432).
+//
+// Typeparsers: Postgres levert COUNT/SUM (int8) en DECIMAL (numeric) als string
+// aan Node - de code en de frontend rekenen overal met getallen, dus die worden
+// hier centraal teruggezet. DATE wordt (net als voorheen bij mssql) een Date op
+// UTC-middernacht, onafhankelijk van de tijdzone van de server.
+types.setTypeParser(20, (value) => parseInt(value, 10));
+types.setTypeParser(1700, (value) => parseFloat(value));
+types.setTypeParser(1082, (value) => new Date(`${value}T00:00:00Z`));
 
-  options: {
-    encrypt: true,
-    trustServerCertificate: false
-  },
-
-  // Serverless Azure SQL kan gepauzeerd zijn en heeft tijd nodig om te ontwaken.
-  connectionTimeout: 30000,
-  requestTimeout: 30000
-};
-
-let poolPromise;
-
-function getPool() {
-  if (!poolPromise) {
-    // Als deze verbindingspoging mislukt (bijv. een serverless Azure SQL-database die
-    // nog aan het ontwaken is), mag dat niet blijvend gecachet worden - anders blijft
-    // elke volgende aanvraag dezelfde mislukte poging hergebruiken, ook lang nadat de
-    // database allang weer bereikbaar is. Zonder deze reset was dat precies wat er
-    // gebeurde: een enkele ETIMEOUT maakte de hele instance blijvend onbruikbaar tot
-    // een herstart.
-    poolPromise = sql.connect(config).then((pool) => {
-      // Een serverless Azure SQL-database kan zichzelf pauzeren of een bestaande
-      // TCP-verbinding laten vallen (ECONNRESET) nadat de pool al langer bestaat -
-      // dat gebeurt los van een nieuwe .connect()-poging, als een 'error'-event op de
-      // pool zelf. Node.js beschouwt een EventEmitter-'error' zonder listener als
-      // fataal en crasht het hele proces - dat was de werkelijke oorzaak van de
-      // herhaalde volledige uitval (niet alleen trage queries). Met deze listener
-      // wordt de kapotte pool simpelweg bij de eerstvolgende aanvraag opnieuw
-      // opgebouwd, zonder het proces te laten crashen.
-      pool.on("error", (err) => {
-        console.error("SQL-pool-fout (verbinding verbroken), pool wordt bij volgende aanvraag herbouwd:", err.message);
-        poolPromise = undefined;
-      });
-      return pool;
-    }).catch((err) => {
-      poolPromise = undefined;
-      throw err;
-    });
-  }
-  return poolPromise;
+function isLocalDatabase(connectionString) {
+  return /@(localhost|127\.0\.0\.1)(:|\/)/.test(connectionString);
 }
 
-module.exports = { getPool, sql };
+// sslmode in de URL wordt door pg-connection-string als verify-full behandeld en
+// zou de expliciete ssl-instelling hieronder overschrijven; daarom eruit halen.
+function stripSslMode(connectionString) {
+  return connectionString.replace(/([?&])sslmode=[^&]*&?/i, "$1").replace(/[?&]$/, "");
+}
+
+function buildPoolConfig() {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) {
+    throw new Error("DATABASE_URL ontbreekt (Supabase → Project Settings → Database → Connection string).");
+  }
+  const connectionString = stripSslMode(raw);
+
+  let ssl;
+  if (isLocalDatabase(connectionString)) {
+    ssl = false;
+  } else if (process.env.DATABASE_CA_CERT) {
+    // Supabase → Database → SSL Configuration → "Download certificate". In een
+    // env-var mogen de regeleinden als \n geschreven zijn.
+    ssl = { ca: process.env.DATABASE_CA_CERT.replace(/\\n/g, "\n"), rejectUnauthorized: true };
+  } else {
+    ssl = { rejectUnauthorized: false };
+  }
+
+  return {
+    connectionString,
+    ssl,
+    max: Number(process.env.DB_POOL_MAX) || (process.env.VERCEL ? 3 : 10),
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 15000
+  };
+}
+
+let pgPool;
+
+function getPgPool() {
+  if (!pgPool) {
+    pgPool = new Pool(buildPoolConfig());
+    // Een verbroken idle-verbinding geeft een 'error'-event op de pool; zonder
+    // listener crasht Node het hele proces. De pool vervangt de verbinding zelf.
+    pgPool.on("error", (err) => {
+      console.error("Postgres-pool-fout (verbinding wordt vervangen):", err.message);
+    });
+    if (process.env.VERCEL) {
+      // Fluid compute: sluit idle verbindingen netjes af voordat een instance
+      // bevriest, zodat de pooler geen zwevende verbindingen opstapelt.
+      try {
+        require("@vercel/functions").attachDatabasePool(pgPool);
+      } catch {
+        // Oudere @vercel/functions zonder attachDatabasePool: idleTimeout vangt het op.
+      }
+    }
+  }
+  return pgPool;
+}
+
+// --- compatibiliteitslaag --------------------------------------------------------
+// De repositories gebruiken het request().input(naam, type, waarde).query(sql)-patroon
+// met @naam-parameters. Deze laag vertaalt dat naar Postgres ($1, $2, ...) en geeft
+// { recordset, rowsAffected } terug, zodat de queries zelf leesbaar blijven. Het
+// type-argument is alleen documentatie: Postgres leidt het type af uit de kolom.
+
+const PARAM_PATTERN = /@([A-Za-z_][A-Za-z0-9_]*)/g;
+
+function toPositional(text, inputs) {
+  const values = [];
+  const positionByName = new Map();
+  const converted = text.replace(PARAM_PATTERN, (match, name) => {
+    if (!inputs.has(name)) return match;
+    if (!positionByName.has(name)) {
+      values.push(inputs.get(name));
+      positionByName.set(name, values.length);
+    }
+    return `$${positionByName.get(name)}`;
+  });
+  return { text: converted, values };
+}
+
+class Request {
+  constructor(executor) {
+    this.executor = executor;
+    this.inputs = new Map();
+  }
+
+  input(name, typeOrValue, value) {
+    this.inputs.set(name, arguments.length >= 3 ? value : typeOrValue);
+    return this;
+  }
+
+  async query(text) {
+    const { text: positional, values } = toPositional(text, this.inputs);
+    const result = await this.executor.query(positional, values);
+    // Meerdere statements zonder parameters geven een array terug; de laatste telt.
+    const last = Array.isArray(result) ? result[result.length - 1] : result;
+    return { recordset: last.rows, rowsAffected: [last.rowCount ?? 0] };
+  }
+}
+
+class Transaction {
+  constructor(pool) {
+    this.pool = pool;
+    this.client = null;
+  }
+
+  async begin() {
+    this.client = await this.pool.connect();
+    await this.client.query("BEGIN");
+  }
+
+  async commit() {
+    try {
+      await this.client.query("COMMIT");
+    } finally {
+      this.release();
+    }
+  }
+
+  async rollback() {
+    if (!this.client) return;
+    try {
+      await this.client.query("ROLLBACK");
+    } finally {
+      this.release();
+    }
+  }
+
+  release() {
+    if (this.client) {
+      this.client.release();
+      this.client = null;
+    }
+  }
+
+  query(text, values) {
+    return this.client.query(text, values);
+  }
+}
+
+const poolFacade = {
+  request: () => new Request(getPgPool()),
+  connect: () => getPgPool().connect(),
+  query: (text, values) => getPgPool().query(text, values),
+  get pg() {
+    return getPgPool();
+  }
+};
+
+async function getPool() {
+  return poolFacade;
+}
+
+async function close() {
+  if (pgPool) {
+    const pool = pgPool;
+    pgPool = undefined;
+    await pool.end();
+  }
+}
+
+// sql.Int, sql.NVarChar(200), sql.MAX, ... zijn no-ops (zie hierboven); alleen
+// Request, Transaction en close hebben echte betekenis.
+const typeStub = () => typeStub;
+const sql = new Proxy(
+  { Request, Transaction, close },
+  { get: (target, prop) => (prop in target ? target[prop] : typeStub) }
+);
+
+module.exports = { getPool, sql, close };

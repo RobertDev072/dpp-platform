@@ -7,9 +7,10 @@ const createInviteSchema = z.object({
 });
 
 const acceptInviteSchema = z.object({
-  // Alleen verplicht/gebruikt zolang Entra niet geconfigureerd is — zelfde uitzondering
-  // als password in users.schema.js.
-  password: z.string().min(12, "Wachtwoord moet minimaal 12 tekens zijn").optional()
+  password: z
+    .string()
+    .min(12, "Wachtwoord moet minimaal 12 tekens zijn")
+    .max(256, "Wachtwoord mag maximaal 256 tekens zijn")
 });
 
 module.exports = { createInviteSchema, acceptInviteSchema };

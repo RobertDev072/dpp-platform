@@ -387,14 +387,17 @@ router.get("/errors", async (req, res, next) => {
 
 router.get("/infra", async (req, res, next) => {
   try {
-    const fs = require("fs");
-    const path = require("path");
-    let buildInfo = null;
-    try {
-      buildInfo = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "build-info.json"), "utf8"));
-    } catch {
-      buildInfo = null;
-    }
+    // Deployment-info komt rechtstreeks uit de systeemvariabelen van Vercel (commit,
+    // omgeving, regio) - geen apart build-info-bestand meer nodig.
+    const buildInfo = process.env.VERCEL
+      ? {
+          commit: (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || null,
+          commitMessage: process.env.VERCEL_GIT_COMMIT_MESSAGE ? process.env.VERCEL_GIT_COMMIT_MESSAGE.split("\n")[0].slice(0, 120) : null,
+          deploymentUrl: process.env.VERCEL_URL || null,
+          environment: process.env.VERCEL_ENV || null,
+          region: process.env.VERCEL_REGION || null
+        }
+      : null;
 
     const memory = process.memoryUsage();
     const os = require("os");
@@ -402,7 +405,8 @@ router.get("/infra", async (req, res, next) => {
     res.json({
       environment: process.env.NODE_ENV || "development",
       nodeVersion: process.version,
-      appService: process.env.WEBSITE_SITE_NAME || null,
+      hosting: process.env.VERCEL ? "Vercel" : "lokaal",
+      appService: process.env.VERCEL_PROJECT_PRODUCTION_URL || null,
       processUptimeSeconds: Math.floor(process.uptime()),
       memory: {
         rssBytes: memory.rss,

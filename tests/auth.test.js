@@ -58,7 +58,7 @@ test("auth: login, /me, logout", async (t) => {
     const result = await pool
       .request()
       .input("userId", sql.Int, owner.id)
-      .query("SELECT TOP 1 action FROM dbo.AuditLogs WHERE user_id = @userId AND action = 'login'");
+      .query("SELECT action FROM dbo.AuditLogs WHERE user_id = @userId AND action = 'login' LIMIT 1");
     assert.equal(result.recordset.length, 1);
   });
 

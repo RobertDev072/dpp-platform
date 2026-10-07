@@ -1,3 +1,8 @@
 node_modules/
 .env
-web/.next/build-info.json
+.env*.local
+.next/
+.vercel/
+web/.next/
+# Uitvoer van scripts/issue-temp-passwords.js (bevat tijdelijke wachtwoorden)
+temp-passwords-*.csv

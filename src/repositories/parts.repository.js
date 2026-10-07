@@ -26,9 +26,8 @@ async function createPart({ productId, companyId, partNumber, name, description,
     .input("imageUrl", sql.NVarChar(1000), imageUrl ?? null)
     .query(`
       INSERT INTO dbo.ProductParts (product_id, company_id, part_number, name, description, image_url)
-      OUTPUT INSERTED.id, INSERTED.product_id, INSERTED.company_id, INSERTED.part_number,
-             INSERTED.name, INSERTED.description, INSERTED.image_url, INSERTED.created_at
       VALUES (@productId, @companyId, @partNumber, @name, @description, @imageUrl)
+      RETURNING id, product_id, company_id, part_number, name, description, image_url, created_at
     `);
   return result.recordset[0];
 }
@@ -40,8 +39,8 @@ async function deletePart(id) {
     .input("id", sql.Int, id)
     .query(`
       DELETE FROM dbo.ProductParts
-      OUTPUT DELETED.id
       WHERE id = @id
+      RETURNING id
     `);
   return result.recordset[0] || null;
 }

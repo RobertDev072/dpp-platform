@@ -269,8 +269,26 @@ async function pollPasswordResetCompletion({ continuationToken }) {
   return { status: result.status, continuationToken: result.continuation_token };
 }
 
+// Overgangsfase (zie config/entra.js): klopt dit wachtwoord bij Entra? MFA_REQUIRED
+// komt pas ná een correct wachtwoord, dus telt ook als "klopt". Overige
+// NativeAuthErrors (onbekend account, fout wachtwoord, reset vereist) worden
+// doorgegooid zodat de aanroeper ze netjes kan vertalen.
+async function verifyPassword({ email, password }) {
+  try {
+    const { continuationToken } = await startPasswordSignIn({ email });
+    await submitPassword({ continuationToken, password });
+  } catch (err) {
+    if (err instanceof NativeAuthError && err.code === "MFA_REQUIRED") {
+      return true;
+    }
+    throw err;
+  }
+  return true;
+}
+
 module.exports = {
   NativeAuthError,
+  verifyPassword,
   startPasswordSignIn,
   submitPassword,
   listMfaMethods,

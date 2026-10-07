@@ -29,9 +29,8 @@ async function createInvite({ companyId, email, firstName, lastName, invitedBy }
     .query(`
       INSERT INTO dbo.CompanyAdminInvites
         (company_id, email, first_name, last_name, token_hash, invited_by, expires_at)
-      OUTPUT INSERTED.id, INSERTED.company_id, INSERTED.email, INSERTED.first_name,
-             INSERTED.last_name, INSERTED.status, INSERTED.expires_at, INSERTED.created_at
       VALUES (@companyId, @email, @firstName, @lastName, @tokenHash, @invitedBy, @expiresAt)
+      RETURNING id, company_id, email, first_name, last_name, status, expires_at, created_at
     `);
 
   return { invite: result.recordset[0], token };
@@ -105,9 +104,9 @@ async function markInviteAccepted(id) {
     .input("id", sql.Int, id)
     .query(`
       UPDATE dbo.CompanyAdminInvites
-      SET status = 'accepted', accepted_at = SYSUTCDATETIME()
-      OUTPUT INSERTED.id
+      SET status = 'accepted', accepted_at = now()
       WHERE id = @id AND status = 'pending'
+      RETURNING id
     `);
   return result.recordset[0] || null;
 }
@@ -120,8 +119,8 @@ async function revokeInvite(id) {
     .query(`
       UPDATE dbo.CompanyAdminInvites
       SET status = 'revoked'
-      OUTPUT INSERTED.id, INSERTED.company_id, INSERTED.email, INSERTED.status
       WHERE id = @id AND status = 'pending'
+      RETURNING id, company_id, email, status
     `);
   return result.recordset[0] || null;
 }
@@ -130,7 +129,7 @@ async function countPendingInvites() {
   const pool = await getPool();
   const result = await pool
     .request()
-    .query("SELECT COUNT(*) AS n FROM dbo.CompanyAdminInvites WHERE status = 'pending' AND expires_at > SYSUTCDATETIME()");
+    .query("SELECT COUNT(*) AS n FROM dbo.CompanyAdminInvites WHERE status = 'pending' AND expires_at > now()");
   return result.recordset[0].n;
 }
 

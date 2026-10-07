@@ -1,6 +1,6 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
-const { downloadProductPhoto, downloadProductDocument } = require("../services/blobStorage.service");
+const { getProductPhotoUrl, getProductDocumentUrl } = require("../services/blobStorage.service");
 const sustainabilityRepo = require("../repositories/sustainability.repository");
 const complianceRepo = require("../repositories/compliance.repository");
 const partsRepo = require("../repositories/parts.repository");
@@ -49,7 +49,7 @@ router.get("/:publicId", async (req, res, next) => {
     }
 
     // sustainability.materials en compliance.applicable_regulations komen als rauwe
-    // JSON-strings uit de database (NVARCHAR(MAX)) - hier veilig parsen zodat de
+    // JSON-strings uit de database (text) - hier veilig parsen zodat de
     // frontend altijd een echte array krijgt, nooit een string om per ongeluk over
     // te itereren.
     if (sustainability && typeof sustainability.materials === "string") {
@@ -77,8 +77,8 @@ router.get("/:publicId", async (req, res, next) => {
       description: product.description,
       manufacturer: product.manufacturer,
       countryOfOrigin: product.country_of_origin,
-      // Stabiele, eigen link i.p.v. de rauwe photo_url/blobnaam: bij een upload streamt dit
-      // media-endpoint de prive blob zelf door (Managed Identity), bij een geplakte externe
+      // Stabiele, eigen link i.p.v. de rauwe photo_url/objectnaam: bij een upload verwijst dit
+      // media-endpoint door naar een kortlevende signed URL van de privé-bucket, bij een geplakte externe
       // URL redirect dezelfde route er gewoon naartoe. De frontend hoeft dat onderscheid
       // niet te kennen.
       photoUrl: product.photo_blob_name || product.photo_url
@@ -94,7 +94,7 @@ router.get("/:publicId", async (req, res, next) => {
       compliance,
       parts,
       // Whitelist + stabiele downloadlink: geüploade documenten worden via ons eigen
-      // publieke endpoint gestreamd (blobs zijn nooit rechtstreeks bereikbaar).
+      // publieke endpoint ontsloten (objecten in de privé-bucket zijn nooit rechtstreeks bereikbaar).
       documents: documents.map((d) => ({
         id: d.id,
         title: d.title,
@@ -114,10 +114,10 @@ router.get("/:publicId", async (req, res, next) => {
 
 // Publiek, maar alleen bereikbaar met de public_id van een gepubliceerd product (dezelfde
 // voorwaarde als hierboven) - geen enkele blob is rechtstreeks van buitenaf te raden of te
-// benaderen, dit media-endpoint haalt de bytes zelf op (Managed Identity) en streamt ze
-// door. Elke blobnaam is een unieke, onveranderlijke upload, dus mag lang gecachet worden.
+// benaderen; dit media-endpoint controleert de voorwaarden en verwijst dan door naar een
+// signed URL die maar een paar minuten geldig is.
 // Publiek document van een gepubliceerd product: alleen is_public-documenten,
-// gestreamd via de server (zelfde principe als de foto hieronder).
+// via een kortlevende signed URL (zelfde principe als de foto hieronder).
 router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
   try {
     const product = await productsRepo.getProductByPublicId(req.params.publicId);
@@ -132,12 +132,9 @@ router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
     }
 
     if (document.blob_name) {
-      const { stream, contentType, contentLength } = await downloadProductDocument(document.blob_name);
-      res.set("Content-Type", contentType || document.mime_type || "application/octet-stream");
-      if (contentLength) res.set("Content-Length", String(contentLength));
-      res.set("Cache-Control", "public, max-age=86400, immutable");
-      stream.on("error", () => res.destroy());
-      stream.pipe(res);
+      // Kortlevende signed URL (minuten); de doorverwijzing zelf maar kort cachen.
+      res.set("Cache-Control", "public, max-age=60");
+      res.redirect(302, await getProductDocumentUrl(document.blob_name));
       return;
     }
     if (document.storage_url) {
@@ -159,14 +156,8 @@ router.get("/:publicId/photo", async (req, res, next) => {
     }
 
     if (product.photo_blob_name) {
-      const { stream, contentType, contentLength } = await downloadProductPhoto(
-        product.photo_blob_name
-      );
-      res.set("Content-Type", contentType || "application/octet-stream");
-      if (contentLength) res.set("Content-Length", String(contentLength));
-      res.set("Cache-Control", "public, max-age=86400, immutable");
-      stream.on("error", () => res.destroy());
-      stream.pipe(res);
+      res.set("Cache-Control", "public, max-age=60");
+      res.redirect(302, await getProductPhotoUrl(product.photo_blob_name));
       return;
     }
 

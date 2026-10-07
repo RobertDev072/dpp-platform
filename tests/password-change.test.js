@@ -20,7 +20,7 @@ test("gedwongen wachtwoordwijziging: login blokkeert tot een nieuw wachtwoord is
   await pool
     .request()
     .input("id", sql.Int, user.id)
-    .query("UPDATE dbo.Users SET must_change_password = 1 WHERE id = @id");
+    .query("UPDATE dbo.Users SET must_change_password = true WHERE id = @id");
 
   t.after(async () => {
     await cleanupTestData({ companyIds: [companyId], userIds: [user.id] });

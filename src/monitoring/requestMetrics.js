@@ -1,6 +1,6 @@
 // In-memory request-telemetrie. Doel: performance-inzicht zonder externe (betaalde)
 // telemetriedienst en zonder de app zelf te vertragen: elke request kost hier alleen
-// een paar teller-ophogingen. Persistentie gebeurt één keer per uur (scheduler.js)
+// een paar teller-ophogingen. Persistentie gebeurt elke paar minuten (scheduler.js)
 // naar SystemRequestMetricsHourly; bij een herstart gaat hooguit het lopende uur
 // aan detail verloren (bewuste, goedkope keuze).
 //
@@ -26,6 +26,12 @@ const minuteBuckets = new Map(); // epochMinute -> { count, err4, err5, durSum }
 
 // Per-route-aggregatie voor het lopende uur (geflusht door de scheduler).
 let hourRoutes = new Map(); // key scope|method|route -> aggregaat
+// Het uur (epoch-uur) waarin de huidige aggregaten zijn begonnen.
+let hourRoutesBucket = null;
+
+function currentEpochHour() {
+  return Math.floor(Date.now() / 3600000);
+}
 
 // Recente fouten (ring). Alleen gesaneerde meldingen, nooit bodies/headers.
 const recentErrors = [];
@@ -85,6 +91,7 @@ function record({ scope, method, path, status, durationMs, errorMessage, errorCo
   mb.durSum += dur;
 
   // Route-aggregaat (lopend uur)
+  if (hourRoutes.size === 0) hourRoutesBucket = currentEpochHour();
   let key = `${scope}|${method}|${route}`;
   if (!hourRoutes.has(key) && hourRoutes.size >= MAX_ROUTE_KEYS) {
     key = `${scope}|${method}|_overig`;
@@ -211,9 +218,16 @@ function getMinuteSeries(minutes) {
   return series;
 }
 
+// Is er een nieuw uur begonnen sinds de huidige aggregaten startten?
+function hourChanged() {
+  return hourRoutes.size > 0 && hourRoutesBucket !== currentEpochHour();
+}
+
 // Flush: lopende uur-aggregaten omzetten naar rijen voor SystemRequestMetricsHourly
-// en de teller resetten. De scheduler bepaalt wanneer.
+// en de teller resetten. De scheduler bepaalt wanneer. bucketStart = begin van het
+// uur waarin deze aggregaten zijn begonnen.
 function drainHourRoutes() {
+  const bucketStart = new Date((hourRoutesBucket ?? currentEpochHour()) * 3600000);
   const drained = [...hourRoutes.values()].map((a) => ({
     scope: a.scope,
     method: a.method,
@@ -228,7 +242,8 @@ function drainHourRoutes() {
     p99Ms: percentileFromBins(a.bins, a.count, 99)
   }));
   hourRoutes = new Map();
-  return drained;
+  hourRoutesBucket = null;
+  return { rows: drained, bucketStart };
 }
 
 module.exports = {
@@ -238,5 +253,6 @@ module.exports = {
   getLiveSnapshot,
   getMinuteSeries,
   drainHourRoutes,
+  hourChanged,
   HIST_BINS
 };

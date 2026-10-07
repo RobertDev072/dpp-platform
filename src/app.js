@@ -14,19 +14,24 @@ const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
 
-// Azure App Service termineert TLS vóór onze Node-server; zonder deze instelling is
-// req.protocol "http" (verkeerde QR-/activatielinks) en req.ip het proxy-adres
-// (waardoor rate-limiting per bezoeker niet zou werken).
+// Vercel termineert TLS vóór onze functie; zonder deze instelling is req.protocol
+// "http" (verkeerde QR-/activatielinks) en req.ip het proxy-adres (waardoor
+// rate-limiting per bezoeker niet zou werken).
 app.set("trust proxy", 1);
 
-// Publieke healthcheck voor Azure (App Service Health check-feature): bewust
-// alleen "OK", geen enkel infrastructuurdetail. Gedetailleerde health zit
-// owner-only achter /api/admin/system/health.
+// Publieke healthcheck (voor een externe uptime-monitor): bewust alleen "OK", geen
+// enkel infrastructuurdetail. Gedetailleerde health zit owner-only achter
+// /api/admin/system/health.
 app.get("/api/health", (req, res) => res.status(200).send("OK"));
+
+// Dagelijks onderhoud via Vercel Cron (zie vercel.json); vóór de telemetrie zodat
+// de cron-aanroep zelf het verkeer niet vertekent.
+app.use("/api/cron", require("./routes/cron.routes"));
 
 // Request-telemetrie (monitoring): alleen tellers en duur, nooit bodies/headers/
 // query strings. Route wordt tot een patroon genormaliseerd (id's/tokens eruit).
 const requestMetrics = require("./monitoring/requestMetrics");
+const scheduler = require("./monitoring/scheduler");
 app.use((req, res, next) => {
   if (req.path === "/api/health") {
     next();
@@ -35,7 +40,9 @@ app.use((req, res, next) => {
   const start = process.hrtime.bigint();
   res.on("finish", () => {
     requestMetrics.record({
-      scope: "api",
+      // De publieke paspoortpagina (/p/:id) haalt zijn data via deze API op; zo
+      // blijft "publiek" als eigen scope zichtbaar in de monitoring.
+      scope: req.path.startsWith("/api/public/") ? "public" : "api",
       method: req.method,
       path: req.originalUrl,
       status: res.statusCode,
@@ -43,6 +50,7 @@ app.use((req, res, next) => {
       errorMessage: res.locals.monitoringErrorMessage,
       errorCode: res.locals.monitoringErrorCode
     });
+    scheduler.afterRequest();
   });
   next();
 });

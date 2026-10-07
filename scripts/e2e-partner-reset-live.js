@@ -1,15 +1,14 @@
 // Live E2E-test van de partner-wachtwoordreset, uitsluitend met tijdelijke
-// testaccounts (@example.com) die na afloop volledig worden opgeruimd (DB + Entra).
+// testaccounts (@example.com) die na afloop volledig worden opgeruimd (DB).
 // Flow: partner (lokaal bcrypt-testaccount) -> klant aanmaken -> invite -> activatie
-// (maakt echt Entra-account) -> reset #1 -> gedwongen wijziging -> login -> reset #2
+// (admin kiest wachtwoord) -> reset #1 -> gedwongen wijziging -> login -> reset #2
 // -> sessie ingetrokken -> gedwongen wijziging -> login. Draaien met:
 //   NODE_EXTRA_CA_CERTS=... node scripts/e2e-partner-reset-live.js
 
 const { getPool, sql } = require("../src/config/db");
 const { createTestCompany, createTestUser, cleanupTestData } = require("../tests/helpers/fixtures");
-const graphClient = require("../src/services/graphClient");
 
-const BASE = process.env.LIVE_BASE_URL || "https://dpp-platform-dev-h2dag0asawh9eyhg.centralus-01.azurewebsites.net";
+const BASE = process.env.LIVE_BASE_URL || "https://app.veripasso.com";
 
 const results = [];
 function report(step, ok, detail) {
@@ -58,7 +57,6 @@ async function loginWithRetry(email, password, { attempts = 3, waitMs = 45000 } 
 (async () => {
   const pool = await getPool();
   const cleanup = { companyIds: [], userIds: [] };
-  let entraObjectId = null;
   let adminEmail = null;
 
   try {
@@ -99,7 +97,7 @@ async function loginWithRetry(email, password, { attempts = 3, waitMs = 45000 } 
     report("Nieuwe code live (adminlijst-route antwoordt 200)", live);
     if (!live) throw new Error("Deploy niet live binnen de wachttijd");
 
-    // --- Invite + activatie (maakt een echt Entra-account) ---
+    // --- Invite + activatie (nieuwe admin kiest zelf een wachtwoord) ---
     adminEmail = `e2e-reset-admin-${Date.now()}@example.com`;
     const invite = await api("POST", `/api/partner/customers/${klantId}/invites`, {
       cookie: partnerCookie,
@@ -108,13 +106,12 @@ async function loginWithRetry(email, password, { attempts = 3, waitMs = 45000 } 
     report("Partner verstuurt eerste-admin-uitnodiging", invite.status === 201, `status ${invite.status}`);
     const token = invite.data.activationUrl.split("token=")[1];
 
-    const accept = await api("POST", `/api/invites/${token}/accept`, { body: {} });
-    report("Uitnodiging geactiveerd (Entra-account aangemaakt)", accept.status === 201, `status ${accept.status}`);
+    const accept = await api("POST", `/api/invites/${token}/accept`, { body: { password: `E2e-${Date.now()}-Wachtwoord!` } });
+    report("Uitnodiging geactiveerd", accept.status === 201, `status ${accept.status}`);
 
     const adminRow = await pool.request().input("email", sql.NVarChar(256), adminEmail)
-      .query("SELECT id, entra_object_id FROM dbo.Users WHERE email = @email");
+      .query("SELECT id FROM dbo.Users WHERE lower(email) = lower(@email)");
     const adminId = adminRow.recordset[0].id;
-    entraObjectId = adminRow.recordset[0].entra_object_id;
     cleanup.userIds.push(adminId);
 
     // --- Reset #1: eerste bruikbare wachtwoord voor de nieuwe admin ---
@@ -168,15 +165,7 @@ async function loginWithRetry(email, password, { attempts = 3, waitMs = 45000 } 
   } catch (error) {
     report("Onverwachte fout", false, error.message);
   } finally {
-    // --- Opruimen: Entra eerst, dan DB (invites/audit/sessies gaan mee via fixtures) ---
-    try {
-      if (entraObjectId) {
-        await graphClient.deleteEntraUser(entraObjectId);
-        report("Cleanup: Entra-testaccount verwijderd", true, adminEmail);
-      }
-    } catch (error) {
-      report("Cleanup: Entra-testaccount verwijderd", false, error.message);
-    }
+    // --- Opruimen (invites/audit/sessies gaan mee via fixtures) ---
     try {
       await cleanupTestData(cleanup);
       report("Cleanup: alle test-DB-rijen verwijderd", true, `bedrijven ${cleanup.companyIds.join(",")}`);

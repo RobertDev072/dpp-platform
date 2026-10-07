@@ -1,61 +1,63 @@
-// Monitoring-scheduler: draait in het app-proces zelf (geen extra Azure-resources,
-// geen kosten). Twee taken:
-// 1. Uurlijks: in-memory request-telemetrie wegschrijven naar SystemRequestMetricsHourly.
-// 2. Dagelijks (zodra de laatste snapshot > 22 uur oud is): volledige metrics-snapshot
-//    (DB-grootte, tabellen, tellingen, blob-opslag) + opschoning van oude data.
-// Wordt uitsluitend gestart vanuit server.js - tests en scripts starten dus nooit
-// per ongeluk timers of extra snapshots.
+// Monitoring-onderhoud op Vercel (serverless: geen langlopend proces, dus geen
+// setInterval-timers). Twee mechanismen, beide zonder extra diensten of kosten:
+// 1. Telemetrie wegschrijven: na een request kijkt afterRequest() of de in-memory
+//    aggregaten van deze instance "rijp" zijn (elke paar minuten, of zodra er een
+//    nieuw uur is begonnen) en schrijft ze dan op de achtergrond weg (waitUntil).
+//    Elke instance schrijft zijn eigen deel; de leesqueries tellen dat op.
+// 2. Dagelijks onderhoud: Vercel Cron roept /api/cron/daily aan (zie vercel.json en
+//    routes/cron.routes.js) voor de metrics-snapshot en het opschonen van oude data.
 
 const { SCHEDULE } = require("../config/monitoring");
 const requestMetrics = require("./requestMetrics");
 const collectors = require("./collectors");
 
-let started = false;
+let lastFlushAt = Date.now();
+let flushing = false;
 
 async function flushHourly() {
   try {
-    const rows = requestMetrics.drainHourRoutes();
+    const { rows, bucketStart } = requestMetrics.drainHourRoutes();
     if (!rows.length) return;
-    // Bucket = het uur dat zojuist is afgesloten.
-    const bucketStart = new Date();
-    bucketStart.setUTCMinutes(0, 0, 0);
-    bucketStart.setUTCHours(bucketStart.getUTCHours() - 1);
     await collectors.persistHourlyMetrics(rows, bucketStart);
   } catch (error) {
-    console.error("Monitoring: uurflush mislukt (telemetrie gaat verder):", error.message);
+    console.error("Monitoring: telemetrie wegschrijven mislukt (telemetrie gaat verder):", error.message);
   }
+}
+
+function keepAliveUntilDone(promise) {
+  try {
+    require("@vercel/functions").waitUntil(promise);
+  } catch {
+    // Buiten Vercel (lokaal/tests) loopt de promise gewoon door in het proces.
+  }
+}
+
+function afterRequest() {
+  if (flushing) return;
+  const due = Date.now() - lastFlushAt >= SCHEDULE.flushIntervalMs || requestMetrics.hourChanged();
+  if (!due) return;
+  flushing = true;
+  const done = flushHourly().finally(() => {
+    flushing = false;
+    lastFlushAt = Date.now();
+  });
+  keepAliveUntilDone(done);
 }
 
 async function maybeSnapshot() {
-  try {
-    const ageHours = await collectors.getLastSnapshotAgeHours();
-    if (ageHours != null && ageHours < SCHEDULE.snapshotMinAgeHours) return;
-    await collectors.takeSnapshot();
-    await collectors.pruneOldMetrics(SCHEDULE);
-    console.log("Monitoring: dagelijkse metrics-snapshot vastgelegd.");
-  } catch (error) {
-    console.error("Monitoring: snapshot mislukt (volgende poging over een uur):", error.message);
-  }
+  const ageHours = await collectors.getLastSnapshotAgeHours();
+  if (ageHours != null && ageHours < SCHEDULE.snapshotMinAgeHours) return false;
+  await collectors.takeSnapshot();
+  return true;
 }
 
-function start() {
-  if (started) return;
-  started = true;
-
-  // Uurflush, gealigneerd op hele uren zodat de buckets netjes aansluiten.
-  const msToNextHour = 3600000 - (Date.now() % 3600000);
-  setTimeout(() => {
-    flushHourly();
-    setInterval(flushHourly, SCHEDULE.flushIntervalMs).unref();
-  }, msToNextHour).unref();
-
-  // Snapshot-check: bij het opstarten (na korte vertraging, zodat de app eerst
-  // gewoon opstart) en daarna elk uur. De leeftijdscheck voorkomt dubbele
-  // snapshots bij herstarts.
-  setTimeout(maybeSnapshot, 90 * 1000).unref();
-  setInterval(maybeSnapshot, SCHEDULE.snapshotCheckIntervalMs).unref();
-
-  console.log("Monitoring-scheduler actief (uurflush + dagelijkse snapshot).");
+// Aangeroepen door de dagelijkse cron. De leeftijdscheck voorkomt dubbele snapshots
+// (bijv. als de cron opnieuw wordt geprobeerd of iemand net "Nu meten" deed).
+async function runDailyMaintenance() {
+  await flushHourly();
+  const snapshotTaken = await maybeSnapshot();
+  await collectors.pruneOldMetrics(SCHEDULE);
+  return { snapshotTaken };
 }
 
-module.exports = { start, flushHourly, maybeSnapshot };
+module.exports = { afterRequest, flushHourly, maybeSnapshot, runDailyMaintenance };

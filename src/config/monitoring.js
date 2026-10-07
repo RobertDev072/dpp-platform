@@ -18,15 +18,15 @@ const THRESHOLDS = {
   // Waarschuwing wanneer de capaciteitsgrens naar verwachting binnen X dagen valt.
   capacityForecastWarnDays: 90,
   // Geheugen (heapUsed/heapTotal-onafhankelijk): % van totaal beschikbaar RSS-budget
-  // op een B1 (1,75 GB); indicatief.
+  // van een Vercel-functie (standaard 2 GB); indicatief.
   memoryRssPct: { warn: 70, crit: 85 }
 };
 
-// Verzamelcadans. Uurflush houdt de in-memory telemetrie klein; de dagelijkse
-// snapshot doet de zwaardere metingen (tabelgroottes, blob-enumeratie) één keer.
+// Verzamelcadans. Serverless-instances leven kort, dus telemetrie wordt elke paar
+// minuten weggeschreven; de dagelijkse snapshot (Vercel Cron) doet de zwaardere
+// metingen (tabelgroottes, opslagverdeling) één keer.
 const SCHEDULE = {
-  flushIntervalMs: 60 * 60 * 1000,
-  snapshotCheckIntervalMs: 60 * 60 * 1000,
+  flushIntervalMs: 5 * 60 * 1000,
   snapshotMinAgeHours: 22,
   hourlyRetentionDays: 90,
   snapshotRetentionDays: 400,

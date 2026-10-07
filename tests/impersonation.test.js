@@ -89,10 +89,11 @@ test("impersonatie: volledige start/stop-cyclus met audit-logging", async (t) =>
       .request()
       .input("targetId", sql.NVarChar(50), String(admin.id))
       .query(`
-        SELECT TOP 1 user_id, impersonator_user_id, action
+        SELECT user_id, impersonator_user_id, action
         FROM dbo.AuditLogs
         WHERE action = 'impersonate_start' AND entity_type = 'User' AND entity_id = @targetId
         ORDER BY id DESC
+        LIMIT 1
       `);
     assert.equal(rows.recordset.length, 1);
     assert.equal(rows.recordset[0].user_id, owner.id);

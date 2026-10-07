@@ -1,13 +1,13 @@
 // Fase 7-productietest van het monitoringdashboard, uitsluitend met tijdelijke
 // testaccounts (opgeruimd na afloop). Controleert live: deploy geland, publieke
 // health kaal, alle owner-endpoints 200 zonder gevoelige sleutels, snapshot met
-// echte blob-meting (Managed Identity), en de volledige autorisatiematrix.
+// echte opslagmeting (Supabase Storage), en de volledige autorisatiematrix.
 //   NODE_EXTRA_CA_CERTS=... node scripts/e2e-monitoring-live.js
 
 const { getPool, sql } = require("../src/config/db");
 const { createTestCompany, createTestUser, cleanupTestData } = require("../tests/helpers/fixtures");
 
-const BASE = process.env.LIVE_BASE_URL || "https://dpp-platform-dev-h2dag0asawh9eyhg.centralus-01.azurewebsites.net";
+const BASE = process.env.LIVE_BASE_URL || "https://app.veripasso.com";
 
 const results = [];
 function report(step, ok, detail) {
@@ -101,14 +101,14 @@ function hasSensitiveKeys(value) {
     report("Alle 9 monitoring-endpoints geven 200 voor de owner", allOk);
     report("Geen gevoelige sleutels in enige monitoringrespons", !sensitive);
 
-    // --- Handmatige snapshot op Azure (met Managed Identity => echte blob-meting) ---
+    // --- Handmatige snapshot op productie (echte meting van Supabase Storage) ---
     const snap = await api("POST", "/api/admin/system/snapshot", { cookie });
     report("Handmatige snapshot op productie geslaagd", snap.status === 201, `status ${snap.status}`);
 
     const storage = await api("GET", "/api/admin/system/storage", { cookie });
     const blobOk = storage.data?.blob?.available === true;
     report(
-      "Blob Storage daadwerkelijk gemeten (Managed Identity)",
+      "Supabase Storage daadwerkelijk gemeten",
       blobOk,
       blobOk ? `${storage.data.blob.totalCount} blobs, ${storage.data.blob.totalBytes} bytes` : JSON.stringify(storage.data?.blob)
     );

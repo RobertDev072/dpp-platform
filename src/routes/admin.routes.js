@@ -176,13 +176,20 @@ router.get("/licenses/overview", requireAuth, requireRole(...PLATFORM_OWNER_ROLE
   }
 });
 
-// Diagnose voor de Platform Owner: welke Entra-configuratie draait er op deze
-// omgeving. Alleen niet-geheime identifiers (tenant/client-id's); secrets worden
-// uitsluitend als aanwezig/afwezig gerapporteerd.
+// Diagnose voor de Platform Owner: welke configuratie draait er op deze omgeving.
+// Alleen niet-geheime waarden; secrets worden uitsluitend als aanwezig/afwezig
+// gerapporteerd.
 router.get("/config-status", requireAuth, requireRole(...PLATFORM_OWNER_ROLES), (req, res) => {
   const { getEntraConfigDiagnostics } = require("../config/entra");
+  const { isStorageConfigured, SUPABASE_URL } = require("../config/storage");
   res.json({
     entra: getEntraConfigDiagnostics(),
+    supabase: {
+      databaseUrlSet: Boolean(process.env.DATABASE_URL),
+      storageConfigured: isStorageConfigured(),
+      projectUrl: SUPABASE_URL || null,
+      serviceRoleKeySet: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
+    },
     appBaseUrl: process.env.APP_BASE_URL || null,
     qrBaseUrl: process.env.QR_BASE_URL || null
   });

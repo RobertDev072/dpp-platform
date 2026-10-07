@@ -8,8 +8,8 @@ const USER_STATUSES = ["active", "blocked", "suspended", "archived", "deleted"];
 const createUserSchema = z.object({
   companyId: z.number().int().positive().nullable().optional(),
   email: z.string().email(),
-  // Alleen gebruikt/verplicht in legacy (niet-Entra) modus — zie users.routes.js.
-  // Zodra Entra is geconfigureerd genereert de backend zelf een tijdelijk wachtwoord.
+  // Optioneel: zonder wachtwoord genereert de backend een tijdelijk wachtwoord
+  // (zie users.routes.js).
   password: z.string().min(12, "Wachtwoord moet minimaal 12 tekens zijn").optional(),
   firstName: z.string().max(100).optional(),
   lastName: z.string().max(100).optional(),

@@ -24,12 +24,12 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
   // Twee plannen: één dat partners mogen toewijzen, één intern.
   const planResult = await pool.request().query(`
     INSERT INTO dbo.Plans (name, max_users, max_products, partner_assignable)
-    OUTPUT INSERTED.id VALUES ('Test Partnerplan', 3, 5, 1)
+    VALUES ('Test Partnerplan', 3, 5, true) RETURNING id
   `);
   const partnerPlanId = planResult.recordset[0].id;
   const internResult = await pool.request().query(`
     INSERT INTO dbo.Plans (name, max_users, max_products, partner_assignable)
-    OUTPUT INSERTED.id VALUES ('Test Intern Plan', 3, 5, 0)
+    VALUES ('Test Intern Plan', 3, 5, false) RETURNING id
   `);
   const internPlanId = internResult.recordset[0].id;
 

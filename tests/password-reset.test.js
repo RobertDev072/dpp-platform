@@ -4,6 +4,12 @@ const assert = require("node:assert/strict");
 const crypto = require("crypto");
 const { sql } = require("../src/config/db");
 const { startTestServer, stopTestServer, request } = require("./helpers/testServer");
+const { isLegacyEntraConfigured } = require("../src/config/entra");
+
+// Zelfservice-herstel bestaat alleen tijdens de Entra-overgangsfase (zie
+// src/config/entra.js). Zonder die configuratie draaien de Entra-tests niet en
+// geldt de "niet beschikbaar"-test onderaan.
+const legacyOnly = { skip: !isLegacyEntraConfigured() && "Entra-overgangslogin niet geconfigureerd" };
 
 // ---------------------------------------------------------------------------------
 // Kanttekening voor de reviewer:
@@ -23,7 +29,7 @@ const { startTestServer, stopTestServer, request } = require("./helpers/testServ
 // zelf geen DB-call). sql.close() aan het eind is een no-op-vangnet.
 // ---------------------------------------------------------------------------------
 
-test("password reset: onbekend e-mailadres bij /start lekt niet of het bestaat (200, continuationToken: null)", async (t) => {
+test("password reset: onbekend e-mailadres bij /start lekt niet of het bestaat (200, continuationToken: null)", legacyOnly, async (t) => {
   const { server, baseUrl } = await startTestServer();
   t.after(() => stopTestServer(server));
 
@@ -34,7 +40,7 @@ test("password reset: onbekend e-mailadres bij /start lekt niet of het bestaat (
   assert.equal(res.data.continuationToken, null);
 });
 
-test("password reset: ongeldig e-mailadres in de request body geeft 400 op validatieniveau (geen Entra-call nodig)", async (t) => {
+test("password reset: ongeldig e-mailadres in de request body geeft 400 op validatieniveau (geen Entra-call nodig)", legacyOnly, async (t) => {
   const { server, baseUrl } = await startTestServer();
   t.after(() => stopTestServer(server));
 
@@ -43,7 +49,7 @@ test("password reset: ongeldig e-mailadres in de request body geeft 400 op valid
   assert.equal(res.status, 400);
 });
 
-test("password reset: ontbrekend e-mailveld bij /start geeft 400 op validatieniveau", async (t) => {
+test("password reset: ontbrekend e-mailveld bij /start geeft 400 op validatieniveau", legacyOnly, async (t) => {
   const { server, baseUrl } = await startTestServer();
   t.after(() => stopTestServer(server));
 
@@ -52,7 +58,7 @@ test("password reset: ontbrekend e-mailveld bij /start geeft 400 op validatieniv
   assert.equal(res.status, 400);
 });
 
-test("password reset: ongeldige/verzonnen code + token bij /verify-code geeft een schone 400, geen hang of 500", async (t) => {
+test("password reset: ongeldige/verzonnen code + token bij /verify-code geeft een schone 400, geen hang of 500", legacyOnly, async (t) => {
   const { server, baseUrl } = await startTestServer();
   t.after(() => stopTestServer(server));
 
@@ -68,7 +74,7 @@ test("password reset: ongeldige/verzonnen code + token bij /verify-code geeft ee
   assert.notEqual(res.status, 500);
 });
 
-test("password reset: ontbrekende code bij /verify-code geeft 400 op validatieniveau (geen Entra-call nodig)", async (t) => {
+test("password reset: ontbrekende code bij /verify-code geeft 400 op validatieniveau (geen Entra-call nodig)", legacyOnly, async (t) => {
   const { server, baseUrl } = await startTestServer();
   t.after(() => stopTestServer(server));
 
@@ -82,3 +88,19 @@ test("password reset: ontbrekende code bij /verify-code geeft 400 op validatieni
 after(async () => {
   await sql.close();
 });
+
+test(
+  "password reset: zonder Entra-overgangsfase geeft /start een duidelijke 503 (vraag de beheerder)",
+  { skip: isLegacyEntraConfigured() && "Entra-overgangslogin is geconfigureerd" },
+  async (t) => {
+    const { server, baseUrl } = await startTestServer();
+    t.after(() => stopTestServer(server));
+
+    const res = await request(baseUrl, "POST", "/api/password-reset/start", {
+      body: { email: "iemand@example.com" }
+    });
+
+    assert.equal(res.status, 503);
+    assert.equal(res.data.error.code, "SELF_SERVICE_RESET_UNAVAILABLE");
+  }
+);

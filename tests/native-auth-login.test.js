@@ -57,8 +57,7 @@ async function createEntraManagedUser({ companyId, role, email }) {
     .input("entraObjectId", sql.NVarChar(255), fakeObjectId)
     .query(`
       INSERT INTO dbo.Users (company_id, email, password_hash, entra_object_id, role, status)
-      OUTPUT INSERTED.id
-      VALUES (@companyId, @email, NULL, @entraObjectId, @role, 'active')
+      VALUES (@companyId, @email, NULL, @entraObjectId, @role, 'active') RETURNING id
     `);
   return { id: result.recordset[0].id, email, companyId, role };
 }

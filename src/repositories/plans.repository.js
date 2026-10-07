@@ -49,12 +49,11 @@ async function createPlan({ name, maxUsers, maxProducts, featureFlags, partnerAs
     .input("maxUsers", sql.Int, maxUsers)
     .input("maxProducts", sql.Int, maxProducts)
     .input("featureFlags", sql.NVarChar(sql.MAX), featureFlags ?? null)
-    .input("partnerAssignable", sql.Bit, partnerAssignable === false ? 0 : 1)
+    .input("partnerAssignable", sql.Bit, partnerAssignable !== false)
     .query(`
       INSERT INTO dbo.Plans (name, max_users, max_products, feature_flags, partner_assignable)
-      OUTPUT INSERTED.id, INSERTED.name, INSERTED.max_users, INSERTED.max_products,
-             INSERTED.feature_flags, INSERTED.partner_assignable, INSERTED.created_at, INSERTED.updated_at
       VALUES (@name, @maxUsers, @maxProducts, @featureFlags, @partnerAssignable)
+      RETURNING id, name, max_users, max_products, feature_flags, partner_assignable, created_at, updated_at
     `);
   return result.recordset[0];
 }
@@ -83,7 +82,7 @@ async function updatePlan(id, fields) {
     } else if (field === "featureFlags") {
       request.input(field, sql.NVarChar(sql.MAX), fields[field]);
     } else if (field === "partnerAssignable") {
-      request.input(field, sql.Bit, fields[field] ? 1 : 0);
+      request.input(field, sql.Bit, Boolean(fields[field]));
     } else {
       request.input(field, sql.Int, fields[field]);
     }
@@ -93,14 +92,13 @@ async function updatePlan(id, fields) {
     return getPlanById(id);
   }
 
-  setClauses.push("updated_at = SYSUTCDATETIME()");
+  setClauses.push("updated_at = now()");
 
   const result = await request.query(`
     UPDATE dbo.Plans
     SET ${setClauses.join(", ")}
-    OUTPUT INSERTED.id, INSERTED.name, INSERTED.max_users, INSERTED.max_products,
-           INSERTED.feature_flags, INSERTED.partner_assignable, INSERTED.created_at, INSERTED.updated_at
     WHERE id = @id
+    RETURNING id, name, max_users, max_products, feature_flags, partner_assignable, created_at, updated_at
   `);
 
   return result.recordset[0] || null;
