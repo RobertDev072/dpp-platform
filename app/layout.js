@@ -1,5 +1,6 @@
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 
 export const metadata = {
   title: "DPP Platform",
@@ -10,7 +11,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="nl">
       <body className="bg-slate-50 text-slate-900 antialiased">
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <ConfirmProvider>{children}</ConfirmProvider>
+        </ToastProvider>
       </body>
     </html>
   );

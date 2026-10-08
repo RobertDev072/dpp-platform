@@ -8,7 +8,7 @@ const { createPartSchema } = require("../schemas/parts.schema");
 const { updateSustainabilitySchema } = require("../schemas/sustainability.schema");
 const { updateComplianceSchema } = require("../schemas/compliance.schema");
 const { createBatchSchema } = require("../schemas/batches.schema");
-const { createDocumentSchema } = require("../schemas/documents.schema");
+const { createDocumentSchema, updateDocumentSchema, DOCUMENT_CATEGORIES, isoDate } = require("../schemas/documents.schema");
 const productsRepo = require("../repositories/products.repository");
 const partsRepo = require("../repositories/parts.repository");
 const sustainabilityRepo = require("../repositories/sustainability.repository");
@@ -16,7 +16,7 @@ const complianceRepo = require("../repositories/compliance.repository");
 const batchesRepo = require("../repositories/batches.repository");
 const documentsRepo = require("../repositories/documents.repository");
 const { assertCompanyAccess } = require("../utils/tenant");
-const { logAudit } = require("../utils/auditLog");
+const { logAudit, logAuditFromReq } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const { getPassportUrl } = require("../utils/baseUrl");
 const {
@@ -96,6 +96,30 @@ router.get("/stats", requireRole(...ALL_ROLES), async (req, res, next) => {
   }
 });
 
+// QR-overzicht: aantallen per QR-status, scancijfers en meest gescande producten.
+// Alleen voor het eigen bedrijf.
+router.get("/qr-stats", requireRole("company_admin", "company_user"), async (req, res, next) => {
+  try {
+    const scanEventsRepo = require("../repositories/scanEvents.repository");
+    const companyId = req.user.companyId;
+    const [stats, scans, top] = await Promise.all([
+      productsRepo.getProductStats({ companyId }),
+      scanEventsRepo.getScanSummary(companyId),
+      scanEventsRepo.listTopScannedProducts(companyId, { limit: 5, days: 30 })
+    ]);
+    res.json({
+      total: stats.qrActive + stats.qrReserved,
+      active: stats.qrActive,
+      reserved: stats.qrReserved,
+      withoutQr: stats.total - stats.qrActive - stats.qrReserved,
+      scans,
+      top
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/categories", requireRole(...ALL_ROLES), async (req, res, next) => {
   try {
     const companyId = isPlatformOwner(req.user.role)
@@ -135,7 +159,8 @@ router.post("/", requireRole(...EDITOR_ROLES), validateBody(createProductSchema)
 
 router.get("/:id", requireRole(...ALL_ROLES), async (req, res, next) => {
   try {
-    const product = await productsRepo.getProductById(Number(req.params.id));
+    // Inclusief compleetheid, checklist en QR-status voor de product-editor.
+    const product = await productsRepo.getProductWithChecks(Number(req.params.id));
     if (!product) {
       next(new HttpError(404, "Niet gevonden"));
       return;
@@ -360,6 +385,91 @@ router.post("/:id/publish", requireRole(...EDITOR_ROLES), async (req, res, next)
     });
 
     res.json(published);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// QR-code reserveren zonder te publiceren: de permanente public_id wordt toegekend,
+// zodat labels al gedrukt kunnen worden. Het paspoort blijft niet-openbaar tot
+// "Publiceren". Idempotent: een bestaande public_id wordt nooit vervangen.
+router.post("/:id/qr", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadEditableProduct(req, next);
+    if (!product) return;
+    if (product.public_id) {
+      res.json(product);
+      return;
+    }
+    const updated = await productsRepo.reserveQr(product.id);
+    await logAuditFromReq(req, {
+      companyId: product.company_id,
+      action: "qr_reserve",
+      entityType: "Product",
+      entityId: product.id
+    });
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Dupliceren: basisgegevens + duurzaamheid + compliance. Bewust zonder documenten,
+// foto-upload en QR-code: het duplicaat is een nieuw concept met een eigen identiteit.
+router.post("/:id/duplicate", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const source = await loadEditableProduct(req, next);
+    if (!source) return;
+    await require("../services/license.service").assertCanCreate(req.user.companyId, "product");
+
+    const copy = await productsRepo.createProduct({
+      companyId: source.company_id,
+      createdBy: req.user.id,
+      name: `${source.name} (kopie)`.slice(0, 200),
+      brand: source.brand,
+      model: source.model,
+      // SKU/GTIN zijn identificerend; die horen niet stilzwijgend dubbel te bestaan.
+      sku: null,
+      gtin: null,
+      categoryLabel: source.category_label,
+      description: source.description,
+      manufacturer: source.manufacturer,
+      countryOfOrigin: source.country_of_origin,
+      photoUrl: source.photo_url
+    });
+
+    const [sustainability, compliance] = await Promise.all([
+      sustainabilityRepo.getSustainability(source.id),
+      complianceRepo.getCompliance(source.id)
+    ]);
+    if (sustainability) {
+      await sustainabilityRepo.upsertSustainability(copy.id, {
+        co2FootprintKg: sustainability.co2_footprint_kg,
+        co2ReductionPct: sustainability.co2_reduction_pct,
+        recycledMaterialPct: sustainability.recycled_material_pct,
+        materials: sustainability.materials,
+        epdUrl: sustainability.epd_url,
+        recyclable: sustainability.recyclable,
+        reachConform: sustainability.reach_conform,
+        rohsConform: sustainability.rohs_conform,
+        expectedLifespanYears: sustainability.expected_lifespan_years
+      });
+    }
+    if (compliance) {
+      await complianceRepo.upsertCompliance(copy.id, {
+        ceMarked: compliance.ce_marked,
+        applicableRegulations: compliance.applicable_regulations
+      });
+    }
+
+    await logAuditFromReq(req, {
+      companyId: source.company_id,
+      action: "duplicate",
+      entityType: "Product",
+      entityId: copy.id,
+      metadata: { sourceId: source.id }
+    });
+    res.status(201).json(copy);
   } catch (error) {
     next(error);
   }
@@ -596,7 +706,8 @@ router.post(
       const document = await documentsRepo.createDocument({
         companyId: product.company_id,
         productId: id,
-        ...req.body
+        ...req.body,
+        uploadedBy: req.user.id
       });
 
       await logAudit({
@@ -675,7 +786,13 @@ router.post(
   }
 );
 
-const DOCUMENT_CATEGORIES = ["document", "manual", "video", "3d_model"];
+// Optionele metadata bij een upload (multipart of JSON): ongeldige waarden worden
+// genegeerd i.p.v. de hele upload te laten mislukken.
+function optionalUploadMetadata(body) {
+  const validUntil = isoDate.safeParse(body.validUntil);
+  const version = typeof body.version === "string" ? body.version.trim().slice(0, 30) : "";
+  return { validUntil: validUntil.success ? validUntil.data : null, version: version || null };
+}
 
 async function saveUploadedDocument(req, product, { blobName, fileSize, mimeType }) {
   const isPublic = req.body.isPublic === true || req.body.isPublic === "true" || req.body.isPublic === "1";
@@ -689,7 +806,9 @@ async function saveUploadedDocument(req, product, { blobName, fileSize, mimeType
     fileSize,
     mimeType,
     isPublic,
-    category: DOCUMENT_CATEGORIES.includes(req.body.category) ? req.body.category : "document"
+    category: DOCUMENT_CATEGORIES.includes(req.body.category) ? req.body.category : "document",
+    ...optionalUploadMetadata(req.body),
+    uploadedBy: req.user.id
   });
 
   await logAudit({
@@ -789,7 +908,13 @@ router.delete(
       }
       assertCompanyAccess(req.user, product.company_id);
 
-      const deleted = await documentsRepo.deleteDocument(Number(req.params.documentId));
+      // Alleen documenten van dít product: een document-id van een ander product in
+      // de URL geeft 404 i.p.v. stil andermans document te verwijderen.
+      const deleted = await documentsRepo.deleteDocument(Number(req.params.documentId), id);
+      if (!deleted) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
 
       await logAudit({
         companyId: product.company_id,
@@ -799,7 +924,35 @@ router.delete(
         entityId: req.params.documentId
       });
 
-      res.json(deleted || { id: Number(req.params.documentId) });
+      res.json(deleted);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Metadata van een document wijzigen (titel, openbaar/privé, categorie, geldigheid).
+router.patch(
+  "/:id/documents/:documentId",
+  requireRole(...EDITOR_ROLES),
+  validateBody(updateDocumentSchema),
+  async (req, res, next) => {
+    try {
+      const product = await loadEditableProduct(req, next);
+      if (!product) return;
+      const updated = await documentsRepo.updateDocument(Number(req.params.documentId), product.id, req.body);
+      if (!updated) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+      await logAuditFromReq(req, {
+        companyId: product.company_id,
+        action: "update",
+        entityType: "Document",
+        entityId: updated.id,
+        metadata: { fields: Object.keys(req.body) }
+      });
+      res.json(updated);
     } catch (error) {
       next(error);
     }
@@ -821,9 +974,14 @@ router.get("/:id/qr.png", requireRole(...ALL_ROLES), async (req, res, next) => {
     }
 
     const url = getPassportUrl(req, product.public_id);
-    const buffer = await generateQrPngBuffer(url);
+    // ?size=1200 levert een print-PNG (bijv. 4 cm op 300 DPI ≈ 470 px); standaard 512.
+    const size = Math.min(2400, Math.max(128, Number.parseInt(req.query.size, 10) || 512));
+    const buffer = await generateQrPngBuffer(url, { width: size });
 
     res.set("Content-Type", "image/png");
+    if (req.query.download) {
+      res.attachment(`qr-${qrFileStem(product)}.png`);
+    }
     res.send(buffer);
   } catch (error) {
     next(error);
@@ -848,6 +1006,9 @@ router.get("/:id/qr.svg", requireRole(...ALL_ROLES), async (req, res, next) => {
     const svg = await generateQrSvgString(url);
 
     res.set("Content-Type", "image/svg+xml");
+    if (req.query.download) {
+      res.attachment(`qr-${qrFileStem(product)}.svg`);
+    }
     res.send(svg);
   } catch (error) {
     next(error);
@@ -873,10 +1034,19 @@ router.get("/:id/qr-label.pdf", requireRole(...ALL_ROLES), async (req, res, next
     const pdfBuffer = await generateLabelPdfBuffer({ product, qrPngBuffer });
 
     res.set("Content-Type", "application/pdf");
+    if (req.query.download) {
+      res.attachment(`label-${qrFileStem(product)}.pdf`);
+    }
     res.send(pdfBuffer);
   } catch (error) {
     next(error);
   }
 });
+
+// Bestandsnaam voor downloads: SKU als die er is, anders het product-id.
+function qrFileStem(product) {
+  const base = product.sku || String(product.id);
+  return base.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 60) || String(product.id);
+}
 
 module.exports = router;

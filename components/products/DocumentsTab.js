@@ -13,7 +13,8 @@ import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
 import IconButton, { TrashIcon } from "@/components/ui/IconButton";
 import { useToast } from "@/components/ui/Toast";
-import { DOCUMENT_CATEGORY_OPTIONS, documentCategoryLabel, formatFileSize } from "./documentUtils";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { DOCUMENT_CATEGORY_OPTIONS, documentCategoryLabel, documentValidity, formatFileSize } from "./documentUtils";
 
 // Zelfde whitelist als de backend (products.routes.js): controle vóór de upload
 // voorkomt een zinloze POST van 10 MB die toch een 400 oplevert.
@@ -27,8 +28,9 @@ const ALLOWED_MIME_TYPES = [
 const ACCEPT = ".pdf,image/jpeg,image/png,image/svg+xml,image/webp";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-export default function DocumentsTab({ productId }) {
+export default function DocumentsTab({ productId, onChanged }) {
   const toast = useToast();
+  const confirm = useConfirm();
   // null = nog aan het laden; [] = geladen maar leeg.
   const [documents, setDocuments] = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -39,19 +41,31 @@ export default function DocumentsTab({ productId }) {
     setDocuments(data);
   }, [productId]);
 
+  // Na een wijziging ook de editor laten verversen (compleetheid hangt van documenten af).
+  async function refresh() {
+    await loadDocuments();
+    onChanged?.();
+  }
+
   useEffect(() => {
     loadDocuments().catch((err) => setLoadError(err.message));
   }, [loadDocuments]);
 
   async function handleDelete(documentId) {
-    if (!window.confirm("Weet je zeker dat je dit document wilt verwijderen?")) {
+    const ok = await confirm({
+      title: "Document verwijderen?",
+      message: "Het document verdwijnt van dit product en, als het openbaar was, van het productpaspoort. Dit kan niet ongedaan worden gemaakt.",
+      confirmLabel: "Verwijderen",
+      tone: "danger"
+    });
+    if (!ok) {
       return;
     }
     setDeletingId(documentId);
     try {
       await api.delete(`/api/products/${productId}/documents/${documentId}`);
       toast.success("Document verwijderd");
-      await loadDocuments();
+      await refresh();
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -67,7 +81,7 @@ export default function DocumentsTab({ productId }) {
         productId={productId}
         onUploaded={async () => {
           toast.success("Document geüpload");
-          await loadDocuments();
+          await refresh();
         }}
       />
 
@@ -75,7 +89,7 @@ export default function DocumentsTab({ productId }) {
         productId={productId}
         onCreated={async () => {
           toast.success("Document toegevoegd");
-          await loadDocuments();
+          await refresh();
         }}
       />
 
@@ -98,6 +112,15 @@ export default function DocumentsTab({ productId }) {
             documents={documents}
             deletingId={deletingId}
             onDelete={handleDelete}
+            onTogglePublic={async (doc) => {
+              try {
+                await api.patch(`/api/products/${productId}/documents/${doc.id}`, { isPublic: !doc.is_public });
+                toast.success(doc.is_public ? "Document is nu privé" : "Document staat nu op het paspoort");
+                await refresh();
+              } catch (err) {
+                toast.error(err.message);
+              }
+            }}
           />
         )}
       </Card>
@@ -107,7 +130,7 @@ export default function DocumentsTab({ productId }) {
 
 function UploadCard({ productId, onUploaded }) {
   const form = useForm({
-    initial: { title: "", category: "document", isPublic: false },
+    initial: { title: "", category: "document", isPublic: false, validUntil: "", version: "" },
     validators: {
       title: (value) => (String(value || "").trim() ? null : "Vul een titel in")
     }
@@ -171,7 +194,9 @@ function UploadCard({ productId, onUploaded }) {
       await api.uploadDirect(`/api/products/${productId}/documents`, file, {
         title: form.values.title.trim(),
         category: form.values.category,
-        isPublic: form.values.isPublic
+        isPublic: form.values.isPublic,
+        validUntil: form.values.validUntil || undefined,
+        version: form.values.version.trim() || undefined
       });
 
       form.reset();
@@ -260,6 +285,22 @@ function UploadCard({ productId, onUploaded }) {
             value={form.values.category}
             onChange={(e) => form.setValue("category", e.target.value)}
             error={form.errors.category}
+          />
+          <Field
+            label="Geldig tot"
+            name="validUntil"
+            type="date"
+            help="Voor certificaten en verklaringen: je krijgt een melding vóór de vervaldatum."
+            value={form.values.validUntil}
+            onChange={(e) => form.setValue("validUntil", e.target.value)}
+          />
+          <Field
+            label="Versie"
+            name="version"
+            placeholder="Bijv. 2.1"
+            maxLength={30}
+            value={form.values.version}
+            onChange={(e) => form.setValue("version", e.target.value)}
           />
         </div>
 
@@ -394,7 +435,7 @@ function ExternalLinkCard({ productId, onCreated }) {
   );
 }
 
-function DocumentList({ productId, documents, deletingId, onDelete }) {
+function DocumentList({ productId, documents, deletingId, onDelete, onTogglePublic }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
@@ -403,6 +444,7 @@ function DocumentList({ productId, documents, deletingId, onDelete }) {
             <th className="py-2 pr-3 font-medium">Titel</th>
             <th className="py-2 pr-3 font-medium">Categorie</th>
             <th className="py-2 pr-3 font-medium">Grootte</th>
+            <th className="py-2 pr-3 font-medium">Geldigheid</th>
             <th className="py-2 pr-3 font-medium">Zichtbaarheid</th>
             <th className="py-2 pr-3 font-medium">Toegevoegd</th>
             <th className="py-2 font-medium">
@@ -425,6 +467,7 @@ function DocumentList({ productId, documents, deletingId, onDelete }) {
                       <DocumentTypeIcon doc={doc} />
                     </span>
                     <span className="font-medium text-slate-900">{doc.title}</span>
+                    {doc.version && <span className="text-xs text-slate-500">v{doc.version}</span>}
                   </div>
                 </td>
                 <td className="py-2 pr-3 text-slate-600">
@@ -434,11 +477,26 @@ function DocumentList({ productId, documents, deletingId, onDelete }) {
                   {isUpload ? formatFileSize(doc.file_size) : "—"}
                 </td>
                 <td className="py-2 pr-3">
-                  {doc.is_public ? (
-                    <Badge variant="success">Publiek</Badge>
-                  ) : (
-                    <Badge variant="neutral">Privé</Badge>
-                  )}
+                  {(() => {
+                    const validity = documentValidity(doc.valid_until);
+                    return validity ? (
+                      <span title={`Geldig tot ${formatDate(doc.valid_until)}`}>
+                        <Badge variant={validity.variant}>{validity.label}</Badge>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    );
+                  })()}
+                </td>
+                <td className="py-2 pr-3">
+                  <button
+                    type="button"
+                    onClick={() => onTogglePublic(doc)}
+                    title={doc.is_public ? "Klik om privé te maken" : "Klik om op het paspoort te tonen"}
+                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                  >
+                    {doc.is_public ? <Badge variant="success">Publiek</Badge> : <Badge variant="neutral">Privé</Badge>}
+                  </button>
                 </td>
                 <td className="py-2 pr-3 text-slate-600">{formatDate(doc.created_at)}</td>
                 <td className="py-2">

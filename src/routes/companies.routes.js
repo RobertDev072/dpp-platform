@@ -73,6 +73,57 @@ router.get("/:id", async (req, res, next) => {
   }
 });
 
+// Customer 360: alles over één klantbedrijf in één request (alleen Platform Owner,
+// zie router.use hierboven). Uitsluitend bestaande data; geen facturatie/omzet,
+// want die gegevens bestaan niet in het systeem.
+router.get("/:id/overview", async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const company = Number.isInteger(id) ? await companiesRepo.getCompanyById(id) : null;
+    if (!company) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    const productsRepo = require("../repositories/products.repository");
+    const documentsRepo = require("../repositories/documents.repository");
+    const scanEventsRepo = require("../repositories/scanEvents.repository");
+    const importsRepo = require("../repositories/imports.repository");
+    const usersRepo = require("../repositories/users.repository");
+    const plansRepo = require("../repositories/plans.repository");
+    const { listAuditLogs } = require("../repositories/auditLogs.repository");
+    const { getLicenseUsage } = require("../services/license.service");
+    const { buildOnboarding } = require("../services/insights.service");
+
+    const [plan, partner, license, users, stats, scans, documents, imports, activity] = await Promise.all([
+      company.plan_id ? plansRepo.getPlanById(company.plan_id) : null,
+      company.partner_id ? companiesRepo.getCompanyById(company.partner_id) : null,
+      getLicenseUsage(id),
+      usersRepo.listUsers({ companyId: id }),
+      productsRepo.getProductStats({ companyId: id }),
+      scanEventsRepo.getScanSummary(id),
+      documentsRepo.getDocumentStats(id),
+      importsRepo.listImports(id, { page: 1, pageSize: 10 }),
+      listAuditLogs({ companyId: id, page: 1, pageSize: 15 })
+    ]);
+
+    const { logo, ...companyFields } = company;
+    res.json({
+      company: { ...companyFields, hasLogo: Boolean(logo), partner_name: partner?.name || null },
+      plan,
+      license,
+      users,
+      stats,
+      scans,
+      documents,
+      imports: imports.items,
+      activity: activity.items || activity,
+      onboarding: buildOnboarding({ company, stats, documents })
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.patch("/:id", validateBody(updateCompanySchema), async (req, res, next) => {
   try {
     const id = Number(req.params.id);

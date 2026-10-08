@@ -443,12 +443,17 @@ export default function CompaniesPage() {
                               </Link>
                             </span>
                           ) : (
+                            <>
+                            <Link href={`/admin/companies/${company.id}`} className="font-medium text-emerald-700 hover:text-emerald-800 hover:underline">
+                              Overzicht
+                            </Link>
                             <Link
                               href={`/admin/companies/${company.id}/uitnodigen`}
                               className="font-medium text-blue-600 hover:text-blue-700 hover:underline"
                             >
                               Beheerder uitnodigen
                             </Link>
+                            </>
                           )}
                           {company.status !== "active" && (
                             <button

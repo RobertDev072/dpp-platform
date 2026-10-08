@@ -111,6 +111,13 @@ export default function AbonnementPage() {
                 <UsageBar label="Producten" {...license.products} />
               </div>
 
+              <p className="mt-3 text-xs text-slate-500">
+                Nog beschikbaar:{" "}
+                {license.products.max == null ? "onbeperkt" : Math.max(0, license.products.max - license.products.used).toLocaleString("nl-NL")} producten
+                {" · "}
+                {license.users.max == null ? "onbeperkt" : Math.max(0, license.users.max - license.users.used).toLocaleString("nl-NL")} gebruikers. Gearchiveerde producten tellen niet mee.
+              </p>
+
               <div className="mt-4 empty:hidden">
                 <LicenseWarning license={license} />
               </div>

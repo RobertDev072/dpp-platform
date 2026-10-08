@@ -84,12 +84,52 @@ router.get("/license", requireRole("company_admin", "company_user"), requireOwnC
   }
 });
 
+const documentsQuerySchema = z.object({
+  q: z.string().max(200).optional(),
+  category: z.enum(require("../schemas/documents.schema").DOCUMENT_CATEGORIES).optional(),
+  visibility: z.enum(["public", "private"]).optional(),
+  validity: z.enum(["expired", "expiring", "valid", "none"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50)
+});
+
 router.get("/documents", requireRole("company_admin", "company_user"), requireOwnCompany, async (req, res, next) => {
   try {
-    res.json(await documentsRepo.listDocumentsForCompany(req.user.companyId));
+    const parsed = documentsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      next(new HttpError(400, "Ongeldige invoer", parsed.error.flatten()));
+      return;
+    }
+    const [list, stats] = await Promise.all([
+      documentsRepo.listDocumentsForCompany(req.user.companyId, parsed.data),
+      documentsRepo.getDocumentStats(req.user.companyId)
+    ]);
+    res.json({ ...list, stats });
   } catch (error) {
     next(error);
   }
 });
+
+// Bulk openbaar/privé zetten. De id's worden tegen het eigen bedrijf gefilterd.
+router.post(
+  "/documents/bulk",
+  requireRole("company_admin", "company_user"),
+  requireOwnCompany,
+  validateBody(z.object({ ids: z.array(z.number().int().positive()).min(1).max(1000), isPublic: z.boolean() })),
+  async (req, res, next) => {
+    try {
+      const affected = await documentsRepo.bulkSetPublic(req.user.companyId, req.body.ids, req.body.isPublic);
+      await logAuditFromReq(req, {
+        companyId: req.user.companyId,
+        action: req.body.isPublic ? "bulk_document_publish" : "bulk_document_unpublish",
+        entityType: "Document",
+        metadata: { requested: req.body.ids.length, affected: affected.length }
+      });
+      res.json({ requested: req.body.ids.length, affected: affected.length });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 module.exports = router;

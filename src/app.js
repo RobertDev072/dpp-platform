@@ -62,7 +62,12 @@ app.use(cookieParser(process.env.COOKIE_SECRET));
 app.use("/api/auth", authRoutes);
 app.use("/api/admin/companies", companiesRoutes);
 app.use("/api/users", usersRoutes);
+// Vóór productsRoutes: anders vangt GET /api/products/:id "import"/"bulk" als id.
+app.use("/api/products/import", require("./routes/productImport.routes"));
+app.use("/api/products/bulk", require("./routes/productBulk.routes"));
 app.use("/api/products", productsRoutes);
+app.use("/api/print", require("./routes/print.routes"));
+app.use("/api/search", require("./routes/search.routes"));
 app.use("/api/admin/plans", plansRoutes);
 app.use("/api/invites", inviteActivationRoutes);
 app.use("/api/password-reset", passwordResetRoutes);

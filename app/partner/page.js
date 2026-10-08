@@ -70,8 +70,10 @@ export default function PartnerDashboardPage() {
         </div>
       ) : (
         totals && (
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
             <AdminStatTile label="Mijn klanten" value={totals.customers} />
+            <AdminStatTile label="Producten bij klanten" value={(totals.products ?? 0).toLocaleString("nl-NL")} />
+            <AdminStatTile label="QR-scans (30 d)" value={(totals.scans30Days ?? 0).toLocaleString("nl-NL")} />
             <AdminStatTile label="Actieve licenties" value={totals.active} tone="success" />
             <AdminStatTile label="Bijna limiet" value={totals.nearLimit} tone="warning" />
             <AdminStatTile label="Verlopen" value={totals.expired} tone="danger" />
@@ -108,6 +110,7 @@ export default function PartnerDashboardPage() {
                 <tr className="border-b border-slate-200 text-slate-500">
                   <th className="py-2 pr-3 font-medium">Bedrijf</th>
                   <th className="py-2 pr-3 font-medium">Plan</th>
+                  <th className="py-2 pr-3 font-medium">Verbruik</th>
                   <th className="py-2 pr-3 font-medium">Status</th>
                   <th className="py-2 pr-3 font-medium">Acties</th>
                 </tr>
@@ -125,6 +128,10 @@ export default function PartnerDashboardPage() {
                       ) : (
                         <Badge variant="neutral">Geen plan</Badge>
                       )}
+                    </td>
+                    <td className="whitespace-nowrap py-2.5 pr-3 text-xs text-slate-600">
+                      {customer.products.used}{customer.products.max != null ? ` / ${customer.products.max}` : ""} producten
+                      <span className="block">{customer.users.used}{customer.users.max != null ? ` / ${customer.users.max}` : ""} gebruikers</span>
                     </td>
                     <td className="py-2.5 pr-3">
                       <LicenseStatusBadge status={customer.status} />

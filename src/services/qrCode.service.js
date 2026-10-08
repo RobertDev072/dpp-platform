@@ -1,8 +1,8 @@
 const QRCode = require("qrcode");
 const PDFDocument = require("pdfkit");
 
-async function generateQrPngBuffer(url) {
-  return QRCode.toBuffer(url, { type: "png", width: 512, margin: 1 });
+async function generateQrPngBuffer(url, { width = 512 } = {}) {
+  return QRCode.toBuffer(url, { type: "png", width, margin: 1 });
 }
 
 async function generateQrSvgString(url) {

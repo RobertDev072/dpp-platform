@@ -322,7 +322,10 @@ export default function UsersPage() {
       total: users.length,
       admins: users.filter((u) => u.role === "company_admin").length,
       members: users.filter((u) => u.role === "company_user").length,
-      blocked: users.filter((u) => u.status === "blocked").length
+      owners: users.filter((u) => u.role === "platform_owner").length,
+      partners: users.filter((u) => u.role === "partner_admin").length,
+      blocked: users.filter((u) => u.status === "blocked").length,
+      online: users.filter((u) => Number(u.active_sessions) > 0).length
     }),
     [users]
   );
@@ -471,10 +474,12 @@ export default function UsersPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <AdminStatTile label="Totaal gebruikers" value={stats.total} />
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          <AdminStatTile label="Totaal gebruikers" value={stats.total} sub={`${stats.online} met actieve sessie`} />
           <AdminStatTile label="Bedrijfsbeheerders" value={stats.admins} />
           <AdminStatTile label="Medewerkers" value={stats.members} />
+          <AdminStatTile label="Partner Admins" value={stats.partners} />
+          <AdminStatTile label="Platform Owners" value={stats.owners} />
           <AdminStatTile label="Geblokkeerd" value={stats.blocked} tone="danger" />
         </div>
       )}
@@ -693,6 +698,14 @@ function UserRows({
         </td>
         <td className="whitespace-nowrap py-2.5 pr-3 text-slate-600">
           {formatRelativeTime(user.last_activity, "Nog nooit")}
+          <span className="block text-xs text-slate-400">
+            {user.last_login ? `login ${formatRelativeTime(user.last_login)}` : "nog nooit ingelogd"}
+            {Number(user.active_sessions) > 0 && (
+              <span title="Aantal actieve sessies (ingelogde apparaten)" className="ml-1 text-emerald-600">
+                · {user.active_sessions} sessie{Number(user.active_sessions) === 1 ? "" : "s"}
+              </span>
+            )}
+          </span>
         </td>
         <td className="py-2.5 pr-3">
           {isPlatformOwner ? (

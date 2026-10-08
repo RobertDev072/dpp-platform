@@ -31,6 +31,9 @@ async function run() {
     await pool.request().query(`UPDATE dbo.CompanyAdminInvites SET invited_by = NULL WHERE invited_by IN (${ids})`);
     await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE user_id IN (${ids}) OR impersonator_user_id IN (${ids})`);
     await pool.request().query(`UPDATE dbo.Products SET created_by = NULL WHERE created_by IN (${ids})`);
+    await pool.request().query(`UPDATE dbo.Documents SET uploaded_by = NULL WHERE uploaded_by IN (${ids})`);
+    await pool.request().query(`UPDATE dbo.ProductImports SET created_by = NULL WHERE created_by IN (${ids})`);
+    await pool.request().query(`UPDATE dbo.PrintProfiles SET created_by = NULL WHERE created_by IN (${ids})`);
   }
 
   if (companyIds.length) {
@@ -43,6 +46,8 @@ async function run() {
     await pool.request().query(`DELETE FROM dbo.ProductCompliance WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${ids}))`);
     await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${ids})`);
     await pool.request().query(`DELETE FROM dbo.CompanyAdminInvites WHERE company_id IN (${ids})`);
+    await pool.request().query(`DELETE FROM dbo.ProductImports WHERE company_id IN (${ids})`);
+    await pool.request().query(`DELETE FROM dbo.PrintProfiles WHERE company_id IN (${ids})`);
     await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE company_id IN (${ids})`);
   }
 

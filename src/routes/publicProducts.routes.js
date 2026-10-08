@@ -21,11 +21,12 @@ router.get("/:publicId", async (req, res, next) => {
       return;
     }
 
-    const [sustainability, compliance, parts, documents] = await Promise.all([
+    const [sustainability, compliance, parts, documents, company] = await Promise.all([
       sustainabilityRepo.getSustainability(product.id),
       complianceRepo.getCompliance(product.id),
       partsRepo.listPartsForProduct(product.id),
-      documentsRepo.listDocumentsForProduct(product.id, { onlyPublic: true })
+      documentsRepo.listDocumentsForProduct(product.id, { onlyPublic: true }),
+      require("../repositories/companies.repository").getCompanyById(product.company_id)
     ]);
 
     // Fire-and-forget: een mislukte scan-registratie mag de paspoortweergave nooit blokkeren.
@@ -68,6 +69,8 @@ router.get("/:publicId", async (req, res, next) => {
     }
 
     res.json({
+      // Merkhouder van het paspoort: alleen naam en logo, nooit interne id's of status.
+      issuer: company ? { name: company.name, logo: company.logo || null } : null,
       name: product.name,
       brand: product.brand,
       model: product.model,

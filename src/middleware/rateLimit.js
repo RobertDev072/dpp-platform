@@ -66,4 +66,16 @@ const partnerResetLimiter = rateLimit({
   handler: tooManyRequests("Te veel wachtwoordresets in korte tijd. Probeer het over 15 minuten opnieuw.")
 });
 
-module.exports = { loginIpLimiter, loginEmailLimiter, mfaLimiter, resetLimiter, partnerResetLimiter };
+// Zware bewerkingen (import-upload, label-PDF's, QR-ZIP's): per ingelogde gebruiker
+// geremd, zodat één account de functie niet kan blijven belasten. Ruim genoeg voor
+// normaal gebruik (10.000 labels = 20 PDF-delen).
+const heavyWorkLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  limit: 150,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user ? `user-${req.user.id}` : ipKeyGenerator(req.ip)),
+  handler: tooManyRequests("Te veel exports of imports in korte tijd. Probeer het over 15 minuten opnieuw.")
+});
+
+module.exports = { loginIpLimiter, loginEmailLimiter, mfaLimiter, resetLimiter, partnerResetLimiter, heavyWorkLimiter };

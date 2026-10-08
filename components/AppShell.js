@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import { roleLabel } from "@/lib/labels";
 import { homeHrefForRole } from "@/lib/nav";
 import { VeriPassoWordmark } from "@/components/landing/VeriPassoLogo";
+import GlobalSearch from "@/components/shell/GlobalSearch";
+import NotificationCenter from "@/components/shell/NotificationCenter";
 
 // Kleine, met de hand getekende 20px stroke-iconen (geen icon-library).
 const NAV_ICONS = {
@@ -108,6 +110,19 @@ const NAV_ICONS = {
       <path d="M2.5 10.5h3l2-5 3 9 2-5.5 1 1.5h4" />
     </>
   ),
+  upload: (
+    <>
+      <path d="M10 13V3.5M6 7l4-4 4 4" />
+      <path d="M3.5 13v2.5a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V13" />
+    </>
+  ),
+  printer: (
+    <>
+      <path d="M5.5 7.5V3h9v4.5" />
+      <rect x="2.5" y="7.5" width="15" height="6.5" rx="1.5" />
+      <path d="M5.5 12h9v5h-9z" />
+    </>
+  ),
   help: (
     <>
       <circle cx="10" cy="10" r="7.5" />
@@ -146,6 +161,8 @@ const EXTRA_SEGMENT_LABELS = {
   uitnodigen: "Uitnodigen",
   profiel: "Profiel",
   products: "Producten",
+  import: "Importeren",
+  imports: "Import Center",
   rapportages: "Rapportages"
 };
 
@@ -432,28 +449,12 @@ export default function AppShell({ menu, children }) {
             </nav>
           </div>
 
+          <div className="hidden min-w-0 flex-1 justify-center px-2 lg:flex">
+            <GlobalSearch />
+          </div>
+
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              title="Meldingen (binnenkort beschikbaar)"
-              aria-label="Meldingen"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 20 20"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M10 3a4.5 4.5 0 0 0-4.5 4.5c0 3.5-1.5 5-1.5 5h12s-1.5-1.5-1.5-5A4.5 4.5 0 0 0 10 3Z" />
-                <path d="M8.5 15.5a1.6 1.6 0 0 0 3 0" />
-              </svg>
-            </button>
+            <NotificationCenter />
 
             <div ref={userMenuRef} className="relative">
               <button
@@ -514,6 +515,10 @@ export default function AppShell({ menu, children }) {
             </div>
           </div>
         </header>
+
+        <div className="border-b border-slate-200 bg-white px-4 py-2 lg:hidden">
+          <GlobalSearch />
+        </div>
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50 p-4 sm:p-6">{children}</main>
       </div>

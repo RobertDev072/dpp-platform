@@ -20,7 +20,9 @@ async function listUsers({ companyId, includeDeleted = false } = {}) {
     SELECT ${columns},
            c.name AS company_name,
            CASE WHEN u.password_hash IS NULL THEN 'entra' ELSE 'local' END AS auth_provider,
-           (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.user_id = u.id) AS last_activity
+           (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.user_id = u.id) AS last_activity,
+           (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.user_id = u.id AND a.action = 'login') AS last_login,
+           (SELECT COUNT(*) FROM dbo.Sessions s WHERE s.user_id = u.id AND s.expires_at > now()) AS active_sessions
     FROM dbo.Users u
     LEFT JOIN dbo.Companies c ON c.id = u.company_id
     ${where}
