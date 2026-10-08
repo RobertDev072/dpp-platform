@@ -113,7 +113,7 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
       return;
     }
 
-    const { token, expiresAt } = await createSession(user.id);
+    const { token, expiresAt } = await createSession(user.id, { userAgent: req.get("user-agent") });
     setSessionCookie(res, token, expiresAt);
 
     await logAudit({
@@ -194,7 +194,7 @@ router.post(
 
       await usersRepo.setMustChangePassword(user.id, false);
 
-      const { token, expiresAt } = await createSession(user.id);
+      const { token, expiresAt } = await createSession(user.id, { userAgent: req.get("user-agent") });
       setSessionCookie(res, token, expiresAt);
 
       await logAudit({

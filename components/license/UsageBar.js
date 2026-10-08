@@ -9,16 +9,17 @@ function barColorClass(pct) {
   return "bg-emerald-500";
 }
 
-export default function UsageBar({ label, used, max, pct }) {
+export default function UsageBar({ label, used, max, pct, format = (n) => Number(n).toLocaleString("nl-NL"), unlimitedLabel = "onbeperkt" }) {
   const unlimited = max == null;
   const value = pct ?? 0;
+  const text = unlimited ? `${format(used)} (${unlimitedLabel})` : `${format(used)} van ${format(max)}`;
 
   return (
     <div className="min-w-[10rem]">
       <div className="flex items-baseline justify-between gap-2 text-xs">
         <span className="font-medium text-slate-600">{label}</span>
         <span className="text-slate-500">
-          {unlimited ? `${used} (onbeperkt)` : `${used} van ${max}`}
+          {text}
         </span>
       </div>
       <div
@@ -27,7 +28,7 @@ export default function UsageBar({ label, used, max, pct }) {
         aria-valuenow={unlimited ? undefined : value}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuetext={unlimited ? `${used} (onbeperkt)` : `${used} van ${max}`}
+        aria-valuetext={text}
         className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100"
       >
         {!unlimited && (

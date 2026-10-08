@@ -23,7 +23,14 @@ const documentUploadCompleteSchema = z.object({
   type: z.string().trim().max(50).optional(),
   language: z.string().trim().max(10).nullable().optional(),
   isPublic: z.boolean().optional().default(false),
-  category: z.enum(["document", "manual", "video", "3d_model"]).optional().default("document")
+  category: z.enum(["document", "manual", "video", "3d_model"]).optional().default("document"),
+  version: z.string().trim().max(30).nullable().optional(),
+  validUntil: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Gebruik een geldige datum")
+    .nullable()
+    .optional()
+    .or(z.literal(""))
 });
 
 module.exports = {

@@ -35,3 +35,15 @@ export function formatFileSize(bytes) {
   }
   return `${size} B`;
 }
+
+// Vervalstatus van een document (valid_until als "YYYY-MM-DD" of Date).
+export function documentExpiry(validUntil, today = new Date()) {
+  if (!validUntil) return { status: "none", label: "Geen vervaldatum" };
+  const end = new Date(String(validUntil).slice(0, 10) + "T23:59:59");
+  if (Number.isNaN(end.getTime())) return { status: "none", label: "Geen vervaldatum" };
+  const days = Math.floor((end - today) / 86400000);
+  const date = end.toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric" });
+  if (days < 0) return { status: "expired", label: `Verlopen op ${date}`, date };
+  if (days <= 30) return { status: "expiring", label: days === 0 ? "Verloopt vandaag" : `Verloopt over ${days} dag${days === 1 ? "" : "en"}`, date };
+  return { status: "valid", label: `Geldig t/m ${date}`, date };
+}

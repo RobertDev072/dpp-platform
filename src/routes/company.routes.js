@@ -4,6 +4,8 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateBody } = require("../middleware/validate");
 const companiesRepo = require("../repositories/companies.repository");
 const documentsRepo = require("../repositories/documents.repository");
+const storageService = require("../services/storage.service");
+const { documentBulkSchema, documentIdsSchema } = require("../schemas/documents.schema");
 const { logAuditFromReq } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 
@@ -43,7 +45,9 @@ router.get("/", requireRole("company_admin", "company_user"), requireOwnCompany,
       next(new HttpError(404, "Niet gevonden"));
       return;
     }
-    res.json(company);
+    // Interne notities van het platformbeheer zijn niet voor de klant zelf.
+    const { notes: _notes, ...visible } = company;
+    res.json(visible);
   } catch (error) {
     next(error);
   }
@@ -73,7 +77,7 @@ router.patch("/", requireRole("company_admin"), requireOwnCompany, validateBody(
 // Licentiegebruik van het eigen bedrijf (voor de licentiekaart op het dashboard).
 router.get("/license", requireRole("company_admin", "company_user"), requireOwnCompany, async (req, res, next) => {
   try {
-    const usage = await require("../services/license.service").getLicenseUsage(req.user.companyId);
+    const usage = await require("../services/license.service").getExtendedUsage(req.user.companyId);
     if (!usage) {
       next(new HttpError(404, "Niet gevonden"));
       return;
@@ -91,5 +95,68 @@ router.get("/documents", requireRole("company_admin", "company_user"), requireOw
     next(error);
   }
 });
+
+// Bulkacties op documenten van het eigen bedrijf (openbaar/privé, archiveren).
+router.post(
+  "/documents/bulk",
+  requireRole("company_admin", "company_user"),
+  requireOwnCompany,
+  validateBody(documentBulkSchema),
+  async (req, res, next) => {
+    try {
+      const affected = await documentsRepo.bulkUpdate(req.user.companyId, req.body.ids, req.body.action);
+      await logAuditFromReq(req, {
+        companyId: req.user.companyId,
+        action: `bulk_${req.body.action}`,
+        entityType: "Document",
+        entityId: null,
+        metadata: { selected: req.body.ids.length, affected: affected.length, documentIds: affected.slice(0, 200) }
+      });
+      res.json({ selected: req.body.ids.length, affected: affected.length });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Kortlevende downloadlinks voor een selectie (max. 200), zodat de browser er
+// een ZIP van kan maken. Alleen documenten van het eigen bedrijf.
+router.post(
+  "/documents/download-links",
+  requireRole("company_admin", "company_user"),
+  requireOwnCompany,
+  validateBody(documentIdsSchema),
+  async (req, res, next) => {
+    try {
+      const rows = await documentsRepo.listByIds(req.user.companyId, req.body.ids);
+      const items = [];
+      for (const row of rows) {
+        if (row.blob_name) {
+          items.push({
+            id: row.id,
+            title: row.title,
+            productName: row.product_name,
+            mimeType: row.mime_type,
+            fileName: row.blob_name.split("/").pop(),
+            url: await storageService.createDownloadUrl("document", row.blob_name),
+            external: false
+          });
+        } else if (row.storage_url) {
+          items.push({ id: row.id, title: row.title, productName: row.product_name, url: row.storage_url, external: true });
+        }
+      }
+      await logAuditFromReq(req, {
+        companyId: req.user.companyId,
+        action: "bulk_download",
+        entityType: "Document",
+        entityId: null,
+        metadata: { count: items.length }
+      });
+      res.json({ items });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 module.exports = router;

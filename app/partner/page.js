@@ -9,9 +9,10 @@ import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
 import AdminStatTile from "@/components/admin/AdminStatTile";
 import LicenseStatusBadge from "@/components/license/LicenseStatusBadge";
+import { formatPrice } from "@/components/license/licenseFormat";
 
-// Reseller-dashboard: alleen klanttenants en hun licentiestatus — bewust geen
-// enkel product-, document- of gebruikerselement in dit gebied.
+// Reseller-dashboard: klanttenants, hun licentiestatus en geaggregeerde aantallen
+// (producten, scans). Bewust geen productinhoud, documenten of gebruikers.
 export default function PartnerDashboardPage() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
@@ -52,7 +53,7 @@ export default function PartnerDashboardPage() {
         </div>
         <Link
           href="/partner/klanten/nieuw"
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
         >
           Nieuw klantbedrijf
         </Link>
@@ -62,7 +63,7 @@ export default function PartnerDashboardPage() {
 
       {loading ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+          {Array.from({ length: 8 }).map((_, index) => (
             <Card key={index}>
               <Skeleton className="h-12 w-full" />
             </Card>
@@ -70,12 +71,23 @@ export default function PartnerDashboardPage() {
         </div>
       ) : (
         totals && (
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <AdminStatTile label="Mijn klanten" value={totals.customers} />
-            <AdminStatTile label="Actieve licenties" value={totals.active} tone="success" />
-            <AdminStatTile label="Bijna limiet" value={totals.nearLimit} tone="warning" />
-            <AdminStatTile label="Verlopen" value={totals.expired} tone="danger" />
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <AdminStatTile label="Mijn klanten" value={totals.customers} />
+              <AdminStatTile label="Actieve klanten" value={totals.activeCustomers ?? totals.active} tone="success" />
+              <AdminStatTile label="Producten (alle klanten)" value={(totals.products ?? 0).toLocaleString("nl-NL")} />
+              <AdminStatTile label="QR-scans (30 dagen)" value={(totals.scans30d ?? 0).toLocaleString("nl-NL")} />
+            </div>
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <AdminStatTile label="Actieve licenties" value={totals.active} tone="success" />
+              <AdminStatTile label="Bijna limiet" value={totals.nearLimit} tone="warning" />
+              <AdminStatTile label="Verlopen" value={totals.expired} tone="danger" />
+              <AdminStatTile
+                label="Maandomzet klanten (indicatief)"
+                value={totals.monthlyRevenueCents ? formatPrice(totals.monthlyRevenueCents).replace(" / maand", "") : "—"}
+              />
+            </div>
+          </>
         )
       )}
 
@@ -108,6 +120,8 @@ export default function PartnerDashboardPage() {
                 <tr className="border-b border-slate-200 text-slate-500">
                   <th className="py-2 pr-3 font-medium">Bedrijf</th>
                   <th className="py-2 pr-3 font-medium">Plan</th>
+                  <th className="py-2 pr-3 text-right font-medium">Producten</th>
+                  <th className="py-2 pr-3 text-right font-medium">Scans 30 d.</th>
                   <th className="py-2 pr-3 font-medium">Status</th>
                   <th className="py-2 pr-3 font-medium">Acties</th>
                 </tr>
@@ -126,6 +140,8 @@ export default function PartnerDashboardPage() {
                         <Badge variant="neutral">Geen plan</Badge>
                       )}
                     </td>
+                    <td className="py-2.5 pr-3 text-right text-slate-700">{(customer.productCount ?? 0).toLocaleString("nl-NL")}</td>
+                    <td className="py-2.5 pr-3 text-right text-slate-700">{(customer.scans30d ?? 0).toLocaleString("nl-NL")}</td>
                     <td className="py-2.5 pr-3">
                       <LicenseStatusBadge status={customer.status} />
                     </td>

@@ -7,7 +7,12 @@ const companiesRepo = require("../repositories/companies.repository");
 const invitesRepo = require("../repositories/invites.repository");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const { getAppBaseUrl } = require("../utils/baseUrl");
+const { getAppBaseUrl, getPassportUrl } = require("../utils/baseUrl");
+const { queryOne } = require("../config/db");
+const { getExtendedUsage } = require("../services/license.service");
+const auditLogsRepo = require("../repositories/auditLogs.repository");
+const documentsRepo = require("../repositories/documents.repository");
+const insights = require("../repositories/productInsights.repository");
 
 const router = express.Router();
 
@@ -68,6 +73,76 @@ router.get("/:id", async (req, res, next) => {
       return;
     }
     res.json(company);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- Customer 360 (alleen Platform Owner; router is al owner-only) ----------------
+
+async function loadCompany(req, next) {
+  const company = await companiesRepo.getCompanyById(Number(req.params.id));
+  if (!company) next(new HttpError(404, "Niet gevonden"));
+  return company;
+}
+
+router.get("/:id/overview", async (req, res, next) => {
+  try {
+    const company = await loadCompany(req, next);
+    if (!company) return;
+    const [usage, counts, partner, recent] = await Promise.all([
+      getExtendedUsage(company.id),
+      queryOne(
+        `SELECT
+           (SELECT COUNT(*) FROM products WHERE company_id = $1 AND status <> 'archived')::int AS products,
+           (SELECT COUNT(*) FROM products WHERE company_id = $1 AND status = 'published')::int AS published,
+           (SELECT COUNT(*) FROM products WHERE company_id = $1 AND status = 'draft')::int AS drafts,
+           (SELECT COUNT(*) FROM products WHERE company_id = $1 AND public_id IS NOT NULL AND status = 'published')::int AS qr_active,
+           (SELECT COUNT(*) FROM products WHERE company_id = $1 AND public_id IS NOT NULL AND status = 'draft')::int AS qr_reserved,
+           (SELECT COUNT(*) FROM users WHERE company_id = $1 AND status = 'active')::int AS users_active,
+           (SELECT COUNT(*) FROM users WHERE company_id = $1 AND status <> 'deleted')::int AS users_total,
+           (SELECT COUNT(*) FROM documents WHERE company_id = $1 AND archived_at IS NULL)::int AS documents,
+           (SELECT COUNT(*) FROM documents WHERE company_id = $1 AND archived_at IS NULL AND valid_until < CURRENT_DATE)::int AS documents_expired,
+           (SELECT COUNT(*) FROM scan_events s JOIN products p ON p.id = s.product_id WHERE p.company_id = $1)::int AS scans_total,
+           (SELECT COUNT(*) FROM scan_events s JOIN products p ON p.id = s.product_id
+             WHERE p.company_id = $1 AND s.scanned_at >= now() - interval '30 days')::int AS scans_30d,
+           (SELECT MAX(timestamp) FROM audit_logs WHERE company_id = $1) AS last_activity,
+           (SELECT MAX(u.last_login_at) FROM users u WHERE u.company_id = $1) AS last_login`,
+        [company.id]
+      ),
+      company.partner_id ? companiesRepo.getCompanyById(company.partner_id) : null,
+      auditLogsRepo.listAuditLogs({ companyId: company.id, page: 1, pageSize: 8 })
+    ]);
+    res.json({
+      company: { ...company, partner_name: partner?.name ?? null },
+      usage,
+      counts,
+      recentActivity: recent.items ?? recent
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/documents", async (req, res, next) => {
+  try {
+    const company = await loadCompany(req, next);
+    if (!company) return;
+    res.json(await documentsRepo.listDocumentsForCompany(company.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/qr", async (req, res, next) => {
+  try {
+    const company = await loadCompany(req, next);
+    if (!company) return;
+    const result = await insights.listQrItems({ companyId: company.id, sort: "scans", page: 1, pageSize: 100 });
+    res.json({
+      ...result,
+      items: result.items.map((item) => ({ ...item, qr_url: item.public_id ? getPassportUrl(req, item.public_id) : null }))
+    });
   } catch (error) {
     next(error);
   }

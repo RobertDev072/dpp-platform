@@ -58,10 +58,22 @@ router.get("/stats", requireAuth, async (req, res, next) => {
 
     if (req.user.role === "partner_admin") {
       const { buildUsage, STATUS } = require("../services/license.service");
-      const [rows, company] = await Promise.all([
+      const { queryRows } = require("../config/db");
+      const [rows, company, extras] = await Promise.all([
         companiesRepo.listCompaniesWithStats({ partnerId: req.user.companyId }),
-        companiesRepo.getCompanyById(req.user.companyId)
+        companiesRepo.getCompanyById(req.user.companyId),
+        // Alleen geaggregeerde aantallen per klant (geen productinhoud): scans in
+        // de laatste 30 dagen en de planprijs voor een indicatieve maandomzet.
+        queryRows(
+          `SELECT c.id, pl.price_monthly_cents,
+                  (SELECT COUNT(*) FROM scan_events s JOIN products p ON p.id = s.product_id
+                    WHERE p.company_id = c.id AND s.scanned_at >= now() - interval '30 days')::int AS scans_30d
+           FROM companies c LEFT JOIN plans pl ON pl.id = c.plan_id
+           WHERE c.partner_id = $1 AND c.kind = 'customer'`,
+          [req.user.companyId]
+        )
       ]);
+      const extraById = new Map(extras.map((e) => [e.id, e]));
 
       // Let op: buildUsage levert óók een 'status' (licentiestatus); de
       // bedrijfsstatus gaat daarom apart mee als companyStatus.
@@ -70,6 +82,9 @@ router.get("/stats", requireAuth, async (req, res, next) => {
         name: row.name,
         slug: row.slug,
         companyStatus: row.status,
+        productCount: Number(row.product_count || 0),
+        scans30d: extraById.get(row.id)?.scans_30d ?? 0,
+        priceMonthlyCents: extraById.get(row.id)?.price_monthly_cents ?? null,
         ...buildUsage({
           plan: row.plan_id
             ? { id: row.plan_id, name: row.plan_name, max_users: row.max_users, max_products: row.max_products }
@@ -89,7 +104,14 @@ router.get("/stats", requireAuth, async (req, res, next) => {
           customers: customers.length,
           active: customers.filter((c) => c.status === STATUS.ACTIVE).length,
           nearLimit: customers.filter((c) => c.status === STATUS.NEAR_LIMIT || c.status === STATUS.LIMIT_REACHED).length,
-          expired: customers.filter((c) => c.status === STATUS.EXPIRED).length
+          expired: customers.filter((c) => c.status === STATUS.EXPIRED).length,
+          activeCustomers: customers.filter((c) => c.companyStatus === "active" && c.status !== STATUS.EXPIRED).length,
+          products: customers.reduce((sum, c) => sum + c.productCount, 0),
+          scans30d: customers.reduce((sum, c) => sum + c.scans30d, 0),
+          // Indicatief: som van de planprijzen van actieve, niet-verlopen klanten.
+          monthlyRevenueCents: customers
+            .filter((c) => c.companyStatus === "active" && c.status !== STATUS.EXPIRED && c.priceMonthlyCents != null)
+            .reduce((sum, c) => sum + Number(c.priceMonthlyCents), 0)
         }
       });
       return;

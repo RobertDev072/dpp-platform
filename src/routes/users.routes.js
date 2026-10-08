@@ -1,4 +1,5 @@
 const express = require("express");
+const { query, queryRows, queryOne } = require("../config/db");
 const { requireAuth, requireRole, denyIfImpersonating } = require("../middleware/auth");
 const { validateBody } = require("../middleware/validate");
 const { createUserSchema, updateUserSchema } = require("../schemas/users.schema");
@@ -303,6 +304,58 @@ router.patch("/:id", validateBody(updateUserSchema), async (req, res, next) => {
     });
 
     res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Doelgebruiker laden met dezelfde zichtbaarheidsregels als PATCH: de Platform
+// Owner is voor anderen onzichtbaar, een Company Admin ziet alleen het eigen bedrijf.
+async function loadManageableUser(req) {
+  const id = Number(req.params.id);
+  const existing = Number.isInteger(id) ? await usersRepo.getUserById(id) : null;
+  if (!existing || (isPlatformOwner(existing.role) && req.user.id !== existing.id)) {
+    throw new HttpError(404, "Niet gevonden");
+  }
+  if (req.user.role === "company_admin") {
+    assertCompanyAccess(req.user, existing.company_id);
+  }
+  return existing;
+}
+
+// Actieve sessies van een gebruiker (geen tokens; alleen tijdstippen en browser).
+router.get("/:id/sessions", async (req, res, next) => {
+  try {
+    const existing = await loadManageableUser(req);
+    const rows = await queryRows(
+      `SELECT s.id, s.created_at, s.expires_at, s.user_agent, s.impersonator_user_id IS NOT NULL AS is_impersonation
+       FROM sessions s WHERE s.user_id = $1 AND s.expires_at > now() ORDER BY s.created_at DESC LIMIT 50`,
+      [existing.id]
+    );
+    res.json({ items: rows, lastLoginAt: (await queryOne("SELECT last_login_at FROM users WHERE id = $1", [existing.id]))?.last_login_at ?? null });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Alle sessies van een gebruiker beëindigen (bijv. bij een verloren laptop).
+router.post("/:id/sessions/revoke", denyIfImpersonating, async (req, res, next) => {
+  try {
+    const existing = await loadManageableUser(req);
+    if (existing.id === req.user.id) {
+      next(new HttpError(403, "Je eigen sessies beëindig je door uit te loggen"));
+      return;
+    }
+    const result = await query("DELETE FROM sessions WHERE user_id = $1", [existing.id]);
+    await logAudit({
+      companyId: existing.company_id,
+      userId: req.user.id,
+      action: "revoke_sessions",
+      entityType: "User",
+      entityId: existing.id,
+      metadata: { revoked: result.rowCount }
+    });
+    res.json({ revoked: result.rowCount });
   } catch (error) {
     next(error);
   }

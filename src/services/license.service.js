@@ -105,4 +105,52 @@ async function assertCanCreate(companyId, kind) {
   }
 }
 
-module.exports = { STATUS, buildUsage, getLicenseUsage, assertCanCreate };
+// Uitgebreid gebruik voor abonnementspagina's: naast producten/gebruikers ook
+// opslag en QR-scans deze maand, prijs en waarschuwingen (≥ 80% = bijna limiet).
+// Opslag en scans zijn informatief: ze blokkeren niets (geen QR-code mag ooit
+// stoppen met werken door een scanlimiet).
+async function getExtendedUsage(companyId) {
+  const base = await getLicenseUsage(companyId);
+  if (!base) return null;
+  const { queryOne } = require("../config/db");
+  const row = await queryOne(
+    `SELECT pl.price_monthly_cents, pl.max_storage_mb, pl.max_scans_month,
+            (SELECT COALESCE(SUM(file_size::bigint), 0) FROM documents WHERE company_id = c.id) AS storage_bytes,
+            (SELECT COUNT(*) FROM scan_events s JOIN products p ON p.id = s.product_id
+              WHERE p.company_id = c.id AND s.scanned_at >= date_trunc('month', now())) AS scans_month
+     FROM companies c LEFT JOIN plans pl ON pl.id = c.plan_id WHERE c.id = $1`,
+    [companyId]
+  );
+  const storageUsed = Number(row.storage_bytes || 0);
+  const storageMax = row.max_storage_mb != null ? Number(row.max_storage_mb) * 1024 * 1024 : null;
+  const scansUsed = Number(row.scans_month || 0);
+  const scansMax = row.max_scans_month != null ? Number(row.max_scans_month) : null;
+  const storage = { used: storageUsed, max: storageMax, pct: pct(storageUsed, storageMax) };
+  const scans = { used: scansUsed, max: scansMax, pct: pct(scansUsed, scansMax) };
+
+  const warnings = [];
+  const check = (label, metric) => {
+    if (metric.pct == null) return;
+    if (metric.pct >= 100) warnings.push({ level: "danger", message: `${label}: limiet bereikt` });
+    else if (metric.pct >= 80) warnings.push({ level: "warning", message: `${label}: ${metric.pct}% gebruikt` });
+  };
+  check("Producten", base.products);
+  check("Gebruikers", base.users);
+  check("Opslag", storage);
+  check("QR-scans deze maand", scans);
+  if (base.status === STATUS.EXPIRED) warnings.unshift({ level: "danger", message: "De licentie is verlopen" });
+  if (base.licenseEnd && base.status !== STATUS.EXPIRED) {
+    const days = Math.ceil((new Date(base.licenseEnd) - new Date()) / 86400000);
+    if (days <= 30) warnings.push({ level: "warning", message: `Licentie verloopt over ${days} dag${days === 1 ? "" : "en"}` });
+  }
+
+  return {
+    ...base,
+    priceMonthlyCents: row.price_monthly_cents != null ? Number(row.price_monthly_cents) : null,
+    storage,
+    scans,
+    warnings
+  };
+}
+
+module.exports = { STATUS, buildUsage, getLicenseUsage, getExtendedUsage, assertCanCreate };

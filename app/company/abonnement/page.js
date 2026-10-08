@@ -3,11 +3,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import Card from "@/components/ui/Card";
-import Badge from "@/components/ui/Badge";
 import Skeleton from "@/components/ui/Skeleton";
-import UsageBar from "@/components/license/UsageBar";
-import LicenseStatusBadge from "@/components/license/LicenseStatusBadge";
-import { formatValidity } from "@/components/license/licenseFormat";
+import SubscriptionUsage from "@/components/license/SubscriptionUsage";
 
 // Zelfde drempels als de waarschuwing op het Overzicht: rood bij blokkade
 // (verlopen of limiet bereikt), amber wanneer een limiet in zicht komt.
@@ -21,13 +18,6 @@ function LicenseWarning({ license }) {
         {expired
           ? "Abonnement verlopen — nieuwe medewerkers/producten aanmaken is geblokkeerd. Neem contact op met de beheerder."
           : "Limiet bereikt — nieuwe medewerkers/producten aanmaken is geblokkeerd. Neem contact op met de beheerder."}
-      </div>
-    );
-  }
-  if (maxPct >= 80) {
-    return (
-      <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-        Je nadert de limiet van je abonnement.
       </div>
     );
   }
@@ -82,35 +72,8 @@ export default function AbonnementPage() {
         license && (
           <>
             <Card>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-slate-900">Huidig abonnement</h2>
-                <LicenseStatusBadge status={license.status} />
-              </div>
-
-              <dl className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Plan</dt>
-                  <dd className="mt-1">
-                    {license.plan ? (
-                      <Badge variant="info">{license.plan.name}</Badge>
-                    ) : (
-                      <Badge variant="neutral">Geen plan</Badge>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Geldigheid</dt>
-                  <dd className="mt-1 text-sm text-slate-700">
-                    {formatValidity(license.licenseStart, license.licenseEnd)}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <UsageBar label="Gebruikers" {...license.users} />
-                <UsageBar label="Producten" {...license.products} />
-              </div>
-
+              <h2 className="mb-4 text-sm font-semibold text-slate-900">Huidig abonnement</h2>
+              <SubscriptionUsage usage={license} />
               <div className="mt-4 empty:hidden">
                 <LicenseWarning license={license} />
               </div>

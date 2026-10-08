@@ -42,7 +42,7 @@ const CHECKS_JOIN = `CROSS JOIN LATERAL (SELECT
   CASE WHEN p.category_label IS NOT NULL AND length(p.category_label) > 0 THEN 1 ELSE 0 END AS has_category,
   CASE WHEN EXISTS (SELECT 1 FROM product_sustainability ps WHERE ps.product_id = p.id) THEN 1 ELSE 0 END AS has_sustainability,
   CASE WHEN EXISTS (SELECT 1 FROM product_compliance pc WHERE pc.product_id = p.id) THEN 1 ELSE 0 END AS has_compliance,
-  CASE WHEN EXISTS (SELECT 1 FROM documents d WHERE d.product_id = p.id) THEN 1 ELSE 0 END AS has_documents
+  CASE WHEN EXISTS (SELECT 1 FROM documents d WHERE d.product_id = p.id AND d.archived_at IS NULL) THEN 1 ELSE 0 END AS has_documents
 ) checks`;
 
 const COMPLETENESS_EXPR =

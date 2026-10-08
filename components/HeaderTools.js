@@ -153,7 +153,7 @@ export function NotificationsMenu({ pathname }) {
   );
 }
 
-export function GlobalSearch() {
+export function GlobalSearch({ variant = "inline", onNavigate }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -164,8 +164,16 @@ export function GlobalSearch() {
   const close = useRef(() => setOpen(false)).current;
   useClickOutside(ref, open, close);
 
-  // Sneltoets: "/" of Ctrl/Cmd+K focust de zoekbalk.
+  const overlay = variant === "overlay";
+  const inputId = overlay ? "global-search-mobile" : "global-search";
+
   useEffect(() => {
+    if (overlay) inputRef.current?.focus();
+  }, [overlay]);
+
+  // Sneltoets: "/" of Ctrl/Cmd+K focust de zoekbalk (alleen de desktopvariant).
+  useEffect(() => {
+    if (overlay) return undefined;
     function onKey(event) {
       const tag = event.target?.tagName;
       const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target?.isContentEditable;
@@ -177,7 +185,7 @@ export function GlobalSearch() {
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [overlay]);
 
   // Debounce: één request na 250 ms stilte.
   useEffect(() => {
@@ -205,8 +213,8 @@ export function GlobalSearch() {
   const flat = (result?.groups || []).flatMap((g) => g.items);
 
   return (
-    <div ref={ref} className="relative w-full max-w-xs">
-      <label className="sr-only" htmlFor="global-search">
+    <div ref={ref} className={`relative w-full ${overlay ? "" : "max-w-xs"}`}>
+      <label className="sr-only" htmlFor={inputId}>
         Zoeken
       </label>
       <div className="relative">
@@ -216,11 +224,11 @@ export function GlobalSearch() {
         </svg>
         <input
           ref={inputRef}
-          id="global-search"
+          id={inputId}
           type="search"
           value={q}
           autoComplete="off"
-          placeholder="Zoeken…  (/)"
+          placeholder={overlay ? "Zoek producten, SKU, documenten…" : "Zoeken…  (/)"}
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             setQ(e.target.value);
@@ -229,6 +237,7 @@ export function GlobalSearch() {
           onKeyDown={(e) => {
             if (e.key === "Enter" && flat[0]) {
               setOpen(false);
+              onNavigate?.();
               router.push(flat[0].href);
             }
           }}
@@ -236,7 +245,7 @@ export function GlobalSearch() {
         />
       </div>
       {open && q.trim().length >= 2 && (
-        <div className="absolute left-0 top-full z-50 mt-1.5 w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+        <div className={`absolute left-0 top-full z-50 mt-1.5 rounded-xl border border-slate-200 bg-white py-1 shadow-lg ${overlay ? "w-full" : "w-[min(24rem,calc(100vw-2rem))]"}`}>
           {loading && !result ? (
             <p className="px-4 py-4 text-sm text-slate-500">Zoeken…</p>
           ) : !result || result.groups.length === 0 ? (
@@ -250,7 +259,10 @@ export function GlobalSearch() {
                     <Link
                       key={`${group.type}-${item.id}`}
                       href={item.href}
-                      onClick={() => setOpen(false)}
+                      onClick={() => {
+                        setOpen(false);
+                        onNavigate?.();
+                      }}
                       className="block px-4 py-1.5 hover:bg-slate-50"
                     >
                       <span className="block truncate text-sm text-slate-900">{item.title}</span>
@@ -264,5 +276,42 @@ export function GlobalSearch() {
         </div>
       )}
     </div>
+  );
+}
+
+// Mobiel: zoekknop in de header die een zoekbalk over de volle breedte opent.
+export function MobileSearch() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => event.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Zoeken"
+        aria-label="Zoeken"
+        className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 sm:hidden"
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <circle cx="9" cy="9" r="5.5" />
+          <path d="m13 13 4 4" />
+        </svg>
+      </button>
+      {open && (
+        <div className="fixed inset-x-0 top-0 z-50 flex items-start gap-2 border-b border-slate-200 bg-white p-3 shadow-lg sm:hidden" role="dialog" aria-label="Zoeken">
+          <div className="min-w-0 flex-1">
+            <GlobalSearch variant="overlay" onNavigate={() => setOpen(false)} />
+          </div>
+          <button type="button" onClick={() => setOpen(false)} className="shrink-0 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100">
+            Sluiten
+          </button>
+        </div>
+      )}
+    </>
   );
 }

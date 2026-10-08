@@ -13,15 +13,19 @@ function generateSessionToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-async function createSession(userId, { impersonatorUserId = null, durationMs = SESSION_DURATION_MS } = {}) {
+async function createSession(userId, { impersonatorUserId = null, durationMs = SESSION_DURATION_MS, userAgent = null } = {}) {
   const token = generateSessionToken();
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + durationMs);
 
   await query(
-    "INSERT INTO sessions (user_id, token_hash, expires_at, impersonator_user_id) VALUES ($1, $2, $3, $4)",
-    [userId, tokenHash, expiresAt, impersonatorUserId]
+    "INSERT INTO sessions (user_id, token_hash, expires_at, impersonator_user_id, user_agent) VALUES ($1, $2, $3, $4, $5)",
+    [userId, tokenHash, expiresAt, impersonatorUserId, userAgent ? String(userAgent).slice(0, 300) : null]
   );
+  // Laatste login alleen voor echte logins (niet bij impersonatie door support).
+  if (!impersonatorUserId) {
+    await query("UPDATE users SET last_login_at = now() WHERE id = $1", [userId]);
+  }
 
   return { token, expiresAt };
 }

@@ -60,21 +60,30 @@ Vercel Functions accepteren/versturen max. 4,5 MB en mogen max. 60 s draaien; er
       QR-instellingen, template-preset met aan/uit-elementen)
 - [x] Waarschuwing bij te kleine QR, printvoorvertoning, bulk-PDF via profiel
 
-### Fase 4 — SaaS management (deels)
-- [x] Meldingencentrum (bel in de header, rolbewust: bedrijf/partner/owner;
-      "verbergen" per melding wordt lokaal in de browser onthouden)
-- [x] Globale zoekfunctie in de header (`/` of Ctrl+K; gegroepeerde resultaten;
-      platform owner over alle bedrijven, partner alleen eigen klanten, bedrijf alleen
-      eigen producten/documenten/medewerkers)
-- [x] Menu: "Importeren" en "Print & labels" toegevoegd voor bedrijfsgebruikers
-- [ ] Customer 360 met tabs, partnerdashboard-uitbreiding, gebruikersbeheer
-      (sessies/laatste login), facturatie — volgende iteratie
-- [ ] Documentversies/vervaldatum — vereist schemawijziging, volgende iteratie
+### Fase 4 — SaaS management
+- [x] Meldingencentrum (bel in de header, rolbewust; ook verlopen/bijna verlopen documenten)
+- [x] Globale zoekfunctie in de header (`/` of Ctrl+K; op mobiel via het zoekicoon)
+- [x] Menu: "Importeren" en "Print & labels" voor bedrijfsgebruikers
+- [x] Customer 360 (`/admin/companies/[id]`): tabs Overzicht, Producten, Gebruikers,
+      QR-codes, Documenten, Activiteit, Abonnement, Facturatie, Instellingen;
+      contactpersoon, facturatiegegevens en interne notities (notities nooit zichtbaar
+      voor de klant zelf)
+- [x] Abonnementen/usage: producten, gebruikers, opslag en QR-scans per maand met
+      voortgangsbalken, prijs per plan en waarschuwingen (≥ 80%, verlopen, verloopt
+      binnen 30 dagen) — voor bedrijf, partner en platformbeheer
+- [x] Partnerdashboard: klanten, actieve klanten, producten, QR-scans (30 d.) en
+      indicatieve maandomzet; per klant aantallen (geen productinhoud)
+- [x] Gebruikersbeheer: KPI's per rol, laatste login, actieve sessies bekijken en
+      beëindigen, bulk activeren/blokkeren/rol wijzigen/archiveren/exporteren
+- [x] Documentbeheer: versie, taal, vervaldatum, uploader, archiveren (soft),
+      verloopwaarschuwingen, filters, bulk openbaar/privé/archiveren/herstellen,
+      ZIP-download en CSV-export
 
 ### Fase 5 — polish
-- [x] Nieuwe en vernieuwde pagina's gecontroleerd op 1366 px en 390 px breed
-- [ ] Volledige accessibility-/responsive-review van alle oude (admin/partner) pagina's
-- [ ] Zoekbalk op mobiel (nu alleen vanaf `sm`; op mobiel via de pagina's zelf)
+- [x] Responsive/toegankelijkheidscontrole van álle admin-, partner- en
+      bedrijfspagina's op 375 px en 1366 px (zie "Wat getest is")
+- [x] Mobiel: alleen de laatste breadcrumb, zoekicoon met zoekbalk over de volle
+      breedte, actief tabblad blijft in beeld, filterblokken alleen op desktop sticky
 
 ## Bewust níet gebouwd (en waarom)
 
@@ -84,27 +93,35 @@ Vercel Functions accepteren/versturen max. 4,5 MB en mogen max. 60 s draaien; er
   (geen / gereserveerd / actief / gearchiveerd) i.p.v. een los schakelbaar veld.
 - **.xls (oud Excel)**: geen veilige, kleine parser beschikbaar; de wizard vraagt
   om opslaan als .xlsx of .csv.
+- **Betaalprovider/facturen genereren**: de tab Facturatie toont maandbedrag en
+  facturatiegegevens; facturen en betalingen lopen buiten VeriPasso tot er een besluit
+  is over provider en kosten. "Maandomzet" voor partners is indicatief (som van
+  planprijzen), geen boekhouding en geen commissieberekening.
+- **MFA-status**: VeriPasso heeft (nog) geen MFA; die kolom tonen zou misleiden.
+- **Document aan meerdere producten koppelen**: een document hoort bij precies één
+  product (schema). Meervoudige koppeling vraagt een koppeltabel en raakt het publieke
+  paspoort — eerst samen ontwerpen.
+- **Scan-/opslaglimieten afdwingen**: alleen informatief. Een QR-code mag nooit stoppen
+  met werken door een limiet.
 - **Server-side PDF-generatie**: Vercel Functions hebben 4,5 MB/60 s-limieten.
   PDF/ZIP worden in de browser gemaakt (1.000 labels ≈ 0,9 MB, ≈ 3 s); de server
   levert alleen de tenant-gecontroleerde data incl. de officiële QR-URL.
 
 ## Wat daadwerkelijk getest is
 
-- `npm test`: 138 tests, 134 geslaagd, 0 gefaald, 4 overgeslagen (vereisen echte
-  Supabase Auth/Storage). Nieuw: `tests/bulk-import-print.test.js` (24 tests):
-  IDOR/tenant-scheiding van bulkacties, QR-items/-stats, QR reserveren, import
-  (preview, flow aanmaken/bijwerken/fout, foutrapport, afgeronde job, limieten,
-  geen toegang voor ander bedrijf of platform owner), printprofielen (rollen,
-  validatie QR < 10 mm, tenant-scheiding), zoeken, meldingen, dashboard,
-  compleetheid.
-- `next build`: geslaagd (één bestaande Turbopack-waarschuwing over
-  `app.set("trust proxy")`, onschadelijk).
-- Browser-rooktest (Playwright, productiebuild, lokale Postgres): dashboard,
-  producten, product-QR-tab, QR-codes, import-wizard, Import Center,
-  bedrijfsinstellingen, Print & labels — desktop en mobiel: geen console-fouten,
-  geen 5xx, geen horizontale scroll; printprofiel aangemaakt via de UI, zoeken en
-  meldingen geopend.
-- Printengine in Node: alle voorbeeldprofielen × 1.000 labels; QR uit de PDF
-  gedecodeerd naar de exacte `https://qr.veripasso.com/p/<GUID>`-URL.
-- Niet getest: echte Supabase-omgeving (geen project beschikbaar in deze sessie),
-  fysiek printen op een labelprinter, Excel-bestanden uit de praktijk van klanten.
+- `npm test`: 153 tests, 149 geslaagd, 0 gefaald, 4 overgeslagen (vereisen echte
+  Supabase Auth/Storage). Nieuw t.o.v. de vorige ronde: `tests/saas-management.test.js`
+  (15 tests): documentvelden/uploader, verloopmelding, tenant-scheiding van document-
+  bulk en downloadlinks, archiveren (weg van paspoort en uit compleetheid, herstellen),
+  sessies (inzien, intrekken, ingetrokken sessie werkt niet meer, ander bedrijf en
+  platform owner afgeschermd), uitgebreid verbruik, notities onzichtbaar voor klant,
+  Customer 360 alleen voor owner, validatie contact/facturatie, planprijs, partner-
+  aggregaten alleen eigen klanten. Plus `tests/bulk-import-print.test.js` (24 tests).
+- `next build`: geslaagd (één bestaande, onschadelijke Turbopack-waarschuwing).
+- Browsercontrole (Playwright, productiebuild, lokale Postgres) van 33 pagina's ×
+  2 breedtes (375 px en 1366 px) als platform owner, partner en bedrijfsbeheerder,
+  incl. alle Customer 360-tabs: geen console-fouten, geen 5xx, geen elementen buiten
+  beeld, geen invoervelden zonder label, geen knoppen zonder naam.
+- Niet getest: echte Supabase-omgeving (o.a. ZIP-download van documenten haalt
+  bestanden via signed URLs op — afhankelijk van CORS van Supabase Storage), fysiek
+  printen, echte klantbestanden.

@@ -75,7 +75,10 @@ async function getCompanyOverview(companyId) {
       [companyId]
     ),
     queryOne(
-      `SELECT COUNT(*) AS documents, COALESCE(SUM(file_size::bigint), 0) AS storage_bytes
+      `SELECT COUNT(*) FILTER (WHERE archived_at IS NULL) AS documents,
+              COALESCE(SUM(file_size::bigint), 0) AS storage_bytes,
+              COUNT(*) FILTER (WHERE archived_at IS NULL AND valid_until < CURRENT_DATE) AS expired,
+              COUNT(*) FILTER (WHERE archived_at IS NULL AND valid_until >= CURRENT_DATE AND valid_until <= CURRENT_DATE + 30) AS expiring
        FROM documents WHERE company_id = $1`,
       [companyId]
     ),

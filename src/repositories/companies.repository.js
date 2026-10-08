@@ -13,7 +13,8 @@ async function getCompanyById(id) {
   return queryOne(
     `
     SELECT id, name, slug, status, plan_id, logo, kind, partner_id,
-           license_start, license_end, created_at, updated_at
+           license_start, license_end, created_at, updated_at,
+           contact_name, contact_email, contact_phone, billing_email, billing_reference, vat_number, notes
     FROM companies
     WHERE id = $1
   `,
@@ -42,7 +43,8 @@ async function createCompany({ name, slug, planId, status, kind, partnerId, lice
   );
 }
 
-const UPDATABLE_FIELDS = ["name", "slug", "status", "planId", "logo", "licenseStart", "licenseEnd", "partnerId"];
+const CONTACT_FIELDS = ["contactName", "contactEmail", "contactPhone", "billingEmail", "billingReference", "vatNumber", "notes"];
+const UPDATABLE_FIELDS = ["name", "slug", "status", "planId", "logo", "licenseStart", "licenseEnd", "partnerId", ...CONTACT_FIELDS];
 const FIELD_TO_COLUMN = {
   name: "name",
   slug: "slug",
@@ -51,7 +53,14 @@ const FIELD_TO_COLUMN = {
   logo: "logo",
   licenseStart: "license_start",
   licenseEnd: "license_end",
-  partnerId: "partner_id"
+  partnerId: "partner_id",
+  contactName: "contact_name",
+  contactEmail: "contact_email",
+  contactPhone: "contact_phone",
+  billingEmail: "billing_email",
+  billingReference: "billing_reference",
+  vatNumber: "vat_number",
+  notes: "notes"
 };
 
 // Verrijkte lijst voor het platformbeheer-overzicht: aantallen, beheerder en
@@ -96,7 +105,7 @@ async function updateCompany(id, fields) {
   const setClauses = [];
   for (const field of UPDATABLE_FIELDS) {
     if (!(field in fields)) continue;
-    const value = ["planId", "partnerId", "logo", "licenseStart", "licenseEnd"].includes(field)
+    const value = ["planId", "partnerId", "logo", "licenseStart", "licenseEnd", ...CONTACT_FIELDS].includes(field)
       ? fields[field] ?? null
       : fields[field];
     params.push(value);

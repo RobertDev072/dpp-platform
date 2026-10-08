@@ -16,7 +16,7 @@ import NumberField from "@/components/products/NumberField";
 import { useToast } from "@/components/ui/Toast";
 import UsageBar from "@/components/license/UsageBar";
 import LicenseStatusBadge from "@/components/license/LicenseStatusBadge";
-import { formatValidity, toDateInputValue } from "@/components/license/licenseFormat";
+import { formatPrice, formatValidity, toDateInputValue } from "@/components/license/licenseFormat";
 
 // Validators voor plan-formulieren (nieuw plan en inline bewerken delen ze).
 const planValidators = {
@@ -24,6 +24,76 @@ const planValidators = {
   maxUsers: (value) => validatePositiveInt(value, "Max. gebruikers"),
   maxProducts: (value) => validatePositiveInt(value, "Max. producten")
 };
+
+// Optionele extra's: prijs (euro), opslag (GB) en scans per maand. Leeg = geen limiet/onbekend.
+function optionalNumber(value, label, { integer = false } = {}) {
+  if (value === "" || value == null) return null;
+  const num = Number(String(value).replace(",", "."));
+  if (!Number.isFinite(num) || num < 0 || (integer && !Number.isInteger(num))) {
+    return `${label} moet een ${integer ? "geheel " : ""}getal van 0 of meer zijn`;
+  }
+  return null;
+}
+planValidators.priceEuro = (v) => optionalNumber(v, "Prijs");
+planValidators.storageGb = (v) => optionalNumber(v, "Opslag");
+planValidators.scansMonth = (v) => optionalNumber(v, "Scans per maand", { integer: true });
+
+function extrasToApi(values) {
+  const num = (v) => (v === "" || v == null ? null : Number(String(v).replace(",", ".")));
+  const price = num(values.priceEuro);
+  const storage = num(values.storageGb);
+  const scans = num(values.scansMonth);
+  return {
+    priceMonthlyCents: price == null ? null : Math.round(price * 100),
+    maxStorageMb: storage == null || storage === 0 ? null : Math.max(1, Math.round(storage * 1024)),
+    maxScansMonth: scans == null || scans === 0 ? null : scans
+  };
+}
+
+function extrasFromPlan(plan) {
+  return {
+    priceEuro: plan.price_monthly_cents != null ? String(plan.price_monthly_cents / 100).replace(".", ",") : "",
+    storageGb: plan.max_storage_mb != null ? String(Math.round((plan.max_storage_mb / 1024) * 10) / 10).replace(".", ",") : "",
+    scansMonth: plan.max_scans_month != null ? String(plan.max_scans_month) : ""
+  };
+}
+
+function PlanExtraFields({ form, prefix }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <Field
+        label="Prijs per maand (€, optioneel)"
+        name={`${prefix}-priceEuro`}
+        inputMode="decimal"
+        placeholder="Bijv. 149"
+        value={form.values.priceEuro}
+        error={form.errors.priceEuro}
+        onChange={(e) => form.setValue("priceEuro", e.target.value)}
+        onBlur={() => form.onBlur("priceEuro")}
+      />
+      <Field
+        label="Opslag (GB, optioneel)"
+        name={`${prefix}-storageGb`}
+        inputMode="decimal"
+        placeholder="Leeg = onbeperkt"
+        value={form.values.storageGb}
+        error={form.errors.storageGb}
+        onChange={(e) => form.setValue("storageGb", e.target.value)}
+        onBlur={() => form.onBlur("storageGb")}
+      />
+      <Field
+        label="QR-scans per maand (optioneel)"
+        name={`${prefix}-scansMonth`}
+        inputMode="numeric"
+        placeholder="Leeg = geen limiet"
+        value={form.values.scansMonth}
+        error={form.errors.scansMonth}
+        onChange={(e) => form.setValue("scansMonth", e.target.value)}
+        onBlur={() => form.onBlur("scansMonth")}
+      />
+    </div>
+  );
+}
 
 function validatePositiveInt(value, label) {
   if (value === "" || value == null) {
@@ -40,7 +110,7 @@ function validatePositiveInt(value, label) {
 function NewPlanForm({ onCreated }) {
   const toast = useToast();
   const form = useForm({
-    initial: { name: "", maxUsers: "", maxProducts: "" },
+    initial: { name: "", maxUsers: "", maxProducts: "", priceEuro: "", storageGb: "", scansMonth: "" },
     validators: planValidators
   });
   const [formError, setFormError] = useState(null);
@@ -57,7 +127,8 @@ function NewPlanForm({ onCreated }) {
       await api.post("/api/admin/plans", {
         name: form.values.name.trim(),
         maxUsers: Number(form.values.maxUsers),
-        maxProducts: Number(form.values.maxProducts)
+        maxProducts: Number(form.values.maxProducts),
+        ...extrasToApi(form.values)
       });
       toast.success("Plan aangemaakt");
       form.reset();
@@ -106,6 +177,7 @@ function NewPlanForm({ onCreated }) {
           onBlur={() => form.onBlur("maxProducts")}
         />
       </div>
+      <PlanExtraFields form={form} prefix="plan" />
       <SubmitButton loading={saving}>Plan aanmaken</SubmitButton>
     </form>
   );
@@ -118,7 +190,8 @@ function PlanEditForm({ plan, onSaved, onCancel }) {
     initial: {
       name: plan.name,
       maxUsers: String(plan.max_users),
-      maxProducts: String(plan.max_products)
+      maxProducts: String(plan.max_products),
+      ...extrasFromPlan(plan)
     },
     validators: planValidators
   });
@@ -136,7 +209,8 @@ function PlanEditForm({ plan, onSaved, onCancel }) {
       await api.patch(`/api/admin/plans/${plan.id}`, {
         name: form.values.name.trim(),
         maxUsers: Number(form.values.maxUsers),
-        maxProducts: Number(form.values.maxProducts)
+        maxProducts: Number(form.values.maxProducts),
+        ...extrasToApi(form.values)
       });
       toast.success("Plan bijgewerkt");
       await onSaved();
@@ -184,6 +258,7 @@ function PlanEditForm({ plan, onSaved, onCancel }) {
           onBlur={() => form.onBlur("maxProducts")}
         />
       </div>
+      <PlanExtraFields form={form} prefix={`plan-${plan.id}`} />
       <div className="flex gap-2">
         <SubmitButton loading={saving}>Opslaan</SubmitButton>
         <Button type="button" variant="outline" onClick={onCancel}>
@@ -407,6 +482,7 @@ export default function LicensesPage() {
                   <th className="py-2 pr-3 font-medium">Naam</th>
                   <th className="py-2 pr-3 font-medium">Max. gebruikers</th>
                   <th className="py-2 pr-3 font-medium">Max. producten</th>
+                  <th className="py-2 pr-3 font-medium">Prijs</th>
                   <th className="py-2 pr-3 font-medium">Klantbedrijven op dit plan</th>
                   <th className="py-2 pr-3 font-medium">Acties</th>
                 </tr>
@@ -532,6 +608,7 @@ function PlanRows({
         <td className="py-2 pr-3 font-medium text-slate-900">{plan.name}</td>
         <td className="py-2 pr-3">{plan.max_users}</td>
         <td className="py-2 pr-3">{plan.max_products}</td>
+        <td className="whitespace-nowrap py-2 pr-3 text-slate-600">{formatPrice(plan.price_monthly_cents) || "—"}</td>
         <td className="py-2 pr-3">{companiesCount}</td>
         <td className="py-2 pr-3">
           <div className="flex flex-wrap gap-2">
@@ -558,14 +635,14 @@ function PlanRows({
       </tr>
       {editing && (
         <tr className="border-b border-slate-100 bg-slate-50">
-          <td colSpan={5} className="p-4">
+          <td colSpan={6} className="p-4">
             <PlanEditForm plan={plan} onSaved={onSaved} onCancel={onToggleEdit} />
           </td>
         </tr>
       )}
       {showCompanies && (
         <tr className="border-b border-slate-100 bg-slate-50">
-          <td colSpan={5} className="p-4">
+          <td colSpan={6} className="p-4">
             <PlanCompanies planId={plan.id} />
           </td>
         </tr>

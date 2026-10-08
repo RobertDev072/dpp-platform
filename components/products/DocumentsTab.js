@@ -13,7 +13,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
 import IconButton, { TrashIcon } from "@/components/ui/IconButton";
 import { useToast } from "@/components/ui/Toast";
-import { DOCUMENT_CATEGORY_OPTIONS, documentCategoryLabel, formatFileSize } from "./documentUtils";
+import { DOCUMENT_CATEGORY_OPTIONS, documentCategoryLabel, documentExpiry, formatFileSize } from "./documentUtils";
 
 // Zelfde whitelist als de backend (products.routes.js): controle vóór de upload
 // voorkomt een zinloze POST van 10 MB die toch een 400 oplevert.
@@ -59,6 +59,17 @@ export default function DocumentsTab({ productId }) {
     }
   }
 
+  async function handleArchive(doc) {
+    const archived = !doc.archived_at;
+    try {
+      await api.patch(`/api/products/${productId}/documents/${doc.id}`, { archived });
+      toast.success(archived ? "Document gearchiveerd" : "Document hersteld");
+      await loadDocuments();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
   return (
     <div className="space-y-4">
       {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
@@ -98,6 +109,7 @@ export default function DocumentsTab({ productId }) {
             documents={documents}
             deletingId={deletingId}
             onDelete={handleDelete}
+            onArchive={handleArchive}
           />
         )}
       </Card>
@@ -107,7 +119,7 @@ export default function DocumentsTab({ productId }) {
 
 function UploadCard({ productId, onUploaded }) {
   const form = useForm({
-    initial: { title: "", category: "document", isPublic: false },
+    initial: { title: "", category: "document", isPublic: false, version: "", language: "", validUntil: "" },
     validators: {
       title: (value) => (String(value || "").trim() ? null : "Vul een titel in")
     }
@@ -175,7 +187,10 @@ function UploadCard({ productId, onUploaded }) {
         fields: {
           title: form.values.title.trim(),
           category: form.values.category,
-          isPublic: Boolean(form.values.isPublic)
+          isPublic: Boolean(form.values.isPublic),
+          version: form.values.version.trim() || null,
+          language: form.values.language.trim() || null,
+          validUntil: form.values.validUntil || null
         }
       });
 
@@ -265,6 +280,32 @@ function UploadCard({ productId, onUploaded }) {
             value={form.values.category}
             onChange={(e) => form.setValue("category", e.target.value)}
             error={form.errors.category}
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field
+            label="Versie"
+            name="version"
+            placeholder="Bijv. 2.1"
+            maxLength={30}
+            value={form.values.version}
+            onChange={(e) => form.setValue("version", e.target.value)}
+          />
+          <Field
+            label="Taal"
+            name="language"
+            placeholder="nl, en, de…"
+            maxLength={10}
+            value={form.values.language}
+            onChange={(e) => form.setValue("language", e.target.value)}
+          />
+          <Field
+            label="Vervaldatum (optioneel)"
+            name="validUntil"
+            type="date"
+            value={form.values.validUntil}
+            onChange={(e) => form.setValue("validUntil", e.target.value)}
           />
         </div>
 
@@ -399,7 +440,7 @@ function ExternalLinkCard({ productId, onCreated }) {
   );
 }
 
-function DocumentList({ productId, documents, deletingId, onDelete }) {
+function DocumentList({ productId, documents, deletingId, onDelete, onArchive }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
@@ -407,7 +448,8 @@ function DocumentList({ productId, documents, deletingId, onDelete }) {
           <tr className="border-b border-slate-200 text-slate-500">
             <th className="py-2 pr-3 font-medium">Titel</th>
             <th className="py-2 pr-3 font-medium">Categorie</th>
-            <th className="py-2 pr-3 font-medium">Grootte</th>
+            <th className="py-2 pr-3 font-medium">Versie</th>
+            <th className="py-2 pr-3 font-medium">Vervaldatum</th>
             <th className="py-2 pr-3 font-medium">Zichtbaarheid</th>
             <th className="py-2 pr-3 font-medium">Toegevoegd</th>
             <th className="py-2 font-medium">
@@ -430,13 +472,19 @@ function DocumentList({ productId, documents, deletingId, onDelete }) {
                       <DocumentTypeIcon doc={doc} />
                     </span>
                     <span className="font-medium text-slate-900">{doc.title}</span>
+                    {doc.archived_at && <Badge variant="neutral">Gearchiveerd</Badge>}
                   </div>
                 </td>
                 <td className="py-2 pr-3 text-slate-600">
                   {documentCategoryLabel(doc.category) || "—"}
                 </td>
                 <td className="py-2 pr-3 text-slate-600">
-                  {isUpload ? formatFileSize(doc.file_size) : "—"}
+                  {doc.version ? `v${doc.version}` : "—"}
+                  {doc.language ? <span className="ml-1 uppercase text-slate-400">{doc.language}</span> : null}
+                  {isUpload && <span className="block text-xs text-slate-400">{formatFileSize(doc.file_size)}</span>}
+                </td>
+                <td className="py-2 pr-3">
+                  <ExpiryCell validUntil={doc.valid_until} />
                 </td>
                 <td className="py-2 pr-3">
                   {doc.is_public ? (
@@ -457,6 +505,12 @@ function DocumentList({ productId, documents, deletingId, onDelete }) {
                       <OpenIcon />
                     </IconButton>
                     <IconButton
+                      title={doc.archived_at ? "Herstellen" : "Archiveren (niet meer op paspoort)"}
+                      onClick={() => onArchive(doc)}
+                    >
+                      <ArchiveIcon />
+                    </IconButton>
+                    <IconButton
                       title="Verwijderen"
                       tone="danger"
                       disabled={deletingId === doc.id}
@@ -472,6 +526,26 @@ function DocumentList({ productId, documents, deletingId, onDelete }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function ExpiryCell({ validUntil }) {
+  const e = documentExpiry(validUntil);
+  if (e.status === "none") return <span className="text-slate-400">—</span>;
+  const variant = e.status === "expired" ? "danger" : e.status === "expiring" ? "warning" : "neutral";
+  return (
+    <span title={e.label}>
+      <Badge variant={variant}>{e.status === "valid" ? e.date : e.label}</Badge>
+    </span>
+  );
+}
+
+function ArchiveIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.5" y="3.5" width="15" height="4" rx="1" />
+      <path d="M4 7.5V15a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 16 15V7.5M8 11h4" />
+    </svg>
   );
 }
 

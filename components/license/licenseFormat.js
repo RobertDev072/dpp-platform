@@ -34,3 +34,19 @@ export function usageSummary(usage) {
     item.max == null ? `${label} ${item.used}` : `${label} ${item.used}/${item.max}`;
   return `${part("gebruikers", usage.users)} · ${part("producten", usage.products)}`;
 }
+
+// Prijs in centen -> "€ 149 / maand" (null = onbekend).
+export function formatPrice(cents) {
+  if (cents == null) return null;
+  const euros = Number(cents) / 100;
+  return `${euros.toLocaleString("nl-NL", { style: "currency", currency: "EUR", minimumFractionDigits: euros % 1 ? 2 : 0 })} / maand`;
+}
+
+// Bytes -> "2,8 GB" / "340 MB".
+export function formatBytes(bytes) {
+  const n = Number(bytes || 0);
+  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toLocaleString("nl-NL", { maximumFractionDigits: 1 })} GB`;
+  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toLocaleString("nl-NL", { maximumFractionDigits: 1 })} MB`;
+  if (n >= 1024) return `${Math.round(n / 1024).toLocaleString("nl-NL")} kB`;
+  return `${n} B`;
+}

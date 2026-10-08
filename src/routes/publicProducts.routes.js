@@ -39,7 +39,7 @@ router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
       return;
     }
     const document = await documentsRepo.getDocumentById(Number(req.params.documentId));
-    if (!document || document.product_id !== product.id || !document.is_public) {
+    if (!document || document.product_id !== product.id || !document.is_public || document.archived_at) {
       next(new HttpError(404, "Niet gevonden"));
       return;
     }

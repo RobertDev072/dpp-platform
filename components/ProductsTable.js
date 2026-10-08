@@ -634,7 +634,7 @@ function ProductsTableInner({
         />
       )}
 
-      <Card className="sticky top-0 z-10">
+      <Card className="lg:sticky lg:top-0 lg:z-10">
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
           <Field
             label="Zoeken"

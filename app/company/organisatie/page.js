@@ -20,6 +20,13 @@ import EmptyState from "@/components/ui/EmptyState";
 import IconButton, { ArchiveIcon, KeyIcon, RestoreIcon } from "@/components/ui/IconButton";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import UserSessionsDialog from "@/components/admin/UserSessionsDialog";
+
+function formatLastLogin(value) {
+  if (!value) return "Nog nooit";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("nl-NL", { dateStyle: "medium", timeStyle: "short" });
+}
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -43,6 +50,8 @@ export default function OrganisatiePage() {
   // Na een admin-reset: het nieuwe tijdelijke wachtwoord, eenmalig getoond.
   const [resetInfo, setResetInfo] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [sessionsFor, setSessionsFor] = useState(null);
+  const [me, setMe] = useState(null);
 
   const form = useForm({
     initial: { email: "", firstName: "", lastName: "", role: "company_user" },
@@ -52,6 +61,7 @@ export default function OrganisatiePage() {
   });
 
   useEffect(() => {
+    api.get("/api/auth/me").then(setMe).catch(() => {});
     api
       .get("/api/users")
       .then((data) => setUsers(data))
@@ -278,6 +288,7 @@ export default function OrganisatiePage() {
                   <th className="py-2 pr-3">Rol</th>
                   <th className="py-2 pr-3">Status</th>
                   <th className="py-2 pr-3">Status wijzigen</th>
+                  <th className="py-2 pr-3">Laatste login</th>
                   <th className="py-2 pr-3">Acties</th>
                 </tr>
               </thead>
@@ -319,8 +330,20 @@ export default function OrganisatiePage() {
                         ))}
                       </select>
                     </td>
+                    <td className="whitespace-nowrap py-2 pr-3 text-slate-600">
+                      {formatLastLogin(user.last_login_at)}
+                      {Number(user.active_sessions) > 0 && (
+                        <span className="block text-xs text-emerald-700">{user.active_sessions} actief</span>
+                      )}
+                    </td>
                     <td className="py-2 pr-3">
                       <div className="flex flex-wrap items-center gap-1.5">
+                        <IconButton title="Sessies bekijken" onClick={() => setSessionsFor(user)}>
+                          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+                            <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" />
+                            <path d="M7 16.5h6M10 13.5v3" />
+                          </svg>
+                        </IconButton>
                         <IconButton
                           title="Reset wachtwoord"
                           onClick={() => handleResetPassword(user)}
@@ -349,6 +372,14 @@ export default function OrganisatiePage() {
           </div>
         )}
       </Card>
+      {sessionsFor && (
+        <UserSessionsDialog
+          user={sessionsFor}
+          canRevoke={sessionsFor.id !== me?.id}
+          onClose={() => setSessionsFor(null)}
+          onRevoked={() => setUsers((prev) => prev.map((u) => (u.id === sessionsFor.id ? { ...u, active_sessions: 0 } : u)))}
+        />
+      )}
     </div>
   );
 }

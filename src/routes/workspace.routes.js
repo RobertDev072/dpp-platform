@@ -26,7 +26,7 @@ async function companyNotifications(user) {
   const [summary, imports, license] = await Promise.all([
     queryOne(
       `SELECT
-         COUNT(*) FILTER (WHERE p.status <> 'archived' AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.product_id = p.id)) AS missing_documents,
+         COUNT(*) FILTER (WHERE p.status <> 'archived' AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.product_id = p.id AND d.archived_at IS NULL)) AS missing_documents,
          COUNT(*) FILTER (WHERE p.status = 'draft') AS drafts,
          COUNT(*) FILTER (WHERE p.status = 'draft' AND p.public_id IS NOT NULL) AS reserved_qr
        FROM products p WHERE p.company_id = $1`,
@@ -69,6 +69,25 @@ async function companyNotifications(user) {
       title: `${plural(summary.missing_documents, "product mist", "producten missen")} documenten`,
       description: "Voeg bijvoorbeeld een handleiding of certificaat toe.",
       href: "/company/documenten"
+    });
+  }
+  const docs = overview.documents || {};
+  if (Number(docs.expired) > 0) {
+    items.push({
+      id: `docs-expired-${docs.expired}`,
+      severity: "danger",
+      title: `${plural(Number(docs.expired), "document is", "documenten zijn")} verlopen`,
+      description: "Upload een nieuwe versie of archiveer het verlopen document.",
+      href: "/company/documenten?expiry=expired"
+    });
+  }
+  if (Number(docs.expiring) > 0) {
+    items.push({
+      id: `docs-expiring-${docs.expiring}`,
+      severity: "warning",
+      title: `${plural(Number(docs.expiring), "document verloopt", "documenten verlopen")} binnen 30 dagen`,
+      description: "Zorg op tijd voor een nieuwe versie.",
+      href: "/company/documenten?expiry=expiring"
     });
   }
   if (s.ready_to_publish > 0) {
@@ -181,7 +200,7 @@ router.get("/search", async (req, res, next) => {
           id: c.id,
           title: c.name,
           subtitle: c.kind === "partner" ? "Partner" : "Klantbedrijf",
-          href: c.kind === "partner" ? "/admin/partners" : `/admin/companies?q=${encodeURIComponent(c.name)}`
+          href: `/admin/companies/${c.id}`
         }))
       });
       groups.push({

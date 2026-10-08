@@ -158,6 +158,9 @@ Aanvullende regels (afgedwongen in code én database):
   Te kleine QR (< 10 mm) of te weinig contrast wordt geweigerd, twijfelgevallen
   geven een waarschuwing. PDF/PNG/SVG-ZIP worden in de browser gemaakt (vector-QR in
   de PDF); de server levert de officiële QR-URL.
+- **Documenten** hebben versie, taal, vervaldatum, uploader en kunnen gearchiveerd
+  worden (dan niet meer op het paspoort en niet meer meegeteld voor compleetheid).
+  Verlopen documenten geven een melding.
 - De publieke paspoortpagina (`/p/[id]`) roept de paspoort-service rechtstreeks aan
   (geen tweede HTTP-call naar de eigen API) en registreert een scan in `scan_events`
   (user-agent/referrer, geen persoonsgegevens) — bron voor de QR-statistieken.
@@ -322,7 +325,7 @@ docs/                          migratie-azure-naar-vercel-supabase.md (draaiboek
 
 - `npm test` — volledige suite tegen de database uit `DATABASE_URL` (een lokale/
   wegwerp-Postgres; fixtures ruimen zichzelf op via `tests/helpers/fixtures.js`).
-  Stand 2026-10-07: **138 tests: 134 geslaagd, 0 gefaald, 4 overgeslagen** (de overgeslagen
+  Stand 2026-10-08: **153 tests: 149 geslaagd, 0 gefaald, 4 overgeslagen** (de overgeslagen
   tests vereisen een echt Supabase-project voor Auth/Storage en draaien zodra
   `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` gezet zijn). CI draait dezelfde suite.
 - Live rooktest tegen de echte omgeving (wegwerp-testaccounts, ruimt álles op:
@@ -363,11 +366,11 @@ Bijgewerkt 2026-10-07.
 - [ ] Eventueel MFA terug (Supabase Auth ondersteunt TOTP).
 
 ### UX-traject (zie `docs/ux-implementatieplan.md`)
-- [ ] Na deploy: `npm run migrate` draaien voor `002_import_and_print.sql`
-      (tabellen `import_jobs`, `print_profiles` + indexen; alleen toevoegingen).
-- [ ] Customer 360, partnerdashboard-uitbreiding, gebruikerssessies, facturatie.
-- [ ] Documentversies en vervaldatums (schemawijziging).
-- [ ] Toegankelijkheids-/responsive-review van de oudere admin- en partnerpagina's.
+- [ ] Na deploy: `npm run migrate` draaien voor `002_import_and_print.sql` en
+      `003_documents_users_billing.sql` (alleen nieuwe tabellen/kolommen/indexen).
+- [ ] Prijzen en (optioneel) opslag-/scanlimieten invullen bij Abonnementen.
+- [ ] Besluit betaalprovider/facturatie (nu alleen gegevens + maandbedrag).
+- [ ] Eventueel MFA en documenten aan meerdere producten koppelen (eerst ontwerp).
 
 ### Infra / later
 - [ ] Aparte Supabase-omgeving voor preview-deployments.

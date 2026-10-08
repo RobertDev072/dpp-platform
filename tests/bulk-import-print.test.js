@@ -122,7 +122,7 @@ test("bulk, import, QR, printprofielen en zoeken zijn tenant-gescheiden", async 
   // --- QR -----------------------------------------------------------------
   await t.test("qr: gereserveerde QR opent de 'nog niet gepubliceerd'-pagina, geen 404", async () => {
     const row = await queryOne("SELECT public_id FROM products WHERE id = $1", [productA1]);
-    const res = await request(baseUrl, "GET", `/api/public/passports/${row.public_id}`);
+    const res = await request(baseUrl, "GET", `/api/public/products/${row.public_id}`);
     // Publieke API geeft alleen gepubliceerde paspoorten vrij.
     assert.notEqual(res.status, 200);
   });

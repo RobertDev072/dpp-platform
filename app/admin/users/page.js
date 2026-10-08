@@ -28,6 +28,8 @@ import { useToast } from "@/components/ui/Toast";
 import AdminStatTile from "@/components/admin/AdminStatTile";
 import ListPagination from "@/components/admin/ListPagination";
 import { downloadCsv, formatRelativeTime, initialsOf } from "@/components/admin/listUtils";
+import BulkActionBar, { BulkButton } from "@/components/ui/BulkActionBar";
+import UserSessionsDialog from "@/components/admin/UserSessionsDialog";
 
 const PAGE_SIZE = 25;
 
@@ -285,6 +287,9 @@ export default function UsersPage() {
   const [expandedId, setExpandedId] = useState(null);
   // Tijdelijk wachtwoord na reset: éénmalig getoond in een rij-uitklap onder de gebruiker.
   const [resetInfo, setResetInfo] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState("");
+  const [sessionsFor, setSessionsFor] = useState(null);
 
   const companiesById = useMemo(
     () => Object.fromEntries(companies.map((company) => [company.id, company])),
@@ -304,6 +309,7 @@ export default function UsersPage() {
   // Elke filterwijziging springt terug naar pagina 1.
   useEffect(() => {
     setPage(1);
+    setSelected(new Set());
   }, [search, roleFilter, statusFilter, companyFilter, providerFilter]);
 
   function companyName(user) {
@@ -322,7 +328,10 @@ export default function UsersPage() {
       total: users.length,
       admins: users.filter((u) => u.role === "company_admin").length,
       members: users.filter((u) => u.role === "company_user").length,
-      blocked: users.filter((u) => u.status === "blocked").length
+      partners: users.filter((u) => u.role === "partner_admin").length,
+      owners: users.filter((u) => u.role === "platform_owner").length,
+      blocked: users.filter((u) => u.status === "blocked").length,
+      online: users.filter((u) => Number(u.active_sessions) > 0).length
     }),
     [users]
   );
@@ -423,21 +432,81 @@ export default function UsersPage() {
     }
   }
 
-  // CSV van de huidige (gefilterde) lijst.
-  function handleExport() {
+  const selectableIds = useMemo(
+    () => new Set(filteredUsers.filter((u) => u.role !== "platform_owner").map((u) => u.id)),
+    [filteredUsers]
+  );
+  const pageSelectable = pageItems.filter((u) => selectableIds.has(u.id));
+  const allPageSelected = pageSelectable.length > 0 && pageSelectable.every((u) => selected.has(u.id));
+
+  function toggleSelected(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) pageSelectable.forEach((u) => next.delete(u.id));
+      else pageSelectable.forEach((u) => next.add(u.id));
+      return next;
+    });
+  }
+
+  // Bulkwijziging: per gebruiker dezelfde PATCH als bij losse wijzigingen, zodat
+  // álle serverregels (laatste beheerder, seat-limiet, partnerrollen) gelden.
+  async function runBulk(body, label) {
+    const targets = users.filter((u) => selected.has(u.id));
+    if (!targets.length) return;
+    const sure = window.confirm(`${label} voor ${targets.length} gebruiker${targets.length === 1 ? "" : "s"}?`);
+    if (!sure) return;
+    setBulkBusy(label);
+    let ok = 0;
+    const failures = [];
+    for (const user of targets) {
+      try {
+        const updated = await api.patch(`/api/users/${user.id}`, body);
+        setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
+        ok += 1;
+      } catch (err) {
+        failures.push(`${user.email}: ${err.message}`);
+      }
+    }
+    setBulkBusy("");
+    setSelected(new Set());
+    if (ok) toast.success(`${label}: ${ok} gelukt`);
+    if (failures.length) toast.error(`${failures.length} niet gewijzigd — ${failures.slice(0, 2).join("; ")}${failures.length > 2 ? "…" : ""}`);
+  }
+
+  function exportSelected() {
+    exportRows(users.filter((u) => selected.has(u.id)));
+  }
+
+  function exportRows(rows) {
     downloadCsv(
       "veripasso-gebruikers.csv",
-      ["Naam", "E-mail", "Bedrijf", "Rol", "Verificatie", "Status", "Laatst actief"],
-      filteredUsers.map((user) => [
+      ["Naam", "E-mail", "Bedrijf", "Rol", "Verificatie", "Status", "Laatste login", "Actieve sessies", "Laatst actief"],
+      rows.map((user) => [
         fullName(user),
         user.email,
         companyName(user),
         roleLabel(user.role),
         providerOf(user) === "supabase" ? "Supabase" : "Lokaal",
         statusLabel(user.status),
+        user.last_login_at ? new Date(user.last_login_at).toLocaleString("nl-NL") : "",
+        user.active_sessions ?? 0,
         user.last_activity ? new Date(user.last_activity).toLocaleString("nl-NL") : ""
       ])
     );
+  }
+
+  // CSV van de huidige (gefilterde) lijst.
+  function handleExport() {
+    exportRows(filteredUsers);
   }
 
   return (
@@ -463,18 +532,20 @@ export default function UsersPage() {
       {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, index) => (
             <Card key={index}>
               <Skeleton className="h-12 w-full" />
             </Card>
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
           <AdminStatTile label="Totaal gebruikers" value={stats.total} />
           <AdminStatTile label="Bedrijfsbeheerders" value={stats.admins} />
           <AdminStatTile label="Medewerkers" value={stats.members} />
+          <AdminStatTile label="Partner Admins" value={stats.partners} />
+          <AdminStatTile label="Platform Owners" value={stats.owners} />
           <AdminStatTile label="Geblokkeerd" value={stats.blocked} tone="danger" />
         </div>
       )}
@@ -498,7 +569,7 @@ export default function UsersPage() {
         />
       )}
 
-      <Card className="sticky top-0 z-10">
+      <Card className="lg:sticky lg:top-0 lg:z-10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <Field
             label="Zoeken"
@@ -572,12 +643,22 @@ export default function UsersPage() {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-500">
+                    <th className="w-8 py-2 pr-2">
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePage}
+                        disabled={pageSelectable.length === 0}
+                        aria-label="Alle gebruikers op deze pagina selecteren"
+                        className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                      />
+                    </th>
                     <th className="py-2 pr-3 font-medium">Gebruiker</th>
                     <th className="py-2 pr-3 font-medium">Bedrijf</th>
                     <th className="py-2 pr-3 font-medium">Rol</th>
                     <th className="py-2 pr-3 font-medium">Verificatie</th>
                     <th className="py-2 pr-3 font-medium">Status</th>
-                    <th className="py-2 pr-3 font-medium">Laatst actief</th>
+                    <th className="py-2 pr-3 font-medium">Laatste login</th>
                     <th className="py-2 pr-3 font-medium">Acties</th>
                   </tr>
                 </thead>
@@ -616,6 +697,9 @@ export default function UsersPage() {
                         onRoleChange={(role) => patchUser(user, { role })}
                         onStatusChange={(status) => patchUser(user, { status })}
                         onDelete={() => handleDelete(user)}
+                        selected={selected.has(user.id)}
+                        onToggleSelected={() => toggleSelected(user.id)}
+                        onShowSessions={() => setSessionsFor(user)}
                       />
                     );
                   })}
@@ -633,6 +717,35 @@ export default function UsersPage() {
           </>
         )}
       </Card>
+
+      <BulkActionBar count={selected.size} total={selectableIds.size} onClear={() => setSelected(new Set())}>
+        <BulkButton disabled={Boolean(bulkBusy)} onClick={() => runBulk({ status: "active" }, "Activeren")}>
+          Activeren
+        </BulkButton>
+        <BulkButton disabled={Boolean(bulkBusy)} onClick={() => runBulk({ status: "blocked" }, "Blokkeren")}>
+          Blokkeren
+        </BulkButton>
+        <BulkButton disabled={Boolean(bulkBusy)} onClick={() => runBulk({ role: "company_user" }, "Rol → Medewerker")}>
+          Rol: Medewerker
+        </BulkButton>
+        <BulkButton disabled={Boolean(bulkBusy)} onClick={() => runBulk({ role: "company_admin" }, "Rol → Bedrijfsbeheerder")}>
+          Rol: Bedrijfsbeheerder
+        </BulkButton>
+        <BulkButton disabled={Boolean(bulkBusy)} onClick={exportSelected}>
+          Exporteren
+        </BulkButton>
+        <BulkButton tone="danger" disabled={Boolean(bulkBusy)} onClick={() => runBulk({ status: "archived" }, "Archiveren")}>
+          Archiveren
+        </BulkButton>
+      </BulkActionBar>
+
+      {sessionsFor && (
+        <UserSessionsDialog
+          user={sessionsFor}
+          onClose={() => setSessionsFor(null)}
+          onRevoked={() => setUsers((prev) => prev.map((u) => (u.id === sessionsFor.id ? { ...u, active_sessions: 0 } : u)))}
+        />
+      )}
     </div>
   );
 }
@@ -656,11 +769,25 @@ function UserRows({
   onCopyPassword,
   onRoleChange,
   onStatusChange,
-  onDelete
+  onDelete,
+  selected,
+  onToggleSelected,
+  onShowSessions
 }) {
   return (
     <>
-      <tr className="border-b border-slate-100">
+      <tr className={`border-b border-slate-100 ${selected ? "bg-emerald-50/50" : ""}`}>
+        <td className="py-2.5 pr-2">
+          {!isPlatformOwner && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelected}
+              aria-label={`Selecteer ${user.email}`}
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+            />
+          )}
+        </td>
         <td className="py-2.5 pr-3">
           <div className="flex items-center gap-3">
             <div
@@ -692,7 +819,14 @@ function UserRows({
           </Badge>
         </td>
         <td className="whitespace-nowrap py-2.5 pr-3 text-slate-600">
-          {formatRelativeTime(user.last_activity, "Nog nooit")}
+          <span title={user.last_activity ? `Laatst actief: ${new Date(user.last_activity).toLocaleString("nl-NL")}` : undefined}>
+            {formatRelativeTime(user.last_login_at, "Nog nooit")}
+          </span>
+          {Number(user.active_sessions) > 0 && (
+            <span className="block text-xs text-emerald-700">
+              {user.active_sessions} actieve sessie{Number(user.active_sessions) === 1 ? "" : "s"}
+            </span>
+          )}
         </td>
         <td className="py-2.5 pr-3">
           {isPlatformOwner ? (
@@ -707,6 +841,9 @@ function UserRows({
                   <LoginIcon />
                 </IconButton>
               )}
+              <IconButton title="Sessies bekijken" onClick={onShowSessions}>
+                <SessionsIcon />
+              </IconButton>
               <IconButton title="Reset wachtwoord" onClick={onResetPassword}>
                 <KeyIcon />
               </IconButton>
@@ -727,7 +864,7 @@ function UserRows({
 
       {isExpanded && (
         <tr className="border-b border-slate-100 bg-slate-50">
-          <td colSpan={7} className="px-3 py-3">
+          <td colSpan={8} className="px-3 py-3">
             <div className="flex flex-wrap items-end gap-3">
               <Select
                 label="Rol"
@@ -757,7 +894,7 @@ function UserRows({
 
       {showReset && resetInfo.tempPassword && (
         <tr className="border-b border-amber-100 bg-amber-50">
-          <td colSpan={7} className="px-3 py-3">
+          <td colSpan={8} className="px-3 py-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <p className="text-sm font-medium text-amber-800">
                 Nieuw tijdelijk wachtwoord voor {resetInfo.email} — dit wordt maar één keer
@@ -789,7 +926,7 @@ function UserRows({
 
       {showReset && !resetInfo.tempPassword && (
         <tr className="border-b border-blue-100 bg-blue-50">
-          <td colSpan={7} className="px-3 py-3">
+          <td colSpan={8} className="px-3 py-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <p className="text-sm text-blue-800">{resetInfo.message}</p>
               <button
@@ -804,5 +941,14 @@ function UserRows({
         </tr>
       )}
     </>
+  );
+}
+
+function SessionsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" />
+      <path d="M7 16.5h6M10 13.5v3" />
+    </svg>
   );
 }

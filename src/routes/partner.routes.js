@@ -11,7 +11,7 @@ const usersRepo = require("../repositories/users.repository");
 const identity = require("../services/identity.service");
 const { hashPassword } = require("../utils/password");
 const { generateTempPassword } = require("../utils/tempPassword");
-const { buildUsage, getLicenseUsage } = require("../services/license.service");
+const { buildUsage, getLicenseUsage, getExtendedUsage } = require("../services/license.service");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const { getAppBaseUrl } = require("../utils/baseUrl");
@@ -171,7 +171,7 @@ router.get("/customers/:id/license", async (req, res, next) => {
   try {
     const customer = await loadOwnedCustomer(req, next);
     if (!customer) return;
-    res.json({ companyId: customer.id, name: customer.name, ...(await getLicenseUsage(customer.id)) });
+    res.json({ companyId: customer.id, name: customer.name, ...(await getExtendedUsage(customer.id)) });
   } catch (error) {
     next(error);
   }

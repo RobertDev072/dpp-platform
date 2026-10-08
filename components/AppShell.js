@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { roleLabel } from "@/lib/labels";
 import { homeHrefForRole } from "@/lib/nav";
 import { VeriPassoWordmark } from "@/components/landing/VeriPassoLogo";
-import { GlobalSearch, NotificationsMenu } from "@/components/HeaderTools";
+import { GlobalSearch, MobileSearch, NotificationsMenu } from "@/components/HeaderTools";
 
 // Kleine, met de hand getekende 20px stroke-iconen (geen icon-library).
 const NAV_ICONS = {
@@ -422,14 +422,17 @@ export default function AppShell({ menu, children }) {
                 {breadcrumb.map((crumb, index) => {
                   const isLast = index === breadcrumb.length - 1;
                   return (
-                    <li key={`${crumb.label}-${index}`} className="flex min-w-0 items-center gap-1.5">
+                    <li
+                      key={`${crumb.label}-${index}`}
+                      className={`min-w-0 items-center gap-1.5 ${isLast ? "flex" : "hidden sm:flex"}`}
+                    >
                       {index > 0 && (
                         <svg
                           width="14"
                           height="14"
                           viewBox="0 0 20 20"
                           fill="none"
-                          className="shrink-0 text-slate-300"
+                          className="hidden shrink-0 text-slate-300 sm:block"
                           aria-hidden="true"
                         >
                           <path d="m7.5 4.5 5 5.5-5 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -458,6 +461,7 @@ export default function AppShell({ menu, children }) {
             <div className="hidden sm:block">
               <GlobalSearch />
             </div>
+            <MobileSearch />
             <NotificationsMenu pathname={pathname} />
 
             <div ref={userMenuRef} className="relative">

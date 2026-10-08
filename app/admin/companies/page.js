@@ -280,7 +280,7 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      <Card className="sticky top-0 z-10">
+      <Card className="lg:sticky lg:top-0 lg:z-10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <Field
             label="Zoeken"
@@ -363,7 +363,9 @@ export default function CompaniesPage() {
                           <CompanyLogo company={company} />
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="font-medium text-slate-900">{company.name}</p>
+                              <Link href={`/admin/companies/${company.id}`} className="font-medium text-slate-900 hover:text-emerald-700 hover:underline">
+                                {company.name}
+                              </Link>
                               <TypeBadge company={company} />
                             </div>
                             <p className="text-xs text-slate-500">{company.slug}</p>

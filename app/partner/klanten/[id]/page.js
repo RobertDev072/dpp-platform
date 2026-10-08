@@ -11,9 +11,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import IconButton, { KeyIcon } from "@/components/ui/IconButton";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
-import UsageBar from "@/components/license/UsageBar";
-import LicenseStatusBadge from "@/components/license/LicenseStatusBadge";
-import { formatValidity } from "@/components/license/licenseFormat";
+import SubscriptionUsage from "@/components/license/SubscriptionUsage";
 import ActivationUrlBox from "@/components/partner/ActivationUrlBox";
 import CustomerInviteForm from "@/components/partner/CustomerInviteForm";
 import TempPasswordBox from "@/components/partner/TempPasswordBox";
@@ -145,34 +143,8 @@ export default function KlantDetailPage() {
         license && (
           <>
             <Card>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-slate-900">Licentie</h2>
-                <LicenseStatusBadge status={license.status} />
-              </div>
-
-              <dl className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Plan</dt>
-                  <dd className="mt-1">
-                    {license.plan ? (
-                      <Badge variant="info">{license.plan.name}</Badge>
-                    ) : (
-                      <Badge variant="neutral">Geen plan</Badge>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Geldigheid</dt>
-                  <dd className="mt-1 text-sm text-slate-700">
-                    {formatValidity(license.licenseStart, license.licenseEnd)}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <UsageBar label="Gebruikers" {...license.users} />
-                <UsageBar label="Producten" {...license.products} />
-              </div>
+              <h2 className="mb-4 text-sm font-semibold text-slate-900">Licentie</h2>
+              <SubscriptionUsage usage={license} />
             </Card>
 
             <Card>

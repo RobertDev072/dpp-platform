@@ -7,7 +7,7 @@ const { createPartSchema } = require("../schemas/parts.schema");
 const { updateSustainabilitySchema } = require("../schemas/sustainability.schema");
 const { updateComplianceSchema } = require("../schemas/compliance.schema");
 const { createBatchSchema } = require("../schemas/batches.schema");
-const { createDocumentSchema } = require("../schemas/documents.schema");
+const { createDocumentSchema, updateDocumentSchema } = require("../schemas/documents.schema");
 const productsRepo = require("../repositories/products.repository");
 const insights = require("../repositories/productInsights.repository");
 const { productBulkSchema } = require("../schemas/bulk.schema");
@@ -589,7 +589,7 @@ router.get("/:id/documents", requireRole(...ALL_ROLES), async (req, res, next) =
     }
     assertCompanyAccess(req.user, product.company_id);
 
-    res.json(await documentsRepo.listDocumentsForProduct(id));
+    res.json(await documentsRepo.listDocumentsForProduct(id, { includeArchived: true }));
   } catch (error) {
     next(error);
   }
@@ -612,7 +612,8 @@ router.post(
       const document = await documentsRepo.createDocument({
         companyId: product.company_id,
         productId: id,
-        ...req.body
+        ...req.body,
+        uploadedBy: req.user.id
       });
 
       await logAudit({
@@ -692,7 +693,10 @@ router.post(
         fileSize: size,
         mimeType: contentType,
         isPublic: req.body.isPublic,
-        category: req.body.category
+        category: req.body.category,
+        version: req.body.version,
+        validUntil: req.body.validUntil,
+        uploadedBy: req.user.id
       });
 
       await logAudit({
@@ -742,6 +746,41 @@ router.get("/:id/documents/:documentId/file", requireRole(...ALL_ROLES), async (
     next(error);
   }
 });
+
+// Metadata wijzigen (titel, taal, versie, vervaldatum, openbaar, archiveren).
+router.patch(
+  "/:id/documents/:documentId",
+  requireRole(...EDITOR_ROLES),
+  validateBody(updateDocumentSchema),
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const product = await productsRepo.getProductById(id);
+      if (!product) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+      assertCompanyAccess(req.user, product.company_id);
+      const document = await documentsRepo.getDocumentById(Number(req.params.documentId));
+      if (!document || document.product_id !== id) {
+        next(new HttpError(404, "Niet gevonden"));
+        return;
+      }
+      const updated = await documentsRepo.updateDocument(document.id, product.company_id, req.body);
+      await logAudit({
+        companyId: product.company_id,
+        userId: req.user.id,
+        action: req.body.archived === true ? "archive" : req.body.archived === false ? "restore" : "update",
+        entityType: "Document",
+        entityId: document.id,
+        metadata: { fields: Object.keys(req.body) }
+      });
+      res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 router.delete(
   "/:id/documents/:documentId",

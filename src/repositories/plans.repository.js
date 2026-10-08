@@ -1,6 +1,7 @@
 const { queryRows, queryOne } = require("../config/db");
 
-const COLUMNS = "id, name, max_users, max_products, feature_flags, partner_assignable, created_at, updated_at";
+const COLUMNS =
+  "id, name, max_users, max_products, feature_flags, partner_assignable, price_monthly_cents, max_storage_mb, max_scans_month, created_at, updated_at";
 
 // Geeft null terug als de company nog geen plan heeft (dan geldt geen limiet) — een
 // platform owner kan een company aanmaken zonder meteen een plan te kiezen.
@@ -26,24 +27,27 @@ async function getPlanById(id) {
   return queryOne(`SELECT ${COLUMNS} FROM plans WHERE id = $1`, [id]);
 }
 
-async function createPlan({ name, maxUsers, maxProducts, featureFlags, partnerAssignable }) {
+async function createPlan({ name, maxUsers, maxProducts, featureFlags, partnerAssignable, priceMonthlyCents, maxStorageMb, maxScansMonth }) {
   return queryOne(
     `
-    INSERT INTO plans (name, max_users, max_products, feature_flags, partner_assignable)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO plans (name, max_users, max_products, feature_flags, partner_assignable, price_monthly_cents, max_storage_mb, max_scans_month)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     RETURNING ${COLUMNS}
   `,
-    [name, maxUsers, maxProducts, featureFlags ?? null, partnerAssignable !== false]
+    [name, maxUsers, maxProducts, featureFlags ?? null, partnerAssignable !== false, priceMonthlyCents ?? null, maxStorageMb ?? null, maxScansMonth ?? null]
   );
 }
 
-const UPDATABLE_FIELDS = ["name", "maxUsers", "maxProducts", "featureFlags", "partnerAssignable"];
+const UPDATABLE_FIELDS = ["name", "maxUsers", "maxProducts", "featureFlags", "partnerAssignable", "priceMonthlyCents", "maxStorageMb", "maxScansMonth"];
 const FIELD_TO_COLUMN = {
   name: "name",
   maxUsers: "max_users",
   maxProducts: "max_products",
   partnerAssignable: "partner_assignable",
-  featureFlags: "feature_flags"
+  featureFlags: "feature_flags",
+  priceMonthlyCents: "price_monthly_cents",
+  maxStorageMb: "max_storage_mb",
+  maxScansMonth: "max_scans_month"
 };
 
 async function updatePlan(id, fields) {

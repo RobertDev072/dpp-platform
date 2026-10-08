@@ -19,7 +19,9 @@ async function listUsers({ companyId, includeDeleted = false } = {}) {
     SELECT ${columns},
            c.name AS company_name,
            CASE WHEN u.password_hash IS NULL THEN 'supabase' ELSE 'local' END AS auth_provider,
-           (SELECT MAX(a.timestamp) FROM audit_logs a WHERE a.user_id = u.id) AS last_activity
+           (SELECT MAX(a.timestamp) FROM audit_logs a WHERE a.user_id = u.id) AS last_activity,
+           u.last_login_at,
+           (SELECT COUNT(*)::int FROM sessions s WHERE s.user_id = u.id AND s.expires_at > now()) AS active_sessions
     FROM users u
     LEFT JOIN companies c ON c.id = u.company_id
     ${where}
