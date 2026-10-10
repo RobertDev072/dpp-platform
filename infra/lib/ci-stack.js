@@ -24,7 +24,18 @@ class VeriPassoCiStack extends cdk.Stack {
       assumedBy: new iam.WebIdentityPrincipal(provider.openIdConnectProviderArn, {
         StringEquals: {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": `repo:${config.githubRepository}:environment:${config.envName}`
+          // GitHub levert de "sub" in het nieuwe formaat met vaste ID's
+          // (repo:<eigenaar>@<eigenaar-id>/<repo>@<repo-id>:environment:<env>); dat blijft
+          // juist ook na hernoemen alleen voor déze repository geldig. Het oude formaat
+          // blijft toegestaan voor accounts waar GitHub dat nog stuurt.
+          "token.actions.githubusercontent.com:sub": [
+            `repo:${config.githubRepository}:environment:${config.envName}`,
+            ...(config.githubOwnerId && config.githubRepositoryId
+              ? [
+                  `repo:${config.githubRepository.split("/")[0]}@${config.githubOwnerId}/${config.githubRepository.split("/")[1]}@${config.githubRepositoryId}:environment:${config.envName}`
+                ]
+              : [])
+          ]
         }
       })
     });

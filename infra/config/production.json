@@ -33,6 +33,8 @@
   "containerInsights": false,
   "monthlyBudgetUsd": 10,
   "githubRepository": "RobertDev072/dpp-platform",
+  "githubOwnerId": "229516077",
+  "githubRepositoryId": "1392576398",
   "cloudFrontDomains": [
     "app.veripasso.com",
     "qr.veripasso.com"
