@@ -6,7 +6,7 @@
   "envName": "production",
   "appDomain": "app.veripasso.com",
   "qrDomain": "qr.veripasso.com",
-  "cloudFrontCertificateArn": "arn:aws:acm:us-east-1:707191185248:certificate/b2db4070-9821-482f-85c7-07d52634261b",
+  "cloudFrontCertificateArn": "arn:aws:acm:us-east-1:707191185248:certificate/74da1390-15a5-4f01-b71f-c109c17d70d1",
   "originDomain": "origin.veripasso.com",
   "originCertificateArn": "arn:aws:acm:eu-west-1:707191185248:certificate/357e84d6-9c8c-4c20-b218-daa931abca6e",
   "imageTag": "initial",
@@ -37,6 +37,8 @@
   "githubOwnerId": "229516077",
   "githubRepositoryId": "1392576398",
   "cloudFrontDomains": [
+    "veripasso.com",
+    "www.veripasso.com",
     "app.veripasso.com",
     "qr.veripasso.com"
   ]
