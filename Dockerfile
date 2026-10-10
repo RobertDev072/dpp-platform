@@ -31,8 +31,11 @@ ENV NODE_ENV=production \
     GIT_SHA=${GIT_SHA} \
     DATABASE_CA_CERT_FILE=/app/certs/rds-global-bundle.pem
 
-# CA-bundel van Amazon RDS: TLS naar de database mét certificaatcontrole.
-ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
+# CA-bundel van Amazon RDS: TLS naar de database mét certificaatcontrole. ADD van een
+# URL maakt map en bestand alleen voor root leesbaar; de app draait als "node", dus
+# de rechten expliciet zetten (map 755, bestand 644).
+ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
+RUN chmod 755 /app/certs && chmod 644 /app/certs/rds-global-bundle.pem
 
 # Zelfstandige Next.js-server (output: "standalone") + statische bestanden.
 COPY --from=build --chown=node:node /app/.next/standalone ./
