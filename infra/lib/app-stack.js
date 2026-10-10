@@ -59,6 +59,16 @@ class VeriPassoAppStack extends cdk.Stack {
     // netwerkinterfaces in de VPC aan; die verkeer komt dus uit het VPC-adresbereik.
     const albSg = new ec2.SecurityGroup(this, "AlbSg", { vpc, description: "Interne ALB: alleen CloudFront VPC origin", allowAllOutbound: true });
     albSg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(443), "CloudFront VPC origin (binnen de VPC)");
+    // CloudFront maakt bij de eerste VPC origin in deze VPC zelf de security group
+    // "CloudFront-VPCOrigins-Service-SG" aan; het verkeer komt daarvandaan. Die id is pas
+    // na de eerste uitrol bekend en staat daarom in de config.
+    if (config.cloudFrontVpcOriginSecurityGroupId) {
+      albSg.addIngressRule(
+        ec2.Peer.securityGroupId(config.cloudFrontVpcOriginSecurityGroupId),
+        ec2.Port.tcp(443),
+        "CloudFront-VPCOrigins-Service-SG"
+      );
+    }
     const appSg = new ec2.SecurityGroup(this, "AppSg", { vpc, description: "ECS-taken: alleen van de ALB", allowAllOutbound: true });
     appSg.addIngressRule(albSg, ec2.Port.tcp(3000), "ALB naar app");
     const dbSg = new ec2.SecurityGroup(this, "DbSg", { vpc, description: "RDS: alleen van de app", allowAllOutbound: false });
