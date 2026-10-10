@@ -1,0 +1,12 @@
+node_modules
+.next
+.vercel
+.git
+.github
+.env
+.env*.local
+migration-output
+infra
+tests
+docs
+*.md

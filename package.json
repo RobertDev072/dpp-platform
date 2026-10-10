@@ -17,6 +17,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@supabase/supabase-js": "^2.117.3",
     "@tailwindcss/postcss": "^4.3.3",
     "@vercel/functions": "^3.9.11",

@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request, directUpload } = require("./helpers/testServer");
-const { isSupabaseConfigured } = require("../src/config/supabase");
+const { isStorageConfigured } = require("../src/services/storage.service");
 const {
   createTestCompany,
   createTestUser,
@@ -10,12 +10,12 @@ const {
   cleanupTestData
 } = require("./helpers/fixtures");
 
-// Documentupload rechtstreeks naar Supabase Storage. Zelfde voorwaarde als de
-// fototest: zonder SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY worden de echte
+// Documentupload rechtstreeks naar de bestandsopslag (Supabase of S3). Zelfde voorwaarde als de
+// fototest: zonder geconfigureerde opslag worden de echte
 // upload/downloaddelen overgeslagen; validatie en tenant-isolatie draaien altijd.
-const storageSkipReason = isSupabaseConfigured()
+const storageSkipReason = isStorageConfigured()
   ? false
-  : "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY niet gezet - zie README.md";
+  : "Bestandsopslag niet geconfigureerd (Supabase of S3) - zie README.md";
 
 // Kleinst mogelijke PDF-bytes (de inhoud is hier niet relevant, alleen type/grootte).
 const PDF_BYTES = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF");

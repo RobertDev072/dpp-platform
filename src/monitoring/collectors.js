@@ -213,6 +213,13 @@ async function getDocumentStorageBreakdown() {
 // mimetype in metadata), dus één query geeft een exacte telling - geen enumeratie
 // van de opslag zelf nodig. Draait alleen in de dagelijkse snapshot.
 async function getBlobStats() {
+  const { STORAGE_PROVIDER } = require("../services/storage.service");
+  if (STORAGE_PROVIDER === "s3") {
+    // Bewust geen enumeratie van S3: bij miljoenen bestanden is dat traag en kost het
+    // per LIST-request geld. Bucketgrootte en -aantallen staan gratis in CloudWatch
+    // (AWS/S3: BucketSizeBytes, NumberOfObjects, dagelijks bijgewerkt).
+    return { available: false, reason: "S3: zie CloudWatch-metrics BucketSizeBytes/NumberOfObjects" };
+  }
   const { IMAGES_BUCKET, DOCUMENTS_BUCKET } = require("../config/supabase");
   const buckets = [IMAGES_BUCKET, DOCUMENTS_BUCKET];
 

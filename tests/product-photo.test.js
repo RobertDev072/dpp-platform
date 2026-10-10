@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { closePool } = require("../src/config/db");
 const { startTestServer, stopTestServer, request, directUpload } = require("./helpers/testServer");
-const { isSupabaseConfigured } = require("../src/config/supabase");
+const { isStorageConfigured } = require("../src/services/storage.service");
 const {
   createTestCompany,
   createTestUser,
@@ -14,9 +14,9 @@ const {
 // SUPABASE_SERVICE_ROLE_KEY (en de buckets uit `npm run setup:storage`). Zonder die
 // configuratie wordt dat deel overgeslagen; de rest van dit bestand (schema/tenant-
 // isolatie op de foto-routes) heeft geen Supabase-verbinding nodig en draait altijd.
-const storageSkipReason = isSupabaseConfigured()
+const storageSkipReason = isStorageConfigured()
   ? false
-  : "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY niet gezet - zie README.md";
+  : "Bestandsopslag niet geconfigureerd (Supabase of S3) - zie README.md";
 
 async function login(baseUrl, user) {
   const res = await request(baseUrl, "POST", "/api/auth/login", {

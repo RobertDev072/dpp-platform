@@ -181,8 +181,13 @@ router.get("/licenses/overview", requireAuth, requireRole(...PLATFORM_OWNER_ROLE
 // worden uitsluitend als aanwezig/afwezig gerapporteerd.
 router.get("/config-status", requireAuth, requireRole(...PLATFORM_OWNER_ROLES), (req, res) => {
   const { getSupabaseConfigDiagnostics } = require("../config/supabase");
+  const { getS3ConfigDiagnostics } = require("../config/s3");
+  const { STORAGE_PROVIDER, DOCUMENT_MAX_MB } = require("../services/storage.service");
   res.json({
     supabase: getSupabaseConfigDiagnostics(),
+    storageProvider: STORAGE_PROVIDER,
+    documentMaxMb: DOCUMENT_MAX_MB,
+    s3: getS3ConfigDiagnostics(),
     cookieSecretSet: Boolean(process.env.COOKIE_SECRET),
     cronSecretSet: Boolean(process.env.CRON_SECRET),
     appBaseUrl: process.env.APP_BASE_URL || null,

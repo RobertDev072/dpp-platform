@@ -4,7 +4,8 @@
 // veroorzaakt.
 
 const { query } = require("../config/db");
-const { isSupabaseConfigured, getSupabaseAdmin, IMAGES_BUCKET } = require("../config/supabase");
+const { isSupabaseConfigured } = require("../config/supabase");
+const { isStorageConfigured, pingStorage } = require("../services/storage.service");
 const { THRESHOLDS } = require("../config/monitoring");
 const { sanitizeErrorMessage } = require("./requestMetrics");
 
@@ -48,14 +49,11 @@ async function checkDatabase() {
 }
 
 async function checkStorage() {
-  if (!isSupabaseConfigured()) {
+  if (!isStorageConfigured()) {
     return { status: "not_configured", latencyMs: null };
   }
   try {
-    const ms = await timed(async () => {
-      const { error } = await getSupabaseAdmin().storage.getBucket(IMAGES_BUCKET);
-      if (error) throw new Error(error.message);
-    });
+    const ms = await timed(pingStorage);
     noteResult("storage", true);
     return { status: statusFromLatency(ms), latencyMs: ms };
   } catch (error) {

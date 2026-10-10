@@ -13,6 +13,15 @@ const REQUIRED_IN_PRODUCTION = [
   "CRON_SECRET"
 ];
 
+// Bestanden op AWS S3 i.p.v. Supabase Storage (Supabase blijft dan alleen voor Auth).
+const REQUIRED_FOR_S3 = ["AWS_REGION", "S3_IMAGES_BUCKET", "S3_DOCUMENTS_BUCKET"];
+
+function requiredVars() {
+  return (process.env.STORAGE_PROVIDER || "").toLowerCase() === "s3"
+    ? [...REQUIRED_IN_PRODUCTION, ...REQUIRED_FOR_S3]
+    : REQUIRED_IN_PRODUCTION;
+}
+
 let cached;
 
 function isProduction() {
@@ -28,7 +37,7 @@ function assertProductionConfig() {
     cached = null;
     return cached;
   }
-  const missing = REQUIRED_IN_PRODUCTION.filter((name) => !process.env[name]);
+  const missing = requiredVars().filter((name) => !process.env[name]);
   cached = missing.length
     ? `Ontbrekende environment variables in productie: ${missing.join(", ")}. Zie README.md.`
     : null;
