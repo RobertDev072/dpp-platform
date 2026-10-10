@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { api } from "@/lib/api";
 import { useForm } from "@/lib/useForm";
 import { roleLabel } from "@/lib/labels";
@@ -12,6 +11,7 @@ import SubmitButton from "@/components/ui/SubmitButton";
 import FormError from "@/components/ui/FormError";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import MfaSettings from "@/components/MfaSettings";
 
 export default function ProfileForm() {
   const toast = useToast();
@@ -153,21 +153,13 @@ export default function ProfileForm() {
 
       <Card>
         <h2 className="mb-2 text-sm font-semibold text-slate-900">Wachtwoord</h2>
-        {me.authProvider === "entra" ? (
-          <p className="text-sm text-slate-600">
-            Je account wordt overgezet naar het nieuwe inlogsysteem. Dat gebeurt automatisch bij
-            je volgende login met je huidige wachtwoord; je kunt ook{" "}
-            <Link href="/wachtwoord-vergeten" className="font-medium text-emerald-700 hover:text-emerald-800 hover:underline">
-              een nieuw wachtwoord instellen
-            </Link>
-            .
-          </p>
-        ) : (
-          <p className="text-sm text-slate-600">
-            Dit account gebruikt een lokaal wachtwoord; reset kan via een beheerder.
-          </p>
-        )}
+        <p className="text-sm text-slate-600">
+          Wachtwoord vergeten of wil je een nieuw wachtwoord? Je beheerder kan je een tijdelijk
+          wachtwoord geven; bij de eerstvolgende login stel je dan zelf een nieuw wachtwoord in.
+        </p>
       </Card>
+
+      <MfaSettings role={me.role} />
     </div>
   );
 }

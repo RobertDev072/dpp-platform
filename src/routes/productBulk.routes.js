@@ -76,6 +76,14 @@ router.post("/actions", validateBody(actionSchema), async (req, res, next) => {
         throw new HttpError(400, "Onbekende actie");
     }
 
+    // Compliance: gewijzigde paspoorten die op de markt zijn archiveren (EN 18221 §4.2).
+    if (req.body.action !== "generate_qr") {
+      await require("../services/passportArchive.service").archiveSafely(affected, {
+        userId: req.user.id,
+        reason: `bulk_${req.body.action}`
+      });
+    }
+
     await logAuditFromReq(req, {
       companyId,
       action: `bulk_${req.body.action}`,

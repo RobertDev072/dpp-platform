@@ -1,0 +1,17 @@
+.git
+.github
+.next
+.claude
+node_modules
+infra
+docs
+tests
+supabase
+coverage
+*.log
+.env
+.env.*
+!.env.example
+temp-passwords-*.csv
+Dockerfile
+.dockerignore

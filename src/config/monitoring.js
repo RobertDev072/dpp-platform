@@ -17,20 +17,23 @@ const THRESHOLDS = {
   healthLatencyMs: { warn: 1500, crit: 5000 },
   // Waarschuwing wanneer de capaciteitsgrens naar verwachting binnen X dagen valt.
   capacityForecastWarnDays: 90,
-  // Geheugen (heapUsed/heapTotal-onafhankelijk): % van totaal beschikbaar RSS-budget
-  // van een Vercel-functie (standaard 2 GB); indicatief.
+  // Geheugen: % van het geheugenbudget van de container (CONTAINER_MEMORY_MB,
+  // gezet door de ECS-taakdefinitie); indicatief.
   memoryRssPct: { warn: 70, crit: 85 }
 };
 
-// Verzamelcadans. Serverless-instances leven kort, dus telemetrie wordt elke paar
-// minuten weggeschreven; de dagelijkse snapshot (Vercel Cron) doet de zwaardere
-// metingen (tabelgroottes, opslagverdeling) één keer.
+// Verzamelcadans. Telemetrie wordt elke paar minuten weggeschreven; het dagelijkse
+// onderhoud (snapshot, opschonen, paspoortversies aanvullen) draait in het
+// serverproces onder een advisory lock (zie monitoring/scheduler.js).
 const SCHEDULE = {
   flushIntervalMs: 5 * 60 * 1000,
   snapshotMinAgeHours: 22,
   hourlyRetentionDays: 90,
   snapshotRetentionDays: 400,
-  recentErrorsBufferSize: 100
+  recentErrorsBufferSize: 100,
+  maintenanceInitialDelayMs: 2 * 60 * 1000,
+  maintenanceCheckIntervalMs: 60 * 60 * 1000,
+  versionBackfillBatch: 500
 };
 
 module.exports = { THRESHOLDS, SCHEDULE };

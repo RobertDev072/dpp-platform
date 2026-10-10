@@ -132,8 +132,7 @@ export default function OrganisatiePage() {
     try {
       const result = await api.post(`/api/users/${user.id}/reset-password`);
       if (result.selfService) {
-        // Entra-account: geen tijdelijk wachtwoord (onbruikbaar bij native login);
-        // de gebruiker herstelt zelf via "Wachtwoord vergeten".
+        // Informatieve melding van de server i.p.v. een tijdelijk wachtwoord.
         setResetInfo({ email: user.email, selfServiceMessage: result.message });
       } else {
         setResetInfo({ email: user.email, tempPassword: result.tempPassword });

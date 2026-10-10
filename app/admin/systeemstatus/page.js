@@ -35,8 +35,9 @@ import {
 const CHART_BLUE = "#2a78d6";
 const CHART_ORANGE = "#eb6834";
 
-// Een Vercel-functie heeft standaard 2 GB geheugen; indicatief budget voor de RSS-balk.
-const FUNCTION_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
+// Geheugenbudget van de container (ECS-taakdefinitie, CONTAINER_MEMORY_MB); zonder
+// die waarde (lokaal) indicatief 2 GB.
+const DEFAULT_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
 
 const PERIOD_OPTIONS = [
   { key: "live", label: "Live" },
@@ -333,7 +334,7 @@ function EndpointTable({ rows }) {
 }
 
 // ---------------------------------------------------------------------------
-// Bestaande configuratie-sectie (Entra + basis-URL's) — ongewijzigd gedrag.
+// Configuratie-sectie (database, opslag en basis-URL's).
 // ---------------------------------------------------------------------------
 
 // Statusindicator in de handgetekende iconenstijl: groen vinkje = aanwezig/ok,
@@ -412,9 +413,9 @@ function ConfigSectionBadge({ ok, okLabel, notOkLabel }) {
 }
 
 function ConfigStatusCards({ status }) {
-  const entra = status?.entra;
-  const supabase = status?.supabase;
-  if (!entra || !supabase) {
+  const database = status?.database;
+  const storage = status?.storage;
+  if (!database || !storage) {
     return <p className="text-sm text-slate-500">Geen configuratiegegevens beschikbaar.</p>;
   }
   return (
@@ -422,41 +423,27 @@ function ConfigStatusCards({ status }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">Supabase — database en opslag</h3>
-            <ConfigSectionBadge
-              ok={supabase.databaseUrlSet && supabase.storageConfigured}
-              okLabel="Geconfigureerd"
-              notOkLabel="Niet volledig"
-            />
+            <h3 className="text-sm font-semibold text-slate-900">Database (PostgreSQL / RDS)</h3>
+            <ConfigSectionBadge ok={database.configured} okLabel="Geconfigureerd" notOkLabel="Niet geconfigureerd" />
           </div>
           <div className="divide-y divide-slate-100">
-            <StatusRow label="Database-URL (DATABASE_URL)" ok={supabase.databaseUrlSet} />
-            <StatusRow label="Project-URL" ok={Boolean(supabase.projectUrl)} value={supabase.projectUrl} />
-            <StatusRow label="Service-role-key" ok={supabase.serviceRoleKeySet} />
+            <StatusRow label="Host" ok={database.configured} value={database.host || (database.configured ? "via DATABASE_URL" : null)} />
+            <StatusRow label="Wachtwoord uit Secrets Manager" ok={database.passwordFromSecretsManager} />
+            <StatusRow label="TLS met certificaatcontrole (CA-bundel)" ok={database.tlsCaConfigured} />
           </div>
         </Card>
 
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">Entra — overgangslogin</h3>
-            <ConfigSectionBadge
-              ok={entra.legacyLoginConfigured}
-              okLabel="Aan"
-              notOkLabel="Uit"
-            />
+            <h3 className="text-sm font-semibold text-slate-900">Bestandsopslag (Amazon S3)</h3>
+            <ConfigSectionBadge ok={storage.configured} okLabel="Geconfigureerd" notOkLabel="Niet geconfigureerd" />
           </div>
           <div className="divide-y divide-slate-100">
-            <StatusRow label="Tenantnaam" ok={Boolean(entra.tenantName)} value={entra.tenantName} />
-            <StatusRow
-              label="Web client-id"
-              ok={Boolean(entra.webClientId)}
-              value={entra.webClientId}
-            />
+            <StatusRow label="Regio" ok={Boolean(storage.region)} value={storage.region} />
+            <StatusRow label="Bucket productfoto's" ok={Boolean(storage.imagesBucket)} value={storage.imagesBucket} />
+            <StatusRow label="Bucket documenten" ok={Boolean(storage.documentsBucket)} value={storage.documentsBucket} />
           </div>
-          <p className="mt-3 text-xs text-slate-400">
-            Alleen nodig zolang er nog accounts zonder lokaal wachtwoord zijn. Uit is de
-            eindsituatie.
-          </p>
+          <p className="mt-3 text-xs text-slate-400">Toegang via de IAM-rol van de ECS-taak; er staan geen toegangssleutels in de configuratie.</p>
         </Card>
       </div>
 
@@ -737,7 +724,7 @@ export default function SysteemstatusPage() {
                     lastError={c.database?.lastError}
                   />
                   <ComponentCard
-                    name="Supabase Storage"
+                    name="Bestandsopslag (S3)"
                     status={c.blobStorage?.status || "unknown"}
                     rows={[
                       [
@@ -750,19 +737,6 @@ export default function SysteemstatusPage() {
                       ]
                     ]}
                     lastError={c.blobStorage?.lastError}
-                  />
-                  <ComponentCard
-                    name="Entra-overgangslogin"
-                    status={c.legacyEntra?.status || "unknown"}
-                    rows={[
-                      [
-                        "Betekenis",
-                        c.legacyEntra?.status === "ok"
-                          ? "Nog niet overgezette accounts loggen één keer via Entra in"
-                          : "Uit — alle logins zijn lokaal"
-                      ]
-                    ]}
-                    lastError={c.legacyEntra?.lastError}
                   />
                   <ComponentCard
                     name="Authenticatie"
@@ -1345,8 +1319,8 @@ export default function SysteemstatusPage() {
         </SectionBody>
       </Section>
 
-      {/* 8. Opslag (Supabase Storage) */}
-      <Section title="Opslag (Supabase Storage)">
+      {/* 8. Opslag (Amazon S3) */}
+      <Section title="Opslag (Amazon S3)">
         <SectionBody state={storage} skeletonClass="h-48">
           {(data) => {
             const blob = data.blob;
@@ -1780,7 +1754,8 @@ export default function SysteemstatusPage() {
         <SectionBody state={infra} skeletonClass="h-32">
           {(data) => {
             const rss = data.memory?.rssBytes;
-            const memPct = rss != null ? (rss / FUNCTION_MEMORY_BYTES) * 100 : null;
+            const memoryBudget = data.containerMemoryMb ? data.containerMemoryMb * 1024 * 1024 : DEFAULT_MEMORY_BYTES;
+            const memPct = rss != null ? (rss / memoryBudget) * 100 : null;
             const memLevel = levelForValue(
               memPct,
               overview.data?.thresholds?.memoryRssPct || { warn: 70, crit: 85 }
@@ -1806,10 +1781,10 @@ export default function SysteemstatusPage() {
                       <MeterBar
                         pct={memPct}
                         level={memLevel === "unknown" ? "ok" : memLevel}
-                        label="Geheugengebruik t.o.v. functiebudget"
+                        label="Geheugengebruik t.o.v. containerbudget"
                       />
                       <div className="text-[11px] text-slate-400">
-                        van 2 GB (Vercel-functie, deze instance) · heap{" "}
+                        van {formatBytes(memoryBudget)} ({data.containerMemoryMb ? "container" : "indicatief"}, deze taak) · heap{" "}
                         <span className="tabular-nums">
                           {formatBytes(data.memory?.heapUsedBytes)}
                         </span>{" "}
@@ -1870,7 +1845,7 @@ export default function SysteemstatusPage() {
               </div>
             ) : (
               <Card className="text-sm text-slate-500">
-                Deployment-info is alleen beschikbaar op Vercel.
+                Deployment-info is alleen beschikbaar in een gebouwd image (GIT_SHA).
               </Card>
             )
           }
@@ -1880,7 +1855,7 @@ export default function SysteemstatusPage() {
       {/* 15. Configuratie (bestaande config-status-kaarten) */}
       <Section title="Configuratie">
         <p className="-mt-1 text-sm text-slate-500">
-          Configuratie van deze omgeving: Supabase, Entra-overgangslogin en basis-URL&apos;s. Geheimen worden
+          Configuratie van deze omgeving: database (RDS), bestandsopslag (S3) en basis-URL&apos;s. Geheimen worden
           nooit getoond, alleen of ze aanwezig zijn.
         </p>
         <SectionBody state={config} skeletonClass="h-40">

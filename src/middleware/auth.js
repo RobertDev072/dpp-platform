@@ -59,6 +59,7 @@ async function getUserForToken(token) {
     .query(`
       SELECT u.id, u.company_id, u.email, u.role, u.status, u.first_name, u.last_name,
              CASE WHEN u.password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password,
+             (u.mfa_enabled_at IS NOT NULL) AS mfa_enabled,
              c.name AS company_name, c.logo AS company_logo, c.status AS company_status,
              s.expires_at, s.impersonator_user_id,
              imp.email AS impersonator_email
@@ -90,7 +91,8 @@ async function getUserForToken(token) {
     lastName: row.last_name,
     companyName: row.company_name,
     companyLogo: row.company_logo || null,
-    authProvider: row.has_local_password ? "local" : "entra",
+    authProvider: row.has_local_password ? "local" : "none",
+    mfaEnabled: Boolean(row.mfa_enabled),
     impersonator: row.impersonator_user_id
       ? { id: row.impersonator_user_id, email: row.impersonator_email }
       : null

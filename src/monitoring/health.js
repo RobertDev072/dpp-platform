@@ -65,13 +65,8 @@ async function checkBlobStorage() {
 }
 
 function checkAuthentication() {
-  // Inloggen is lokaal (bcrypt + sessies in de database): werkt zodra de database
-  // werkt. Het Entra-overgangspad wordt alleen als configuratie gerapporteerd.
-  const { isLegacyEntraConfigured } = require("../config/entra");
-  return {
-    login: { status: "ok", latencyMs: null },
-    legacyEntra: { status: isLegacyEntraConfigured() ? "ok" : "not_configured", latencyMs: null }
-  };
+  // Inloggen is lokaal (bcrypt + sessies in de database): werkt zodra de database werkt.
+  return { status: "ok", latencyMs: null };
 }
 
 function checkEmail() {
@@ -96,25 +91,23 @@ async function runHealthChecks() {
   if (cachedResult && Date.now() - cachedAt < CACHE_MS) return cachedResult;
 
   const [database, blob] = await Promise.all([checkDatabase(), checkBlobStorage()]);
-  const auth = checkAuthentication();
 
   const components = {
     app: decorate("app", { status: "ok", latencyMs: 0 }),
     database: decorate("database", database),
     blobStorage: decorate("blob", blob),
-    legacyEntra: decorate("legacyEntra", auth.legacyEntra),
-    authentication: decorate("authentication", database.status === "down" ? { status: "down", latencyMs: null } : auth.login),
+    authentication: decorate("authentication", database.status === "down" ? { status: "down", latencyMs: null } : checkAuthentication()),
     email: decorate("email", checkEmail()),
     baseUrls: decorate("baseUrls", checkBaseUrls())
   };
 
   // Totaalstatus: database plat = storing; iets anders plat/traag = verminderd.
-  // "not_configured" (e-mail, Entra-overgang) telt niet als probleem - bewuste keuzes.
+  // "not_configured" (e-mail) telt niet als probleem - bewuste keuze.
   let overall = "ok";
   if (components.database.status === "down") {
     overall = "down";
   } else {
-    const relevant = Object.entries(components).filter(([name]) => name !== "email" && name !== "legacyEntra");
+    const relevant = Object.entries(components).filter(([name]) => name !== "email");
     if (relevant.some(([, c]) => c.status === "down" || c.status === "degraded")) {
       overall = "degraded";
     }

@@ -1,14 +1,17 @@
 const crypto = require("crypto");
-const { createClient } = require("@supabase/supabase-js");
 const {
-  isStorageConfigured,
-  SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY,
-  IMAGES_BUCKET,
-  DOCUMENTS_BUCKET
-} = require("../config/storage");
-const { getPool } = require("../config/db");
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand
+} = require("@aws-sdk/client-s3");
+const { createPresignedPost } = require("@aws-sdk/s3-presigned-post");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const { readConfig, isStorageConfigured } = require("../config/storage");
 const { HttpError } = require("../middleware/errorHandler");
+const logger = require("../utils/logger");
 
 const ALLOWED_IMAGE_MIME_TYPES = {
   "image/jpeg": "jpg",
@@ -32,9 +35,12 @@ const DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
 // Downloadlinks zijn per aanvraag vers en kortlevend: de stabiele link blijft onze
 // eigen API-route (die eerst de toegang controleert en dan doorverwijst).
 const SIGNED_DOWNLOAD_SECONDS = 300;
+// Een presigned upload hoeft alleen de tijd tussen "upload-url" en de daadwerkelijke
+// upload te overbruggen.
+const SIGNED_UPLOAD_SECONDS = 300;
 
 const NOT_CONFIGURED_MESSAGE =
-  "Bestandsopslag is niet geconfigureerd. Zet SUPABASE_URL en SUPABASE_SERVICE_ROLE_KEY (zie README.md).";
+  "Bestandsopslag is niet geconfigureerd. Zet AWS_REGION, S3_IMAGES_BUCKET en S3_DOCUMENTS_BUCKET (zie README.md).";
 
 let client;
 
@@ -43,49 +49,90 @@ function getClient() {
     throw new HttpError(503, NOT_CONFIGURED_MESSAGE);
   }
   if (!client) {
-    client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false }
+    const config = readConfig();
+    // Geen credentials meegeven: de SDK gebruikt de standaardketen (op AWS de
+    // IAM-rol van de ECS-taak, lokaal een AWS-profiel of env-vars).
+    client = new S3Client({
+      region: config.region,
+      ...(config.endpoint ? { endpoint: config.endpoint } : {}),
+      forcePathStyle: config.forcePathStyle
     });
   }
   return client;
 }
 
+// Alleen voor tests: een nep-client injecteren (de presign-functies rekenen lokaal,
+// zonder netwerk; Head/Delete gaan via client.send).
+function setS3ClientForTests(fake) {
+  client = fake;
+}
+
+function bucketFor(kind) {
+  const config = readConfig();
+  return kind === "image" ? config.imagesBucket : config.documentsBucket;
+}
+
+function isNotFound(error) {
+  const status = error?.$metadata?.httpStatusCode;
+  return status === 404 || error?.name === "NotFound" || error?.name === "NoSuchKey";
+}
+
 function storageError(action, bucket, error) {
-  if (error && (error.statusCode === "404" || error.status === 404 || /not found/i.test(error.message || ""))) {
+  if (isNotFound(error)) {
     return new HttpError(404, "Bestand niet gevonden");
   }
-  return new HttpError(502, `Kon ${action} niet uitvoeren in Supabase Storage-bucket "${bucket}".`);
+  // Geen SDK-details (request-id's, ARN's) naar de client; wel loggen voor de beheerder.
+  logger.error("s3_error", { action, bucket, errorName: error?.name, status: error?.$metadata?.httpStatusCode });
+  return new HttpError(502, `Kon ${action} niet uitvoeren in de bestandsopslag.`);
 }
 
 // Nieuwe objecten krijgen het product-id als prefix. Daarmee kan de server bij het
 // afronden van een directe upload controleren dat het object echt voor dít product
-// is uitgegeven (en niet een object van een ander bedrijf wordt "geclaimd").
-// Gemigreerde objecten uit Azure houden hun oorspronkelijke platte naam.
+// is uitgegeven (en niet een object van een ander bedrijf wordt "geclaimd"). De
+// sleutel bevat verder alleen een willekeurige UUID: geen bestandsnaam van de
+// gebruiker, geen persoonsgegevens. Objecten worden nooit overschreven (elke upload
+// krijgt een nieuwe sleutel), zodat eerder gearchiveerde paspoortversies naar
+// ongewijzigde bestanden blijven verwijzen.
 function newObjectName(productId, extension) {
   return `products/${productId}/${crypto.randomUUID()}.${extension}`;
 }
 
 function belongsToProduct(objectName, productId) {
-  return typeof objectName === "string" && objectName.startsWith(`products/${productId}/`) && !objectName.includes("..");
+  return (
+    typeof objectName === "string" &&
+    /^products\/\d+\/[0-9a-f-]{36}\.[a-z0-9]{1,5}$/.test(objectName) &&
+    objectName.startsWith(`products/${productId}/`)
+  );
 }
 
 async function uploadObject({ bucket, objectName, buffer, mimeType }) {
-  const { error } = await getClient().storage.from(bucket).upload(objectName, buffer, {
-    contentType: mimeType,
-    upsert: false
-  });
-  if (error) throw storageError("de upload", bucket, error);
+  try {
+    await getClient().send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: objectName,
+        Body: buffer,
+        ContentType: mimeType,
+        // Integriteit: S3 controleert de SHA-256 van de ontvangen bytes.
+        ChecksumAlgorithm: "SHA256",
+        // Nooit een bestaand object overschrijven.
+        IfNoneMatch: "*"
+      })
+    );
+  } catch (error) {
+    throw storageError("de upload", bucket, error);
+  }
   return objectName;
 }
 
-// --- uploads via de server (multipart, alleen bestanden < ~4 MB op Vercel) ----------
+// --- uploads via de server (multipart) ------------------------------------------------
 
 async function uploadProductPhoto({ productId, buffer, mimeType }) {
   const extension = ALLOWED_IMAGE_MIME_TYPES[mimeType];
   if (!extension) {
     throw new HttpError(400, "Alleen JPEG, PNG, WEBP of GIF-afbeeldingen zijn toegestaan.");
   }
-  return uploadObject({ bucket: IMAGES_BUCKET, objectName: newObjectName(productId, extension), buffer, mimeType });
+  return uploadObject({ bucket: bucketFor("image"), objectName: newObjectName(productId, extension), buffer, mimeType });
 }
 
 async function uploadProductDocument({ productId, buffer, mimeType }) {
@@ -93,14 +140,15 @@ async function uploadProductDocument({ productId, buffer, mimeType }) {
   if (!extension) {
     throw new HttpError(400, "Alleen PDF, JPEG, PNG, SVG of WEBP-bestanden zijn toegestaan.");
   }
-  return uploadObject({ bucket: DOCUMENTS_BUCKET, objectName: newObjectName(productId, extension), buffer, mimeType });
+  return uploadObject({ bucket: bucketFor("document"), objectName: newObjectName(productId, extension), buffer, mimeType });
 }
 
 // --- directe uploads vanuit de browser -------------------------------------------
-// Vercel-functies accepteren maximaal 4,5 MB per request; documenten mogen 10 MB zijn.
-// Daarom uploadt de browser rechtstreeks naar Supabase Storage met een eenmalige
-// signed upload-URL (alleen geldig voor precies dit object). De bucket dwingt
-// daarnaast zelf de maximale grootte en toegestane MIME-types af.
+// Grote bestanden gaan niet door de applicatieserver: de browser uploadt rechtstreeks
+// naar S3 met een presigned POST. De policy in die POST wordt door S3 zelf afgedwongen:
+// exact deze objectsleutel, exact dit Content-Type en een maximale grootte. De server
+// controleert vóór het ondertekenen de tenant (in de route) en type/grootte (hier), en
+// na de upload nogmaals de werkelijke metadata (verifyUploadedObject).
 
 async function createSignedUpload({ bucket, productId, mimeType, size, allowed, maxBytes, tooLargeMessage, typeMessage }) {
   const extension = allowed[mimeType];
@@ -111,14 +159,26 @@ async function createSignedUpload({ bucket, productId, mimeType, size, allowed, 
     throw new HttpError(400, tooLargeMessage);
   }
   const objectName = newObjectName(productId, extension);
-  const { data, error } = await getClient().storage.from(bucket).createSignedUploadUrl(objectName);
-  if (error) throw storageError("een upload-URL aanmaken", bucket, error);
-  return { objectName, uploadUrl: data.signedUrl };
+  try {
+    const { url, fields } = await createPresignedPost(getClient(), {
+      Bucket: bucket,
+      Key: objectName,
+      Conditions: [
+        ["content-length-range", 1, maxBytes],
+        ["eq", "$Content-Type", mimeType]
+      ],
+      Fields: { "Content-Type": mimeType },
+      Expires: SIGNED_UPLOAD_SECONDS
+    });
+    return { objectName, uploadUrl: url, method: "POST", fields };
+  } catch (error) {
+    throw storageError("een upload-URL aanmaken", bucket, error);
+  }
 }
 
 function createPhotoUpload({ productId, mimeType, size }) {
   return createSignedUpload({
-    bucket: IMAGES_BUCKET,
+    bucket: bucketFor("image"),
     productId,
     mimeType,
     size,
@@ -131,7 +191,7 @@ function createPhotoUpload({ productId, mimeType, size }) {
 
 function createDocumentUpload({ productId, mimeType, size }) {
   return createSignedUpload({
-    bucket: DOCUMENTS_BUCKET,
+    bucket: bucketFor("document"),
     productId,
     mimeType,
     size,
@@ -143,26 +203,26 @@ function createDocumentUpload({ productId, mimeType, size }) {
 }
 
 // Controleert na een directe upload dat het object bestaat, bij dit product hoort en
-// binnen de regels valt. Leest de metadata rechtstreeks uit storage.objects (zelfde
-// database), zodat er geen extra API-call naar Storage nodig is.
+// binnen de regels valt (HeadObject: alleen metadata, geen download).
 async function verifyUploadedObject({ bucket, objectName, productId, allowed, maxBytes }) {
   if (!belongsToProduct(objectName, productId)) {
     throw new HttpError(400, "Onbekende upload.");
   }
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("bucket", bucket)
-    .input("name", objectName)
-    .query("SELECT metadata FROM storage.objects WHERE bucket_id = @bucket AND name = @name");
-  const metadata = result.recordset[0]?.metadata;
-  if (!metadata) {
-    throw new HttpError(400, "Het bestand is niet (volledig) geüpload. Probeer het opnieuw.");
+  let head;
+  try {
+    head = await getClient().send(new HeadObjectCommand({ Bucket: bucket, Key: objectName }));
+  } catch (error) {
+    if (isNotFound(error)) {
+      throw new HttpError(400, "Het bestand is niet (volledig) geüpload. Probeer het opnieuw.");
+    }
+    throw storageError("de upload controleren", bucket, error);
   }
-  const size = Number(metadata.size ?? metadata.contentLength ?? 0);
-  const mimeType = metadata.mimetype || metadata.contentType || null;
+  const size = Number(head.ContentLength ?? 0);
+  const mimeType = head.ContentType || null;
   if (!allowed[mimeType] || size <= 0 || size > maxBytes) {
-    await getClient().storage.from(bucket).remove([objectName]).catch(() => {});
+    await getClient()
+      .send(new DeleteObjectCommand({ Bucket: bucket, Key: objectName }))
+      .catch(() => {});
     throw new HttpError(400, "Dit bestand voldoet niet aan de eisen (type of grootte).");
   }
   return { size, mimeType };
@@ -170,7 +230,7 @@ async function verifyUploadedObject({ bucket, objectName, productId, allowed, ma
 
 function verifyUploadedPhoto({ objectName, productId }) {
   return verifyUploadedObject({
-    bucket: IMAGES_BUCKET,
+    bucket: bucketFor("image"),
     objectName,
     productId,
     allowed: ALLOWED_IMAGE_MIME_TYPES,
@@ -180,7 +240,7 @@ function verifyUploadedPhoto({ objectName, productId }) {
 
 function verifyUploadedDocument({ objectName, productId }) {
   return verifyUploadedObject({
-    bucket: DOCUMENTS_BUCKET,
+    bucket: bucketFor("document"),
     objectName,
     productId,
     allowed: ALLOWED_DOCUMENT_MIME_TYPES,
@@ -190,31 +250,39 @@ function verifyUploadedDocument({ objectName, productId }) {
 
 // --- downloads ------------------------------------------------------------------
 // De buckets zijn privé. Onze routes controleren eerst de toegang (tenant of
-// "gepubliceerd + publiek") en verwijzen dan door naar een signed URL die maar een
-// paar minuten geldig is. Doorverwijzen i.p.v. zelf streamen: Vercel-functies
-// hebben een maximale responsgrootte, en zo loopt het dataverkeer niet via Vercel.
+// "gepubliceerd + publiek") en verwijzen dan door naar een presigned URL die maar een
+// paar minuten geldig is. Zo loopt het bestandsverkeer niet via de applicatieserver.
 
 async function getSignedDownloadUrl(bucket, objectName, { downloadName } = {}) {
-  const options = downloadName ? { download: downloadName } : undefined;
-  const { data, error } = await getClient()
-    .storage.from(bucket)
-    .createSignedUrl(objectName, SIGNED_DOWNLOAD_SECONDS, options);
-  if (error) throw storageError("een downloadlink aanmaken", bucket, error);
-  return data.signedUrl;
+  try {
+    return await getSignedUrl(
+      getClient(),
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: objectName,
+        // SVG kan script bevatten: nooit inline laten renderen.
+        ...(objectName.endsWith(".svg") || downloadName
+          ? { ResponseContentDisposition: `attachment${downloadName ? `; filename="${downloadName.replace(/["\\\r\n]/g, "")}"` : ""}` }
+          : {})
+      }),
+      { expiresIn: SIGNED_DOWNLOAD_SECONDS }
+    );
+  } catch (error) {
+    throw storageError("een downloadlink aanmaken", bucket, error);
+  }
 }
 
 function getProductPhotoUrl(objectName) {
-  return getSignedDownloadUrl(IMAGES_BUCKET, objectName);
+  return getSignedDownloadUrl(bucketFor("image"), objectName);
 }
 
 function getProductDocumentUrl(objectName) {
-  return getSignedDownloadUrl(DOCUMENTS_BUCKET, objectName);
+  return getSignedDownloadUrl(bucketFor("document"), objectName);
 }
 
 // Lichte bereikbaarheidscheck voor de healthcheck.
 async function pingStorage() {
-  const { error } = await getClient().storage.getBucket(IMAGES_BUCKET);
-  if (error) throw new Error(error.message);
+  await getClient().send(new HeadBucketCommand({ Bucket: bucketFor("image") }));
 }
 
 module.exports = {
@@ -227,8 +295,12 @@ module.exports = {
   getProductPhotoUrl,
   getProductDocumentUrl,
   pingStorage,
+  getClient,
+  bucketFor,
+  setS3ClientForTests,
+  belongsToProduct,
   ALLOWED_IMAGE_MIME_TYPES,
   ALLOWED_DOCUMENT_MIME_TYPES,
-  IMAGES_BUCKET,
-  DOCUMENTS_BUCKET
+  PHOTO_MAX_BYTES,
+  DOCUMENT_MAX_BYTES
 };

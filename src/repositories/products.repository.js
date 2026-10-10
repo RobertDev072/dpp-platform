@@ -82,12 +82,13 @@ function buildProductFilters({ companyId, q, status, category, doc, missing, qr,
   if (missing && MISSING_CHECKS[missing]) {
     where.push(`${MISSING_CHECKS[missing]} = 0`);
   }
-  // QR-status: actief = bereikbaar via de publieke link (gepubliceerd of gearchiveerd
-  // met public_id); gereserveerd = public_id toegekend maar nog concept; geen = nog niets.
+  // QR-status: actief = bereikbaar via de publieke link (gepubliceerd, of gearchiveerd
+  // na publicatie); gereserveerd = public_id toegekend maar (nog) nooit gepubliceerd;
+  // geen = nog niets. Zelfde definitie als getProductByPublicId.
   if (qr === "active") {
-    where.push("p.public_id IS NOT NULL AND p.status IN ('published', 'archived')");
+    where.push("p.public_id IS NOT NULL AND p.published_at IS NOT NULL AND p.status IN ('published', 'archived')");
   } else if (qr === "reserved") {
-    where.push("p.public_id IS NOT NULL AND p.status = 'draft'");
+    where.push("p.public_id IS NOT NULL AND (p.status = 'draft' OR p.published_at IS NULL)");
   } else if (qr === "none") {
     where.push("p.public_id IS NULL");
   } else if (qr === "any") {
@@ -103,7 +104,10 @@ function buildProductFilters({ companyId, q, status, category, doc, missing, qr,
 // Afgeleide QR-status (zelfde definitie als het qr-filter hierboven).
 function qrStatusOf(row) {
   if (!row.public_id) return "none";
-  return row.status === "draft" ? "reserved" : "active";
+  if (row.status === "draft") return "reserved";
+  // Gearchiveerd zonder ooit gepubliceerd te zijn: nooit openbaar geweest.
+  if (row.published_at === null) return "reserved";
+  return "active";
 }
 
 function checksOf(row) {
@@ -234,8 +238,8 @@ async function getProductStats({ companyId } = {}) {
       ROUND(AVG(CASE WHEN ${live} THEN ${COMPLETENESS_EXPR} END)) AS avg_completeness,
       SUM(CASE WHEN p.created_at >= ${monthStart} THEN 1 ELSE 0 END) AS created_this_month,
       SUM(CASE WHEN p.published_at >= ${monthStart} THEN 1 ELSE 0 END) AS published_this_month,
-      SUM(CASE WHEN p.public_id IS NOT NULL AND p.status <> 'draft' THEN 1 ELSE 0 END) AS qr_active,
-      SUM(CASE WHEN p.public_id IS NOT NULL AND p.status = 'draft' THEN 1 ELSE 0 END) AS qr_reserved,
+      SUM(CASE WHEN p.public_id IS NOT NULL AND p.status <> 'draft' AND p.published_at IS NOT NULL THEN 1 ELSE 0 END) AS qr_active,
+      SUM(CASE WHEN p.public_id IS NOT NULL AND (p.status = 'draft' OR p.published_at IS NULL) THEN 1 ELSE 0 END) AS qr_reserved,
       SUM(CASE WHEN ${live} AND checks.has_photo = 0 THEN 1 ELSE 0 END) AS missing_photo,
       SUM(CASE WHEN ${live} AND checks.has_description = 0 THEN 1 ELSE 0 END) AS missing_description,
       SUM(CASE WHEN ${live} AND checks.has_category = 0 THEN 1 ELSE 0 END) AS missing_category,
@@ -496,12 +500,14 @@ async function getProductByPublicId(publicId) {
     .query(`
       SELECT ${PUBLIC_COLUMNS}
       FROM dbo.Products
-      WHERE public_id = @publicId AND status IN ('published', 'archived')
+      WHERE public_id = @publicId
+        AND (status = 'published' OR (status = 'archived' AND published_at IS NOT NULL))
     `);
   // 'archived' hoort hierbij: een gedrukte/gegraveerde QR-code verwijst permanent naar
   // deze public_id en mag nooit stoppen met werken, ook niet nadat het product intern is
-  // gearchiveerd. 'draft' blijft buiten beeld - ook als er al een QR-code voor is
-  // gereserveerd: pas publiceren maakt het paspoort openbaar.
+  // gearchiveerd. Maar alleen als het paspoort ooit gepubliceerd is: een gearchiveerd
+  // concept met een gereserveerde QR-code is nooit openbaar geweest en blijft dat ook
+  // niet. 'draft' blijft buiten beeld - pas publiceren maakt het paspoort openbaar.
   return result.recordset[0] || null;
 }
 

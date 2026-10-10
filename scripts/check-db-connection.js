@@ -10,7 +10,7 @@ async function testConnection() {
              version() AS "version"
     `);
 
-    console.log("✅ Verbonden met Supabase Postgres!");
+    console.log("✅ Verbonden met PostgreSQL!");
     console.log(result.recordset);
   } catch (error) {
     console.error("❌ Databaseverbinding mislukt:");

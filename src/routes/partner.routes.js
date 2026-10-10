@@ -224,7 +224,7 @@ router.post(
         return;
       }
 
-      // Altijd een lokaal wachtwoord (ook voor een nog niet overgezet Entra-account).
+      // Altijd een lokaal wachtwoord (ook voor een account dat er nog geen had).
       const tempPassword = generateTempPassword();
       await usersRepo.updatePasswordHash(target.id, await hashPassword(tempPassword));
       await usersRepo.setMustChangePassword(target.id, true);

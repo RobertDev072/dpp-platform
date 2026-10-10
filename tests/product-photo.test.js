@@ -9,14 +9,14 @@ const {
   cleanupTestData
 } = require("./helpers/fixtures");
 
-// Een echte upload/download tegen Supabase Storage vereist SUPABASE_URL en
-// SUPABASE_SERVICE_ROLE_KEY (zie README.md). Zonder die variabelen wordt dat deel
-// overgeslagen; de rest van dit bestand (schema/tenant-isolatie op de foto-routes)
-// heeft geen opslag nodig en draait altijd.
-const hasStorageConfigured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-const storageSkipReason = hasStorageConfigured
-  ? false
-  : "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY niet gezet - zie README.md";
+// Een echte upload/download tegen S3 draait alleen met een expliciete opt-in
+// (TEST_S3_LIVE=true + AWS_REGION/S3_IMAGES_BUCKET/S3_DOCUMENTS_BUCKET van een
+// TESTbucket, nooit productie). Zonder opt-in wordt dat deel overgeslagen; de rest
+// van dit bestand (schema/tenant-isolatie op de foto-routes) draait altijd. De
+// S3-logica zelf (presigned POST, controles) is los getest in s3-storage.test.js.
+const { isStorageConfigured } = require("../src/config/storage");
+const hasStorageConfigured = process.env.TEST_S3_LIVE === "true" && isStorageConfigured();
+const storageSkipReason = hasStorageConfigured ? false : "TEST_S3_LIVE niet gezet - live S3-test overgeslagen (zie README.md)";
 
 async function login(baseUrl, user) {
   const res = await request(baseUrl, "POST", "/api/auth/login", {
@@ -123,7 +123,7 @@ test("productfoto: URL-optie, tenant-isolatie en het afgeschermde photoBlobName-
 });
 
 test(
-  "productfoto: upload naar Supabase Storage (multipart én direct) en het media-endpoint verwijst door naar de bytes",
+  "productfoto: upload naar S3 (multipart én direct) en het media-endpoint verwijst door naar de bytes",
   { skip: storageSkipReason },
   async (t) => {
     const { server, baseUrl } = await startTestServer();
@@ -160,7 +160,8 @@ test(
     // Het media-endpoint verwijst door naar een kortlevende signed URL; fetch volgt die.
     const redirect = await request(baseUrl, "GET", `/api/products/${productId}/photo`, { cookie, redirect: "manual" });
     assert.equal(redirect.status, 302);
-    assert.ok(redirect.location.startsWith(process.env.SUPABASE_URL), "doorverwijzing hoort naar Supabase Storage te gaan");
+    assert.ok(redirect.location.includes(process.env.S3_IMAGES_BUCKET), "doorverwijzing hoort naar de S3-bucket te gaan");
+    assert.ok(/X-Amz-Expires=300/.test(redirect.location), "presigned URL is maximaal 5 minuten geldig");
 
     const photoResponse = await fetch(`${baseUrl}/api/products/${productId}/photo`, {
       headers: { Cookie: cookie }
@@ -170,7 +171,7 @@ test(
     const bytesBack = Buffer.from(await photoResponse.arrayBuffer());
     assert.deepEqual(bytesBack, pngBytes, "de opgehaalde bytes moeten identiek zijn aan de upload");
 
-    // Directe upload (zoals de browser doet): upload-URL -> PUT -> complete.
+    // Directe upload (zoals de browser doet): upload-URL -> presigned POST -> complete.
     const init = await request(baseUrl, "POST", `/api/products/${productId}/photo/upload-url`, {
       cookie,
       body: { mimeType: "image/png", size: pngBytes.length }
@@ -178,12 +179,11 @@ test(
     assert.equal(init.status, 200);
     assert.ok(init.data.objectName.startsWith(`products/${productId}/`));
 
-    const put = await fetch(init.data.uploadUrl, {
-      method: "PUT",
-      headers: { "Content-Type": "image/png", "x-upsert": "false" },
-      body: pngBytes
-    });
-    assert.ok(put.ok, `directe upload naar Supabase moet slagen (status ${put.status})`);
+    const form = new FormData();
+    for (const [key, value] of Object.entries(init.data.fields)) form.append(key, value);
+    form.append("file", new Blob([pngBytes], { type: "image/png" }), "test.png");
+    const put = await fetch(init.data.uploadUrl, { method: "POST", body: form });
+    assert.ok(put.ok, `directe upload naar S3 moet slagen (status ${put.status})`);
 
     const complete = await request(baseUrl, "POST", `/api/products/${productId}/photo/complete`, {
       cookie,

@@ -2,6 +2,9 @@
 // cleanup: alle @example.com-gebruikers (fixtures gebruiken uitsluitend dat
 // gereserveerde domein - echte data kan nooit matchen) en bedrijven met slug
 // test-<hex>.
+// Alleen voor TESTdatabases: paspoortversies zijn append-only en worden hier als
+// superuser (session_replication_role=replica) verwijderd; op RDS heeft de app die
+// rechten niet, en productiedata hoort dit script nooit te raken.
 // Gebruik: node scripts/cleanup-test-data.js
 require("dotenv").config();
 const { getPool, sql, close } = require("../src/config/db");
@@ -38,6 +41,18 @@ async function run() {
 
   if (companyIds.length) {
     const ids = companyIds.join(",");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL session_replication_role = replica");
+      await client.query(`DELETE FROM dbo.passportversions WHERE company_id IN (${ids})`);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw new Error(`Paspoortversies opruimen mislukt (superuser nodig, alleen testdatabases): ${error.message}`);
+    } finally {
+      client.release();
+    }
     await pool.request().query(`DELETE FROM dbo.ScanEvents WHERE product_id IN (SELECT id FROM dbo.Products WHERE company_id IN (${ids}))`);
     await pool.request().query(`DELETE FROM dbo.Documents WHERE company_id IN (${ids})`);
     await pool.request().query(`DELETE FROM dbo.ProductParts WHERE company_id IN (${ids})`);

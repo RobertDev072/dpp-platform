@@ -1,7 +1,9 @@
-# Controle bij elke push en pull request: installeert exact de lockfile en bouwt de
-# app. Faalt de build, dan zie je dat hier vóórdat Vercel een kapotte versie deployt.
-# De testsuite draait bewust niet hier: die heeft een echte database nodig en draait
-# lokaal (npm test) vóór elke push.
+# Controle bij elke push en pull request:
+# 1. app: lockfile installeren, migraties + volledige testsuite tegen een tijdelijke
+#    PostgreSQL 17 (nooit tegen productie), productiebuild;
+# 2. infra: AWS CDK-stacks synthetiseren en de infrastructuurtests draaien (zonder
+#    AWS-account; er wordt niets aangemaakt);
+# 3. Docker-image bouwen (zonder pushen) als rooktest van het Dockerfile.
 
 name: CI
 
@@ -14,9 +16,22 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  app:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      COOKIE_SECRET: ci-only-not-a-secret
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +42,57 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run build
+      - name: Migraties
+        run: npm run migrate
+
+      - name: Tests
+        run: npm test
         env:
-          NEXT_TELEMETRY_DISABLED: "1"
+          # Zelfde als lokaal: sessiecookie zonder secure-vlag (testserver draait op http).
+          NODE_ENV: development
+
+      - name: Productiebuild
+        run: npm run build
+
+      - name: Afhankelijkheden controleren (hoog/kritiek)
+        run: npm audit --omit=dev --audit-level=high
+
+  infra:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - run: npm ci
+
+      - name: Synth staging en productie
+        run: |
+          npx cdk synth --quiet -c env=staging
+          npx cdk synth --quiet -c env=production
+
+      - name: Infrastructuurtests
+        run: npm test
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Image bouwen (niet pushen)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

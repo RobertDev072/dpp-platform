@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { VeriPassoWordmark } from "@/components/landing/VeriPassoLogo";
@@ -7,16 +8,30 @@ import { documentCategoryLabel, formatFileSize } from "@/components/products/doc
 // bezoekers scannen met hun telefoon. Server-gerenderd, zonder login en zonder
 // interne gegevens (de API levert een whitelist).
 
-async function getProduct(id) {
+// Op AWS haalt de server de data via loopback op (INTERNAL_API_ORIGIN, bijv.
+// http://127.0.0.1:3000) i.p.v. via het publieke adres: geen omweg langs CloudFront
+// en de WAF. User-Agent en Referer van de bezoeker gaan mee voor de scanstatistiek.
+// cache(): generateMetadata en de pagina delen per request één aanroep, zodat één
+// bezoek ook precies één scan oplevert.
+const getProduct = cache(async function getProduct(id) {
   const headersList = await headers();
   const host = headersList.get("host");
   const protocol = headersList.get("x-forwarded-proto") || (host?.startsWith("localhost") ? "http" : "https");
+  const origin = process.env.INTERNAL_API_ORIGIN || `${protocol}://${host}`;
+  const forwarded = {};
+  for (const name of ["user-agent", "referer"]) {
+    const value = headersList.get(name);
+    if (value) forwarded[name] = value;
+  }
 
-  const response = await fetch(`${protocol}://${host}/api/public/products/${encodeURIComponent(id)}`, { cache: "no-store" });
+  const response = await fetch(`${origin}/api/public/products/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+    headers: forwarded
+  });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Kon productpaspoort niet laden (${response.status})`);
   return response.json();
-}
+});
 
 export async function generateMetadata({ params }) {
   const { id } = await params;
@@ -25,6 +40,14 @@ export async function generateMetadata({ params }) {
     if (!product) return { title: "Productpaspoort niet gevonden" };
     return {
       title: `${product.name} – digitaal productpaspoort`,
+      // Machineleesbare representaties van hetzelfde paspoort (content negotiation).
+      alternates: {
+        types: {
+          "application/ld+json": `/api/dpp/${encodeURIComponent(id)}?format=jsonld`,
+          "application/json": `/api/dpp/${encodeURIComponent(id)}?format=json`,
+          "application/xml": `/api/dpp/${encodeURIComponent(id)}?format=xml`
+        }
+      },
       description: product.description?.slice(0, 160) || `Productinformatie, duurzaamheid en documenten van ${product.name}.`
     };
   } catch {
@@ -255,6 +278,15 @@ export default async function ProductPassportPage({ params }) {
 
         <footer className="flex flex-col items-center gap-2 pb-6 pt-4 text-center text-xs text-slate-400">
           {product.publishedAt && <p>Gepubliceerd op {new Date(product.publishedAt).toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}</p>}
+          <p>
+            <a href={`/api/dpp/${encodeURIComponent(id)}?format=jsonld`} className="underline-offset-2 hover:underline">
+              Machineleesbare versie (JSON-LD)
+            </a>
+            {" · "}
+            <a href={`/api/dpp/${encodeURIComponent(id)}/versions`} className="underline-offset-2 hover:underline">
+              Versiegeschiedenis
+            </a>
+          </p>
           <div className="flex items-center gap-1.5">
             <span>Digitaal productpaspoort via</span>
             <VeriPassoWordmark className="h-4 w-auto" />

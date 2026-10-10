@@ -1,7 +1,7 @@
 {
   "name": "dpp-platform",
   "version": "1.0.0",
-  "description": "",
+  "description": "VeriPasso - digitale productpaspoorten (Next.js + Express, PostgreSQL, AWS)",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,9 +10,10 @@
     "test:db": "node scripts/check-db-connection.js",
     "migrate": "node scripts/migrate.js",
     "seed:owner": "node scripts/seed-system-owner.js",
-    "temp-passwords": "node scripts/issue-temp-passwords.js",
-    "migrate:from-azure": "node scripts/migrate-from-azure.js",
-    "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\""
+    "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\"",
+    "backfill:versions": "node scripts/backfill-passport-versions.js",
+    "verify:db-copy": "node scripts/verify-db-copy.js",
+    "copy:storage": "node scripts/copy-storage-to-s3.js"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +22,10 @@
     "node": "24.x"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/client-secrets-manager": "^3.1149.0",
+    "@aws-sdk/s3-presigned-post": "^3.1149.0",
+    "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@supabase/supabase-js": "^2.50.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@vercel/functions": "^2.2.0",

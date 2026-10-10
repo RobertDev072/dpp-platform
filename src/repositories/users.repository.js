@@ -1,6 +1,6 @@
 const { getPool, sql } = require("../config/db");
 
-const PUBLIC_COLUMNS = `id, company_id, email, first_name, last_name, role, status, entra_object_id, entra_subject_id, created_at, updated_at`;
+const PUBLIC_COLUMNS = `id, company_id, email, first_name, last_name, role, status, created_at, updated_at`;
 
 async function listUsers({ companyId, includeDeleted = false } = {}) {
   const pool = await getPool();
@@ -19,7 +19,8 @@ async function listUsers({ companyId, includeDeleted = false } = {}) {
   const result = await request.query(`
     SELECT ${columns},
            c.name AS company_name,
-           CASE WHEN u.password_hash IS NULL THEN 'entra' ELSE 'local' END AS auth_provider,
+           CASE WHEN u.password_hash IS NULL THEN 'none' ELSE 'local' END AS auth_provider,
+           (u.mfa_enabled_at IS NOT NULL) AS mfa_enabled,
            (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.user_id = u.id) AS last_activity,
            (SELECT MAX(a.timestamp) FROM dbo.AuditLogs a WHERE a.user_id = u.id AND a.action = 'login') AS last_login,
            (SELECT COUNT(*) FROM dbo.Sessions s WHERE s.user_id = u.id AND s.expires_at > now()) AS active_sessions
@@ -48,15 +49,13 @@ async function getUserAuthInfo(id) {
     .request()
     .input("id", sql.Int, id)
     .query(`
-      SELECT entra_object_id,
-             CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password,
+      SELECT CASE WHEN password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password,
              must_change_password
       FROM dbo.Users WHERE id = @id
     `);
   const row = result.recordset[0];
   return row
     ? {
-        entraObjectId: row.entra_object_id,
         hasLocalPassword: Boolean(row.has_local_password),
         mustChangePassword: Boolean(row.must_change_password)
       }
@@ -94,59 +93,13 @@ async function getUserByEmail(email) {
   const result = await pool
     .request()
     .input("email", sql.NVarChar(256), email)
-    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password FROM dbo.Users WHERE lower(email) = lower(@email)`);
+    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password,
+                   mfa_enabled_at, mfa_secret_enc, mfa_last_step, mfa_recovery_hashes
+            FROM dbo.Users WHERE lower(email) = lower(@email)`);
   return result.recordset[0] || null;
 }
 
-async function getUserByEntraSubjectId(entraSubjectId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("sub", sql.NVarChar(255), entraSubjectId)
-    .query(`
-      SELECT id, company_id, email, role, status
-      FROM dbo.Users
-      WHERE entra_subject_id = @sub
-    `);
-  return result.recordset[0] || null;
-}
-
-// Voor de "just-in-time" koppeling bij een eerste Entra-login: een account dat door een
-// admin is aangemaakt (bekend email, nog geen sub gekoppeld) en actief is.
-async function getUnlinkedUserByEmail(email) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("email", sql.NVarChar(256), email)
-    .query(`
-      SELECT id, company_id, email, role, status
-      FROM dbo.Users
-      WHERE lower(email) = lower(@email) AND entra_subject_id IS NULL AND status = 'active'
-    `);
-  return result.recordset[0] || null;
-}
-
-// Koppelt een sub-claim één keer aan een account. De WHERE-clausule met
-// "entra_subject_id IS NULL" is de race-guard: als twee logins gelijktijdig proberen te
-// koppelen, wint er maar één (rowsAffected = 0 bij de verliezer, die dan opnieuw moet
-// opvragen in plaats van blind te overschrijven).
-async function linkEntraSubjectId(userId, entraSubjectId) {
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("id", sql.Int, userId)
-    .input("sub", sql.NVarChar(255), entraSubjectId)
-    .query(`
-      UPDATE dbo.Users
-      SET entra_subject_id = @sub, updated_at = now()
-      WHERE id = @id AND entra_subject_id IS NULL
-      RETURNING id, company_id, email, role, status
-    `);
-  return result.recordset[0] || null;
-}
-
-// Snelle, niet-lockende telling voor een "fail fast"-check vóórdat er (kostbare, lastig
-// terug te draaien) externe calls zoals Graph-usercreatie worden gedaan. De autoritatieve,
+// Snelle, niet-lockende telling voor een "fail fast"-check. De autoritatieve,
 // race-veilige check zit in createUserWithSeatLimit hieronder.
 async function countActiveUsers(companyId) {
   const pool = await getPool();
@@ -216,15 +169,14 @@ async function createUserWithSeatLimit({ companyId, maxUsers, ...userFields }) {
       .input("companyId", sql.Int, companyId)
       .input("email", sql.NVarChar(256), userFields.email)
       .input("passwordHash", sql.NVarChar(255), userFields.passwordHash ?? null)
-      .input("entraObjectId", sql.NVarChar(255), userFields.entraObjectId ?? null)
       .input("firstName", sql.NVarChar(100), userFields.firstName ?? null)
       .input("lastName", sql.NVarChar(100), userFields.lastName ?? null)
       .input("role", sql.NVarChar(30), userFields.role)
       .input("status", sql.NVarChar(20), userFields.status || "active")
       .query(`
         INSERT INTO dbo.Users
-          (company_id, email, password_hash, entra_object_id, first_name, last_name, role, status)
-        VALUES (@companyId, @email, @passwordHash, @entraObjectId, @firstName, @lastName, @role, @status)
+          (company_id, email, password_hash, first_name, last_name, role, status)
+        VALUES (@companyId, @email, @passwordHash, @firstName, @lastName, @role, @status)
         RETURNING ${PUBLIC_COLUMNS}
       `);
 
@@ -274,13 +226,80 @@ async function updateUser(id, fields) {
   return result.recordset[0] || null;
 }
 
+// --- tweestapsverificatie (zie services/mfa.service.js) ---------------------------
+
+async function getMfaState(id) {
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT id, company_id, email, role, status, password_hash, must_change_password,
+            mfa_secret_enc, mfa_pending_secret_enc, mfa_enabled_at, mfa_last_step, mfa_recovery_hashes
+     FROM dbo.users WHERE id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+async function setPendingMfaSecret(id, secretEnc) {
+  const pool = await getPool();
+  await pool.query("UPDATE dbo.users SET mfa_pending_secret_enc = $2, updated_at = now() WHERE id = $1", [id, secretEnc]);
+}
+
+async function enableMfa(id, { recoveryHashes, step }) {
+  const pool = await getPool();
+  const result = await pool.query(
+    `UPDATE dbo.users
+     SET mfa_secret_enc = mfa_pending_secret_enc, mfa_pending_secret_enc = NULL, mfa_enabled_at = now(),
+         mfa_recovery_hashes = $2, mfa_last_step = $3, updated_at = now()
+     WHERE id = $1 AND mfa_pending_secret_enc IS NOT NULL
+     RETURNING id`,
+    [id, JSON.stringify(recoveryHashes), step]
+  );
+  return result.rowCount === 1;
+}
+
+async function disableMfa(id) {
+  const pool = await getPool();
+  await pool.query(
+    `UPDATE dbo.users
+     SET mfa_secret_enc = NULL, mfa_pending_secret_enc = NULL, mfa_enabled_at = NULL,
+         mfa_recovery_hashes = NULL, mfa_last_step = NULL, updated_at = now()
+     WHERE id = $1`,
+    [id]
+  );
+}
+
+// Race-veilig: een tijdstap kan maar één keer "verbruikt" worden, ook bij twee
+// gelijktijdige verzoeken met dezelfde code.
+async function consumeMfaStep(id, step) {
+  const pool = await getPool();
+  const result = await pool.query(
+    "UPDATE dbo.users SET mfa_last_step = $2 WHERE id = $1 AND (mfa_last_step IS NULL OR mfa_last_step < $2) RETURNING id",
+    [id, step]
+  );
+  return result.rowCount === 1;
+}
+
+// Compare-and-swap op de lijst met herstelcode-hashes (een code is eenmalig).
+async function consumeRecoveryCode(id, previousJson, hash) {
+  const remaining = JSON.parse(previousJson || "[]").filter((h) => h !== hash);
+  const pool = await getPool();
+  const result = await pool.query(
+    "UPDATE dbo.users SET mfa_recovery_hashes = $3, updated_at = now() WHERE id = $1 AND mfa_recovery_hashes = $2 RETURNING id",
+    [id, previousJson, JSON.stringify(remaining)]
+  );
+  return result.rowCount === 1;
+}
+
 module.exports = {
+  getMfaState,
+  setPendingMfaSecret,
+  enableMfa,
+  disableMfa,
+  consumeMfaStep,
+  consumeRecoveryCode,
   listUsers,
   getUserById,
   getUserByEmail,
-  getUserByEntraSubjectId,
-  getUnlinkedUserByEmail,
-  linkEntraSubjectId,
   countActiveUsers,
   countOtherActiveCompanyAdmins,
   countAllActiveUsers,

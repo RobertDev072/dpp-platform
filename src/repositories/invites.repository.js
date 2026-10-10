@@ -96,7 +96,7 @@ async function getInviteByToken(token) {
 
 // Conditionele update op status='pending' is de one-time-use-guard: als twee requests
 // gelijktijdig dezelfde invite proberen te accepteren, wint er maar één (rowsAffected 0
-// bij de verliezer), net als linkEntraSubjectId in users.repository.js.
+// bij de verliezer).
 async function markInviteAccepted(id) {
   const pool = await getPool();
   const result = await pool

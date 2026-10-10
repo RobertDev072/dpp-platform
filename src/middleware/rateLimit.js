@@ -78,4 +78,29 @@ const heavyWorkLimiter = rateLimit({
   handler: tooManyRequests("Te veel exports of imports in korte tijd. Probeer het over 15 minuten opnieuw.")
 });
 
-module.exports = { loginIpLimiter, loginEmailLimiter, mfaLimiter, resetLimiter, partnerResetLimiter, heavyWorkLimiter };
+// Publieke paspoort-API (QR-scans, machineleesbare DPP): ruim per IP-adres, zodat
+// echte scans nooit geremd worden maar één scraper de dienst niet kan belasten.
+// Interne aanroepen van de paspoortpagina (server-side, via loopback) tellen niet
+// mee: die zijn al per bezoeker begrensd door de WAF-regel op CloudFront.
+const PUBLIC_WINDOW_MS = 60 * 1000;
+function isLoopback(ip) {
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+const publicApiLimiter = rateLimit({
+  windowMs: PUBLIC_WINDOW_MS,
+  limit: Number(process.env.PUBLIC_RATE_LIMIT_PER_MINUTE) || 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => isLoopback(req.ip),
+  handler: tooManyRequests("Te veel aanvragen vanaf dit adres. Probeer het over een minuut opnieuw.")
+});
+
+module.exports = {
+  loginIpLimiter,
+  loginEmailLimiter,
+  mfaLimiter,
+  resetLimiter,
+  partnerResetLimiter,
+  heavyWorkLimiter,
+  publicApiLimiter
+};

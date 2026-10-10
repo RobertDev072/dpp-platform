@@ -132,6 +132,10 @@ async function runImportChunk({ importId, companyId }) {
   const pool = await getPool();
   const client = await pool.connect();
   let completedJob = null;
+  // Bijgewerkte bestaande producten: na de commit (en ná het vrijgeven van de
+  // verbinding) als paspoortversie archiveren als ze op de markt zijn.
+  let updatedProductIds = [];
+  let archiveUserId = null;
   try {
     await client.query("BEGIN");
     const jobResult = await client.query(
@@ -230,6 +234,7 @@ async function runImportChunk({ importId, companyId }) {
         if (action === "update") {
           await updateProductRow(client, job, existingId, entry.values);
           counts.updated += 1;
+          updatedProductIds.push(existingId);
         } else {
           const id = await createProductRow(client, job, entry.values);
           capacity -= 1;
@@ -241,6 +246,7 @@ async function runImportChunk({ importId, companyId }) {
         await client.query("RELEASE SAVEPOINT import_row");
       } catch (error) {
         await client.query("ROLLBACK TO SAVEPOINT import_row");
+        if (action === "update") updatedProductIds = updatedProductIds.filter((id) => id !== existingId);
         counts.errors += 1;
         newErrorRows.push(entry.rowNumber);
         newErrors.push({
@@ -252,7 +258,7 @@ async function runImportChunk({ importId, companyId }) {
           message: "Opslaan mislukt",
           suggestion: "Controleer de waarden in deze rij en probeer het opnieuw"
         });
-        console.error(`Import ${job.id} rij ${entry.rowNumber} mislukt:`, error.message);
+        require("../utils/logger").error("import_row_failed", { importId: job.id, row: entry.rowNumber, errorMessage: error.message });
       }
     }
 
@@ -274,13 +280,21 @@ async function runImportChunk({ importId, companyId }) {
         JSON.stringify(newErrors.slice(0, storedRoom)), newErrorRows, finished]
     );
     await client.query("COMMIT");
+    archiveUserId = job.created_by;
     if (finished) completedJob = job;
     return { done: finished };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
+    updatedProductIds = [];
     throw error;
   } finally {
     client.release();
+    if (updatedProductIds.length) {
+      await require("./passportArchive.service").archiveSafely(updatedProductIds, {
+        userId: archiveUserId,
+        reason: "import"
+      });
+    }
     if (completedJob) {
       await logAudit({
         companyId: completedJob.company_id,

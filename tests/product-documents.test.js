@@ -9,13 +9,14 @@ const {
   cleanupTestData
 } = require("./helpers/fixtures");
 
-// Documentupload naar Supabase Storage. Zelfde voorwaarde als de fototest: zonder
-// SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY worden de echte
+// Documentupload naar S3. Zelfde voorwaarde als de fototest: zonder TEST_S3_LIVE=true
+// (met testbuckets) worden de echte
 // upload/downloaddelen overgeslagen; validatie en tenant-isolatie draaien altijd.
-const hasStorageConfigured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const { isStorageConfigured } = require("../src/config/storage");
+const hasStorageConfigured = process.env.TEST_S3_LIVE === "true" && isStorageConfigured();
 const storageSkipReason = hasStorageConfigured
   ? false
-  : "SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY niet gezet - zie README.md";
+  : "TEST_S3_LIVE niet gezet - live S3-test overgeslagen (zie README.md)";
 
 // Kleinst mogelijke geldige PDF-bytes (header volstaat voor de mimetype-flow; multer
 // controleert het door de client meegegeven type, de inhoud is hier niet relevant).

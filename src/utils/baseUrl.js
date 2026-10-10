@@ -4,7 +4,7 @@
 //   deze URL voorgoed, dus deze mag alleen wijzigen naar een adres dat blijvend
 //   wordt doorverwezen.
 // Zonder envvar valt beide terug op de request-host (met trust proxy geeft
-// req.protocol dan correct https achter de TLS-terminatie van Vercel).
+// req.protocol dan correct https achter de TLS-terminatie van CloudFront/ALB).
 
 function stripTrailingSlash(value) {
   return value.replace(/\/+$/, "");

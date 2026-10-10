@@ -17,7 +17,8 @@ const { heavyWorkLimiter } = require("../middleware/rateLimit");
 const router = express.Router();
 const IMPORT_ROLES = ["company_admin", "company_user"];
 
-// Vercel accepteert max. ~4,5 MB per request; 4 MB is ruim genoeg voor 10.000 rijen.
+// 4 MB is ruim genoeg voor 10.000 rijen en beperkt het geheugengebruik (zip-bom-check
+// in productImport.service.js).
 const MAX_FILE_MB = 4;
 const upload = multer({
   storage: multer.memoryStorage(),

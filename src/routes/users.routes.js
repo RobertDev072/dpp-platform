@@ -275,9 +275,6 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
     // Reset geeft een tijdelijk wachtwoord dat direct werkt op de loginpagina; de
     // login dwingt daarna (via must_change_password) af dat er meteen een nieuw,
     // eigen wachtwoord wordt ingesteld voordat er een sessie ontstaat.
-    // Altijd een lokaal wachtwoord; voor een nog niet overgezet Entra-account is dit
-    // meteen de overstap naar lokale login.
-    const authInfo = await usersRepo.getUserAuthInfo(id);
     const tempPassword = generateTempPassword();
     await usersRepo.updatePasswordHash(id, await hashPassword(tempPassword));
     await usersRepo.setMustChangePassword(id, true);
@@ -288,10 +285,43 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
       action: "reset_password",
       entityType: "User",
       entityId: id,
-      metadata: { via: "lokaal", migratedFromEntra: Boolean(authInfo && !authInfo.hasLocalPassword) }
+      metadata: { via: "lokaal" }
     });
 
     res.json({ tempPassword });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Tweestapsverificatie uitzetten voor een gebruiker die zijn telefoon én herstelcodes
+// kwijt is. Zelfde autorisatie als de wachtwoordreset; de gebruiker koppelt daarna
+// zelf opnieuw. Alle lopende sessies vervallen.
+router.post("/:id/mfa/reset", denyIfImpersonating, async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const existing = await usersRepo.getUserById(id);
+    if (!existing) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    if (req.user.role === "company_admin") {
+      assertCompanyAccess(req.user, existing.company_id);
+    }
+    if (id === req.user.id) {
+      next(new HttpError(400, "Je eigen tweestapsverificatie beheer je via je profiel"));
+      return;
+    }
+    await usersRepo.disableMfa(id);
+    await require("../middleware/auth").destroySessionsForUser(id);
+    await logAudit({
+      companyId: existing.company_id,
+      userId: req.user.id,
+      action: "mfa_reset",
+      entityType: "User",
+      entityId: id
+    });
+    res.json({ mfaEnabled: false });
   } catch (error) {
     next(error);
   }

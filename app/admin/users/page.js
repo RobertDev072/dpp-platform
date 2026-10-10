@@ -41,14 +41,15 @@ const ROLE_FILTER_OPTIONS = [
 // Soft-verwijderde accounts komen niet meer terug uit de API, dus geen "Verwijderd"-filter.
 const STATUS_FILTER_OPTIONS = USER_STATUS_OPTIONS;
 
-// auth_provider van de backend: 'entra' of 'local'. Bewust "Verificatie" genoemd, niet "MFA".
+// auth_provider van de backend: 'local' (eigen wachtwoord) of 'none' (nog geen
+// wachtwoord: een beheerder moet een tijdelijk wachtwoord geven). Bewust "Verificatie" genoemd.
 const PROVIDER_FILTER_OPTIONS = [
-  { value: "entra", label: "Entra" },
+  { value: "none", label: "Geen wachtwoord" },
   { value: "local", label: "Lokaal" }
 ];
 
 function providerOf(user) {
-  return user.auth_provider === "entra" ? "entra" : "local";
+  return user.auth_provider === "none" ? "none" : "local";
 }
 
 function RoleBadge({ role }) {
@@ -380,12 +381,28 @@ export default function UsersPage() {
     await patchUser(user, { status: "deleted" });
   }
 
+  // Tweestapsverificatie uitzetten (telefoon én herstelcodes kwijt). De gebruiker
+  // koppelt daarna zelf opnieuw via het profiel.
+  async function handleResetMfa(user) {
+    const sure = window.confirm(
+      `Tweestapsverificatie van ${user.email} uitzetten? Alle sessies van dit account worden beëindigd; ` +
+        "de gebruiker moet daarna zelf opnieuw koppelen."
+    );
+    if (!sure) return;
+    try {
+      await api.post(`/api/users/${user.id}/mfa/reset`);
+      toast.success(`Tweestapsverificatie van ${user.email} staat uit`);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, mfa_enabled: false } : u)));
+    } catch (err) {
+      toast.error(err.message);
+    }
+  }
+
   async function handleResetPassword(user) {
     try {
       const result = await api.post(`/api/users/${user.id}/reset-password`);
       if (result?.selfService) {
-        // Entra-accounts: geen tijdelijk wachtwoord, de gebruiker reset zelf via
-        // "Wachtwoord vergeten". Toon de uitleg van de server als info-melding.
+        // Informatieve melding van de server i.p.v. een tijdelijk wachtwoord.
         setResetInfo({
           userId: user.id,
           email: user.email,
@@ -436,7 +453,7 @@ export default function UsersPage() {
         user.email,
         companyName(user),
         roleLabel(user.role),
-        providerOf(user) === "entra" ? "Entra" : "Lokaal",
+        providerOf(user) === "none" ? "Geen wachtwoord" : "Lokaal",
         statusLabel(user.status),
         user.last_activity ? new Date(user.last_activity).toLocaleString("nl-NL") : ""
       ])
@@ -616,6 +633,7 @@ export default function UsersPage() {
                         }
                         onImpersonate={() => handleImpersonate(user)}
                         onResetPassword={() => handleResetPassword(user)}
+                        onResetMfa={() => handleResetMfa(user)}
                         onCloseReset={() => setResetInfo(null)}
                         onCopyPassword={handleCopyPassword}
                         onRoleChange={(role) => patchUser(user, { role })}
@@ -657,6 +675,7 @@ function UserRows({
   onToggleExpand,
   onImpersonate,
   onResetPassword,
+  onResetMfa,
   onCloseReset,
   onCopyPassword,
   onRoleChange,
@@ -685,10 +704,15 @@ function UserRows({
           <RoleBadge role={user.role} />
         </td>
         <td className="py-2.5 pr-3">
-          {user.auth_provider === "entra" ? (
-            <Badge variant="info">Entra</Badge>
+          {user.auth_provider === "none" ? (
+            <Badge variant="warning">Geen wachtwoord</Badge>
           ) : (
             <Badge variant="neutral">Lokaal</Badge>
+          )}
+          {user.mfa_enabled && (
+            <span className="ml-1">
+              <Badge variant="success">MFA</Badge>
+            </span>
           )}
         </td>
         <td className="py-2.5 pr-3">
@@ -723,6 +747,16 @@ function UserRows({
               <IconButton title="Reset wachtwoord" onClick={onResetPassword}>
                 <KeyIcon />
               </IconButton>
+              {user.mfa_enabled && (
+                <button
+                  type="button"
+                  onClick={onResetMfa}
+                  className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                  title="Tweestapsverificatie uitzetten (telefoon kwijt)"
+                >
+                  MFA resetten
+                </button>
+              )}
               <IconButton
                 title={isExpanded ? "Sluiten" : "Beheren"}
                 onClick={onToggleExpand}

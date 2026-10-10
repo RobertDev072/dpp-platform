@@ -2,9 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const { getPool, close } = require("../src/config/db");
 
-// Postgres-migraties voor Supabase (supabase/migrations, oplopend op bestandsnaam).
-// De oude Azure SQL-migraties in migrations/ zijn historie en draaien hier niet.
-const MIGRATIONS_DIR = path.join(__dirname, "..", "supabase", "migrations");
+// PostgreSQL-migraties (db/migrations, oplopend op bestandsnaam). Elke migratie draait
+// in een eigen transactie en wordt op bestandsnaam bijgehouden in dbo.schemamigrations;
+// de bestandsnamen zijn gelijk gebleven bij de verhuizing, dus een database die al
+// gemigreerd was, slaat ze correct over.
+const MIGRATIONS_DIR = path.join(__dirname, "..", "db", "migrations");
 
 async function runMigrations() {
   const pool = await getPool();

@@ -65,11 +65,44 @@ const documentUpload = multer({
 });
 
 const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
+const { heavyWorkLimiter: heavyExportLimiter } = require("../middleware/rateLimit");
 
 const ALL_ROLES = [...PLATFORM_OWNER_ROLES, "company_admin", "company_user"];
 const EDITOR_ROLES = ["company_admin", "company_user"];
 
 router.use(requireAuth);
+
+// Compliance (EN 18221 §4.2): na elke geslaagde wijziging aan een product of de
+// onderdelen ervan (documenten, duurzaamheid, compliance, onderdelen, foto, status)
+// wordt het paspoort als nieuwe versie gearchiveerd - alleen als het op de markt is
+// en de inhoud echt veranderd is (zie passportArchive.service.js). Dit gebeurt vóór
+// het antwoord vertrekt, zodat een client die direct de historie opvraagt de nieuwe
+// versie ziet. Een archieffout laat het (al opgeslagen) verzoek niet mislukken maar
+// wordt gelogd en door het dagelijkse onderhoud ingehaald.
+const { archiveSafely } = require("../services/passportArchive.service");
+
+// path: het deel na /api/products, bijv. "/12", "/12/publish", "/12/documents/3".
+function archiveReason(method, path) {
+  if (method === "DELETE" && /^\/\d+\/?$/.test(path)) return "archive";
+  if (/^\/\d+\/publish\/?$/.test(path)) return "publish";
+  return "update";
+}
+
+router.use("/:id", (req, res, next) => {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method) || !/^\d+$/.test(req.params.id)) {
+    next();
+    return;
+  }
+  const productId = Number(req.params.id);
+  const reason = archiveReason(req.method, req.originalUrl.split("?")[0].replace(/^\/api\/products/, ""));
+  const sendJson = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode < 200 || res.statusCode >= 300) return sendJson(body);
+    archiveSafely([productId], { userId: req.user?.id ?? null, reason }).finally(() => sendJson(body));
+    return res;
+  };
+  next();
+});
 
 router.get("/", requireRole(...ALL_ROLES), validateQuery(listProductsQuerySchema), async (req, res, next) => {
   try {
@@ -185,6 +218,22 @@ router.patch(
         return;
       }
       assertCompanyAccess(req.user, existing.company_id);
+
+      // Persistentie (EN 18221 §4.1/§4.3): een paspoort dat ooit gepubliceerd is, is
+      // via de gedrukte QR-code in omloop en moet beschikbaar blijven. Terugzetten
+      // naar concept zou de QR-link breken; archiveren (blijft publiek, met melding)
+      // is de juiste weg om een product van de markt te halen.
+      if (req.body.status === "draft" && existing.published_at && existing.status !== "draft") {
+        next(
+          new HttpError(
+            409,
+            "Een gepubliceerd paspoort kan niet terug naar concept: gedrukte QR-codes moeten blijven werken. Archiveer het product als het niet meer op de markt is.",
+            undefined,
+            "PASSPORT_PERSISTENCE"
+          )
+        );
+        return;
+      }
 
       const updated = await productsRepo.updateProduct(id, req.body);
 
@@ -1048,5 +1097,121 @@ function qrFileStem(product) {
   const base = product.sku || String(product.id);
   return base.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 60) || String(product.id);
 }
+
+// --- export voor replicatie / back-up-dienstverlener (EN 18221 §4.3-4.5) -----------
+// Alle paspoorten van één bedrijf die op de markt zijn, met de actuele stand en
+// ALLE gearchiveerde versies (incl. hashes), als NDJSON-stream (één regel per
+// paspoort). Bedoeld als "overeengekomen, veilig replicatiemechanisme" richting een
+// back-up-dienstverlener en als exit-/portabiliteitsexport. Alleen Company Admin
+// (eigen bedrijf) en Platform Owner (?companyId=). Elke export komt in de audittrail.
+router.get("/passports/export", requireRole(...PLATFORM_OWNER_ROLES, "company_admin"), heavyExportLimiter, async (req, res, next) => {
+  try {
+    const companyId = isPlatformOwner(req.user.role) ? Number(req.query.companyId) : req.user.companyId;
+    if (!Number.isInteger(companyId) || companyId < 1) throw new HttpError(400, "companyId is verplicht");
+    const { getPool } = require("../config/db");
+    const passport = require("../services/passport.service");
+    const archive = require("../services/passportArchive.service");
+    const pool = await getPool();
+
+    await logAuditFromReq(req, { companyId, action: "passport_export", entityType: "Company", entityId: companyId });
+
+    res.type("application/x-ndjson; charset=utf-8");
+    res.set("Content-Disposition", `attachment; filename="veripasso-paspoorten-${companyId}.ndjson"`);
+    res.set("Cache-Control", "no-store");
+    res.write(`${JSON.stringify({ type: "header", format: "veripasso-dpp-export", formatVersion: 1, companyId, exportedAt: new Date().toISOString() })}\n`);
+
+    let lastId = 0;
+    for (;;) {
+      const batch = await pool.query(
+        `SELECT id FROM dbo.products
+         WHERE company_id = $1 AND id > $2 AND public_id IS NOT NULL AND published_at IS NOT NULL
+           AND status IN ('published', 'archived')
+         ORDER BY id LIMIT 100`,
+        [companyId, lastId]
+      );
+      if (!batch.rows.length) break;
+      for (const { id } of batch.rows) {
+        const product = await passport.loadProduct(id);
+        const current = await passport.buildSnapshot(product);
+        const versions = [];
+        for (const meta of await archive.listVersions(id)) {
+          versions.push(await archive.getVersion(id, meta.versionNumber));
+        }
+        const line = {
+          type: "passport",
+          publicId: current.publicId,
+          current,
+          currentContentSha256: passport.contentHash(current),
+          versions: versions.map((v) => ({
+            versionNumber: v.versionNumber,
+            createdAt: v.createdAt,
+            reason: v.reason,
+            contentSha256: v.contentSha256,
+            previousChainSha256: v.previousChainSha256,
+            chainSha256: v.chainSha256,
+            snapshot: v.snapshot
+          }))
+        };
+        if (!res.write(`${JSON.stringify(line)}\n`)) {
+          await new Promise((resolve) => res.once("drain", resolve));
+        }
+        lastId = id;
+      }
+    }
+    res.end(`${JSON.stringify({ type: "footer", complete: true })}\n`);
+  } catch (error) {
+    if (res.headersSent) {
+      require("../utils/logger").error("passport_export_failed", { errorMessage: error.message });
+      res.end();
+      return;
+    }
+    next(error);
+  }
+});
+
+// --- versiegeschiedenis van het paspoort (EN 18221 §4.2) ----------------------------
+// Voor ingelogde gebruikers van het eigen bedrijf (en de Platform Owner): alle
+// versies, inclusief niet-openbare documentmetadata. Het publieke equivalent (alleen
+// openbare velden) staat onder /api/dpp/:publicId/versions.
+
+async function loadReadableProduct(req) {
+  const product = await productsRepo.getProductById(Number(req.params.id));
+  if (!product) throw new HttpError(404, "Niet gevonden");
+  assertCompanyAccess(req.user, product.company_id);
+  return product;
+}
+
+router.get("/:id/versions", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadReadableProduct(req);
+    const archive = require("../services/passportArchive.service");
+    res.json({ productId: product.id, versions: await archive.listVersions(product.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Integriteitscontrole van de hele versieketen (hashes en nummering).
+router.get("/:id/versions/verify", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadReadableProduct(req);
+    res.json(await require("../services/passportArchive.service").verifyChain(product.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/versions/:version", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadReadableProduct(req);
+    const versionNumber = Number(req.params.version);
+    if (!Number.isInteger(versionNumber) || versionNumber < 1) throw new HttpError(400, "Ongeldig versienummer");
+    const version = await require("../services/passportArchive.service").getVersion(product.id, versionNumber);
+    if (!version) throw new HttpError(404, "Versie niet gevonden");
+    res.json(version);
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;

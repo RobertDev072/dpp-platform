@@ -1,8 +1,15 @@
 node_modules/
+.next/
+# Lokale configuratie en geheimen: nooit committen.
 .env
 .env*.local
-.next/
-.vercel/
-web/.next/
-# Uitvoer van scripts/issue-temp-passwords.js (bevat tijdelijke wachtwoorden)
+.env.*
+!.env.example
+# AWS CDK: gegenereerde templates en lokale context (bevat account-lookups).
+infra/cdk.out/
+infra/cdk.context.json
+# Uitvoer van beheerscripts (kan tijdelijke wachtwoorden of objectlijsten bevatten).
 temp-passwords-*.csv
+manifest*.csv
+*.dump
+*.dump.gpg

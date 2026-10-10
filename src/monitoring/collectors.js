@@ -24,9 +24,9 @@ const START_OF_TODAY_UTC = "(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME
 
 // --- database ---------------------------------------------------------------
 
-// Actuele databasegrootte + maximum. Supabase rapporteert geen harde maximale
-// grootte via SQL; die hangt af van het plan (Free 500 MB, Pro 8 GB inbegrepen) en
-// staat daarom in DATABASE_MAX_BYTES. 60s cache.
+// Actuele databasegrootte + maximum. Het maximum is de toegewezen RDS-opslag; die is
+// via SQL niet op te vragen en staat daarom in DATABASE_MAX_BYTES (gezet door de
+// infrastructuurcode). 60s cache.
 async function getDatabaseSize() {
   return cached("dbSize", 60000, async () => {
     const pool = await getPool();
@@ -58,7 +58,8 @@ async function getTableStats() {
   }));
 }
 
-// pg_stat_statements staat op Supabase standaard aan, in schema "extensions".
+// pg_stat_statements: op RDS via de parametergroep (shared_preload_libraries) en
+// CREATE EXTENSION; ontbreekt de extensie, dan blijft dit onderdeel leeg.
 async function querySlowestStatements(pool) {
   const statement = (relation) => `
     SELECT left(query, 160) AS query_text,
@@ -229,48 +230,58 @@ async function getDocumentStorageBreakdown() {
   });
 }
 
-// --- bestandsopslag (Supabase Storage) ------------------------------------------
-// Supabase houdt per object de metadata (incl. grootte) bij in storage.objects, in
-// dezelfde database. Eén aggregatiequery geeft dus exact de opslag per bucket en
-// per extensie - geen enumeratie via de API nodig.
+// --- bestandsopslag (Amazon S3) ---------------------------------------------------
+// Telt de huidige objectversies per bucket en per extensie via ListObjectsV2 (1.000
+// objecten per aanroep, ~$0,005 per 1.000 aanroepen). Draait alleen in de dagelijkse
+// snapshot of bij "Nu meten". Boven S3_STATS_MAX_PAGES pagina's per bucket stopt de
+// telling en wordt het resultaat als onvolledig gemarkeerd; voor exacte cijfers op
+// grote schaal zijn de (gratis) CloudWatch-opslagmetrics van S3 de bron.
 async function getBlobStats() {
-  const { isStorageConfigured, IMAGES_BUCKET, DOCUMENTS_BUCKET } = require("../config/storage");
+  const { isStorageConfigured, readConfig } = require("../config/storage");
   if (!isStorageConfigured()) {
-    return { available: false, reason: "Supabase Storage niet geconfigureerd" };
+    return { available: false, reason: "S3-opslag niet geconfigureerd" };
   }
-  const buckets = [IMAGES_BUCKET, DOCUMENTS_BUCKET];
-
-  const pool = await getPool();
-  const result = await pool
-    .request()
-    .input("buckets", buckets)
-    .query(`
-      SELECT bucket_id,
-             lower(coalesce(substring(name from '\\.([^./]{1,10})$'), 'onbekend')) AS ext,
-             COUNT(*) AS n,
-             COALESCE(SUM((metadata->>'size')::bigint), 0) AS bytes
-      FROM storage.objects
-      WHERE bucket_id = ANY(@buckets)
-      GROUP BY bucket_id, ext
-    `);
+  const { ListObjectsV2Command } = require("@aws-sdk/client-s3");
+  const { getClient } = require("../services/blobStorage.service");
+  const config = readConfig();
+  const buckets = [config.imagesBucket, config.documentsBucket];
+  const maxPages = Number(process.env.S3_STATS_MAX_PAGES) || 200;
 
   const containers = {};
-  for (const name of buckets) {
-    containers[name] = { available: true, bytes: 0, count: 0, byExtension: {} };
-  }
   let totalBytes = 0;
   let totalCount = 0;
-  for (const row of result.recordset) {
-    const container = containers[row.bucket_id];
-    const bytes = Number(row.bytes);
-    container.bytes += bytes;
-    container.count += row.n;
-    container.byExtension[row.ext] = { count: row.n, bytes };
-    totalBytes += bytes;
-    totalCount += row.n;
+  let truncated = false;
+  for (const bucket of buckets) {
+    const container = { available: true, bytes: 0, count: 0, byExtension: {}, truncated: false };
+    let token;
+    let pages = 0;
+    do {
+      const page = await getClient().send(
+        new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: token, MaxKeys: 1000 })
+      );
+      for (const object of page.Contents || []) {
+        const match = /\.([^./]{1,10})$/.exec(object.Key || "");
+        const ext = match ? match[1].toLowerCase() : "onbekend";
+        const size = Number(object.Size || 0);
+        container.bytes += size;
+        container.count += 1;
+        const slot = container.byExtension[ext] || (container.byExtension[ext] = { count: 0, bytes: 0 });
+        slot.count += 1;
+        slot.bytes += size;
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      pages += 1;
+    } while (token && pages < maxPages);
+    if (token) {
+      container.truncated = true;
+      truncated = true;
+    }
+    containers[bucket] = container;
+    totalBytes += container.bytes;
+    totalCount += container.count;
   }
 
-  return { available: true, totalBytes, totalCount, containers };
+  return { available: true, totalBytes, totalCount, containers, truncated };
 }
 
 // --- snapshots ------------------------------------------------------------------
@@ -355,7 +366,7 @@ async function getLastSnapshotAgeHours() {
 
 // --- uurmetrics lezen/schrijven ---------------------------------------------------
 
-// Op Vercel draaien meerdere instances naast elkaar die elk hun eigen deel van een
+// Op AWS draaien meerdere ECS-taken naast elkaar die elk hun eigen deel van een
 // uur wegschrijven. Er kunnen dus meerdere rijen per (uur, route) bestaan; alle
 // leesqueries hieronder tellen die bij elkaar op (SUM), P95 gewogen, P99/max als MAX.
 async function persistHourlyMetrics(rows, bucketStart) {

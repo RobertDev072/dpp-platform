@@ -1,18 +1,22 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
 const { getProductPhotoUrl, getProductDocumentUrl } = require("../services/blobStorage.service");
-const sustainabilityRepo = require("../repositories/sustainability.repository");
-const complianceRepo = require("../repositories/compliance.repository");
-const partsRepo = require("../repositories/parts.repository");
 const documentsRepo = require("../repositories/documents.repository");
 const scanEventsRepo = require("../repositories/scanEvents.repository");
+const passport = require("../services/passport.service");
+const { publicApiLimiter } = require("../middleware/rateLimit");
 const { HttpError } = require("../middleware/errorHandler");
 
 const router = express.Router();
+router.use(publicApiLimiter);
 
 // Publiek endpoint, geen requireAuth/requireRole: iedereen met de public_id (via de
-// QR-code) mag dit productpaspoort zien. De response is bewust een whitelist: nooit
-// company_id, interne id's of audit-data laten lekken naar buiten.
+// QR-code) mag dit productpaspoort zien. De inhoud komt uit dezelfde bron als het
+// versie-archief en de machineleesbare DPP (passport.service.js); de weergave is een
+// whitelist: nooit company_id, interne id's, objectnamen of audit-data.
+// Een gedrukte QR-code moet permanent blijven werken, ook na archiveren: "archived"
+// laat de pagina een neutrale melding tonen i.p.v. te doen alsof het product nog
+// actief is.
 router.get("/:publicId", async (req, res, next) => {
   try {
     const product = await productsRepo.getProductByPublicId(req.params.publicId);
@@ -21,13 +25,8 @@ router.get("/:publicId", async (req, res, next) => {
       return;
     }
 
-    const [sustainability, compliance, parts, documents, company] = await Promise.all([
-      sustainabilityRepo.getSustainability(product.id),
-      complianceRepo.getCompliance(product.id),
-      partsRepo.listPartsForProduct(product.id),
-      documentsRepo.listDocumentsForProduct(product.id, { onlyPublic: true }),
-      require("../repositories/companies.repository").getCompanyById(product.company_id)
-    ]);
+    const data = await passport.loadPassportData(product);
+    const snapshot = passport.snapshotFromData(product, data);
 
     // Fire-and-forget: een mislukte scan-registratie mag de paspoortweergave nooit blokkeren.
     Promise.resolve()
@@ -40,76 +39,13 @@ router.get("/:publicId", async (req, res, next) => {
       )
       .catch(() => {});
 
-    let highlights = [];
-    if (product.highlights) {
-      try {
-        highlights = JSON.parse(product.highlights);
-      } catch {
-        highlights = [];
-      }
-    }
-
-    // sustainability.materials en compliance.applicable_regulations komen als rauwe
-    // JSON-strings uit de database (text) - hier veilig parsen zodat de
-    // frontend altijd een echte array krijgt, nooit een string om per ongeluk over
-    // te itereren.
-    if (sustainability && typeof sustainability.materials === "string") {
-      try {
-        sustainability.materials = JSON.parse(sustainability.materials);
-      } catch {
-        sustainability.materials = [];
-      }
-    }
-    if (compliance && typeof compliance.applicable_regulations === "string") {
-      try {
-        compliance.applicable_regulations = JSON.parse(compliance.applicable_regulations);
-      } catch {
-        compliance.applicable_regulations = [];
-      }
-    }
-
-    res.json({
-      // Merkhouder van het paspoort: alleen naam en logo, nooit interne id's of status.
-      issuer: company ? { name: company.name, logo: company.logo || null } : null,
-      name: product.name,
-      brand: product.brand,
-      model: product.model,
-      sku: product.sku,
-      gtin: product.gtin,
-      categoryLabel: product.category_label,
-      description: product.description,
-      manufacturer: product.manufacturer,
-      countryOfOrigin: product.country_of_origin,
-      // Stabiele, eigen link i.p.v. de rauwe photo_url/objectnaam: bij een upload verwijst dit
-      // media-endpoint door naar een kortlevende signed URL van de privé-bucket, bij een geplakte externe
-      // URL redirect dezelfde route er gewoon naartoe. De frontend hoeft dat onderscheid
-      // niet te kennen.
-      photoUrl: product.photo_blob_name || product.photo_url
-        ? `/api/public/products/${req.params.publicId}/photo`
-        : null,
-      // Een gedrukte QR-code moet permanent blijven werken, ook na archiveren - de
-      // frontend kan hiermee een neutrale "gearchiveerd"-melding tonen i.p.v. te doen
-      // alsof dit nog een actief product is.
-      archived: product.status === "archived",
-      highlights,
-      publishedAt: product.published_at,
-      sustainability,
-      compliance,
-      parts,
-      // Whitelist + stabiele downloadlink: geüploade documenten worden via ons eigen
-      // publieke endpoint ontsloten (objecten in de privé-bucket zijn nooit rechtstreeks bereikbaar).
-      documents: documents.map((d) => ({
-        id: d.id,
-        title: d.title,
-        type: d.type,
-        category: d.category,
-        language: d.language,
-        fileSize: d.file_size,
-        downloadUrl: d.blob_name
-          ? `/api/public/products/${req.params.publicId}/documents/${d.id}/file`
-          : d.storage_url
-      }))
-    });
+    res.set("Cache-Control", "no-store");
+    res.json(
+      passport.toPublicPageView(snapshot, {
+        urlPublicId: req.params.publicId,
+        issuerLogo: data.company?.logo || null
+      })
+    );
   } catch (error) {
     next(error);
   }

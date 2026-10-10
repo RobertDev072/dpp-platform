@@ -180,16 +180,11 @@ router.get("/licenses/overview", requireAuth, requireRole(...PLATFORM_OWNER_ROLE
 // Alleen niet-geheime waarden; secrets worden uitsluitend als aanwezig/afwezig
 // gerapporteerd.
 router.get("/config-status", requireAuth, requireRole(...PLATFORM_OWNER_ROLES), (req, res) => {
-  const { getEntraConfigDiagnostics } = require("../config/entra");
-  const { isStorageConfigured, SUPABASE_URL } = require("../config/storage");
+  const { getStorageDiagnostics } = require("../config/storage");
+  const { getDatabaseDiagnostics } = require("../config/db");
   res.json({
-    entra: getEntraConfigDiagnostics(),
-    supabase: {
-      databaseUrlSet: Boolean(process.env.DATABASE_URL),
-      storageConfigured: isStorageConfigured(),
-      projectUrl: SUPABASE_URL || null,
-      serviceRoleKeySet: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
-    },
+    database: getDatabaseDiagnostics(),
+    storage: getStorageDiagnostics(),
     appBaseUrl: process.env.APP_BASE_URL || null,
     qrBaseUrl: process.env.QR_BASE_URL || null
   });

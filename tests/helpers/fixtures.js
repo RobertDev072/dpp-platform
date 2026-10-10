@@ -62,6 +62,24 @@ async function deleteProductChildren(pool, productIds) {
   }
 }
 
+// Paspoortversies zijn append-only (database-trigger). Alleen in een testdatabase
+// op te ruimen: als superuser met session_replication_role=replica, wat triggers
+// voor deze ene transactie uitschakelt. Op RDS heeft de app die rechten niet.
+async function deletePassportVersions(pool, where) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL session_replication_role = replica");
+    await client.query(`DELETE FROM dbo.passportversions WHERE ${where}`);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] }) {
   const pool = await getPool();
   const companies = companyIds.map(Number);
@@ -81,10 +99,12 @@ async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] 
     await pool.request().query(`DELETE FROM dbo.PrintProfiles WHERE company_id IN (${companies.join(",")})`);
     // ScanEvents heeft een FK naar Products - moet weg vóór de Products zelf verwijderd
     // worden (raakt gevuld zodra een test de publieke paspoortpagina bezoekt).
+    await deletePassportVersions(pool, `company_id IN (${companies.join(",")})`);
     await deleteProductChildren(pool, `SELECT id FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
     await pool.request().query(`DELETE FROM dbo.Products WHERE company_id IN (${companies.join(",")})`);
   }
   if (products.length) {
+    await deletePassportVersions(pool, `product_id IN (${products.join(",")})`);
     await deleteProductChildren(pool, products.join(","));
     await pool.request().query(`DELETE FROM dbo.Products WHERE id IN (${products.join(",")})`);
   }
@@ -96,4 +116,4 @@ async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] 
   }
 }
 
-module.exports = { createTestCompany, createTestUser, createTestProduct, cleanupTestData };
+module.exports = { createTestCompany, createTestUser, createTestProduct, cleanupTestData, deletePassportVersions };

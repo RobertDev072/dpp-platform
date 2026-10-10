@@ -387,15 +387,16 @@ router.get("/errors", async (req, res, next) => {
 
 router.get("/infra", async (req, res, next) => {
   try {
-    // Deployment-info komt rechtstreeks uit de systeemvariabelen van Vercel (commit,
-    // omgeving, regio) - geen apart build-info-bestand meer nodig.
-    const buildInfo = process.env.VERCEL
+    // Deployment-info: GIT_SHA wordt bij het bouwen van het Docker-image ingebakken,
+    // APP_ENV/AWS_REGION zet de ECS-taakdefinitie (zie infra/).
+    const onEcs = Boolean(process.env.ECS_CONTAINER_METADATA_URI_V4);
+    const buildInfo = process.env.GIT_SHA
       ? {
-          commit: (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || null,
-          commitMessage: process.env.VERCEL_GIT_COMMIT_MESSAGE ? process.env.VERCEL_GIT_COMMIT_MESSAGE.split("\n")[0].slice(0, 120) : null,
-          deploymentUrl: process.env.VERCEL_URL || null,
-          environment: process.env.VERCEL_ENV || null,
-          region: process.env.VERCEL_REGION || null
+          commit: process.env.GIT_SHA.slice(0, 7),
+          commitMessage: null,
+          deploymentUrl: process.env.APP_BASE_URL || null,
+          environment: process.env.APP_ENV || null,
+          region: process.env.AWS_REGION || null
         }
       : null;
 
@@ -405,8 +406,9 @@ router.get("/infra", async (req, res, next) => {
     res.json({
       environment: process.env.NODE_ENV || "development",
       nodeVersion: process.version,
-      hosting: process.env.VERCEL ? "Vercel" : "lokaal",
-      appService: process.env.VERCEL_PROJECT_PRODUCTION_URL || null,
+      hosting: onEcs ? "AWS ECS Fargate" : "lokaal",
+      appService: process.env.APP_BASE_URL || null,
+      containerMemoryMb: Number(process.env.CONTAINER_MEMORY_MB) || null,
       processUptimeSeconds: Math.floor(process.uptime()),
       memory: {
         rssBytes: memory.rss,

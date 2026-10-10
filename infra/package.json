@@ -1,0 +1,23 @@
+{
+  "name": "veripasso-infra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AWS-infrastructuur van VeriPasso (AWS CDK, JavaScript). Synthetiseert CloudFormation; deployen alleen na expliciete goedkeuring.",
+  "scripts": {
+    "synth": "cdk synth --quiet",
+    "synth:staging": "cdk synth --quiet -c env=staging",
+    "synth:production": "cdk synth --quiet -c env=production",
+    "diff": "cdk diff",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.273.0",
+    "constructs": "^10.8.1"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1145.0"
+  }
+}

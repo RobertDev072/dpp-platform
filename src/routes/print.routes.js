@@ -19,8 +19,8 @@ const { heavyWorkLimiter } = require("../middleware/rateLimit");
 const router = express.Router();
 const COMPANY_ROLES = ["company_admin", "company_user"];
 
-// Per PDF/ZIP maximaal 500 producten: houdt de response onder de ~4,5 MB van Vercel
-// en de verwerking ruim binnen 30 s. Grotere selecties vraagt de client in delen op.
+// Per PDF/ZIP maximaal 500 producten: houdt het geheugengebruik per request beperkt
+// en de verwerking ruim binnen de ALB-timeout. Grotere selecties vraagt de client in delen op.
 const MAX_LABELS_PER_PDF = 500;
 const MAX_QR_PER_ZIP = { png: 500, svg: 2000 };
 
