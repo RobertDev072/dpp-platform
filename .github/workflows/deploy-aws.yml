@@ -4,6 +4,7 @@
 # Eenmalig instellen (zie docs/aws-deployment-runbook.md):
 # - AWS: CDK bootstrap + de CI-stack (OIDC-rol, alleen voor deze repository én de
 #   GitHub-environment met dezelfde naam). Geen AWS-sleutels in GitHub.
+# - GitHub-variabele ALARM_EMAILS (kommagescheiden) voor alarmen en budgetmeldingen.
 # - GitHub: environment "production" (en/of "staging") met variabele
 #   AWS_DEPLOY_ROLE_ARN; optioneel secrets SYSTEM_OWNER_EMAIL/PASSWORD/FIRST_NAME/
 #   LAST_NAME voor het eenmalig aanmaken van de Platform Owner.
@@ -45,6 +46,8 @@ jobs:
     env:
       ENV_NAME: ${{ inputs.environment }}
       IMAGE_TAG: ${{ github.sha }}
+      # Alarm-/budgetadressen: GitHub-environmentvariabele, niet in de openbare repo.
+      ALARM_EMAILS: ${{ vars.ALARM_EMAILS }}
     steps:
       - uses: actions/checkout@v4
 

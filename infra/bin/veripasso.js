@@ -18,7 +18,12 @@ const configFile = path.join(__dirname, "..", "config", `${envName}.json`);
 if (!fs.existsSync(configFile)) {
   throw new Error(`Onbekende omgeving "${envName}": ${configFile} bestaat niet`);
 }
-const config = validateConfig(JSON.parse(fs.readFileSync(configFile, "utf8")));
+const rawConfig = JSON.parse(fs.readFileSync(configFile, "utf8"));
+// Alarm-e-mailadressen staan bewust NIET in de (openbare) repository: ze komen uit
+// -c alarmEmails=... of de env-var ALARM_EMAILS (GitHub-variabele), kommagescheiden.
+const alarmEmails = app.node.tryGetContext("alarmEmails") || process.env.ALARM_EMAILS || "";
+rawConfig.alarmEmails = String(alarmEmails).split(",").map((e) => e.trim()).filter(Boolean);
+const config = validateConfig(rawConfig);
 // imageTag kan bij een deploy worden overschreven: -c imageTag=<git-sha>
 config.imageTag = app.node.tryGetContext("imageTag") || config.imageTag;
 

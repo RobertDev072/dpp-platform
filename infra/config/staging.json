@@ -6,10 +6,9 @@
   "envName": "staging",
   "appDomain": "staging-app.veripasso.example",
   "qrDomain": "staging-qr.veripasso.example",
-  "originDomain": "staging-origin.veripasso.example",
   "cloudFrontCertificateArn": "arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000",
+  "originDomain": "staging-origin.veripasso.example",
   "originCertificateArn": "arn:aws:acm:eu-west-1:000000000000:certificate/00000000-0000-0000-0000-000000000000",
-  "cloudFrontPrefixListId": "",
   "imageTag": "initial",
   "cpu": 512,
   "memoryMiB": 1024,
@@ -31,7 +30,6 @@
   "longTermBackupRetentionDays": 0,
   "logRetentionDays": 30,
   "containerInsights": false,
-  "alarmEmail": "ops@veripasso.example",
   "monthlyBudgetUsd": 100,
   "githubRepository": ""
 }

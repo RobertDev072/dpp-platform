@@ -170,7 +170,7 @@ Achter de zakelijke proxy (Zscaler): `NODE_EXTRA_CA_CERTS` naar het root-CA-best
 ## 7. Infrastructuur en deploy (AWS)
 
 ```
-bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF ─TLS─> ALB ─> ECS Fargate (Next.js + Express)
+bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF ─TLS, VPC origin─> interne ALB ─> ECS Fargate (Next.js + Express)
                                                               ├─> RDS PostgreSQL 17 (privé, TLS verplicht)
                                                               └─> S3 (privé, versioning, presigned URL's)
 ```
@@ -192,7 +192,10 @@ bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF ─TLS─> ALB ─> ECS Far
   GitHub-environment): image bouwen → migraties → `cdk deploy` met de nieuwe image-tag.
   ECS rolt automatisch terug bij ongezonde taken.
 - **Domeinen** (DNS bij TransIP): `app.veripasso.com` en `qr.veripasso.com` → CNAME naar
-  CloudFront; `origin.veripasso.com` → CNAME naar de ALB.
+  CloudFront. De load balancer is intern (geen publiek adres) en alleen via een CloudFront
+  VPC origin bereikbaar; `origin.veripasso.com` is alleen de certificaatnaam voor die
+  versleutelde interne verbinding (CNAME naar het interne ALB-adres, privé-IP's). `veripasso.com`
+  (hoofddomein) → doorverwijzing naar `https://app.veripasso.com`.
 - **Kosten**: [docs/aws-cost-model.md](docs/aws-cost-model.md) (schattingen; budgetten
   waarschuwen maar begrenzen niet).
 - **Rollback, back-up, restore, cutover**: [docs/aws-deployment-runbook.md](docs/aws-deployment-runbook.md).

@@ -1,15 +1,14 @@
 {
   "_toelichting": "Productieconfiguratie, voorlopig op de goedkoopste veilige stand voor live testen (1 taak, kleinste database, geen DR-kopieen). Opschalen: desiredCount/minTasks 2, dbInstanceClass t4g.small, dbMultiAz true, enableS3CrossRegionReplication/enableAwsBackupCopy true. Geen geheimen in dit bestand. qrDomain is permanent: het staat op elke gedrukte QR-code.",
-  "account": "000000000000",
+  "account": "707191185248",
   "region": "eu-west-1",
   "drRegion": "eu-central-1",
   "envName": "production",
   "appDomain": "app.veripasso.com",
   "qrDomain": "qr.veripasso.com",
+  "cloudFrontCertificateArn": "arn:aws:acm:us-east-1:707191185248:certificate/b2db4070-9821-482f-85c7-07d52634261b",
   "originDomain": "origin.veripasso.com",
-  "cloudFrontCertificateArn": "arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000",
-  "originCertificateArn": "arn:aws:acm:eu-west-1:000000000000:certificate/00000000-0000-0000-0000-000000000000",
-  "cloudFrontPrefixListId": "",
+  "originCertificateArn": "arn:aws:acm:eu-west-1:707191185248:certificate/357e84d6-9c8c-4c20-b218-daa931abca6e",
   "imageTag": "initial",
   "cpu": 512,
   "memoryMiB": 1024,
@@ -31,7 +30,10 @@
   "longTermBackupRetentionDays": 0,
   "logRetentionDays": 30,
   "containerInsights": false,
-  "alarmEmail": "ops@veripasso.com",
   "monthlyBudgetUsd": 10,
-  "githubRepository": "RobertDev072/dpp-platform"
+  "githubRepository": "RobertDev072/dpp-platform",
+  "cloudFrontDomains": [
+    "app.veripasso.com",
+    "qr.veripasso.com"
+  ]
 }

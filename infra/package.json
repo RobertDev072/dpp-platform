@@ -4,9 +4,9 @@
   "private": true,
   "description": "AWS-infrastructuur van VeriPasso (AWS CDK, JavaScript). Synthetiseert CloudFormation; deployen alleen na expliciete goedkeuring.",
   "scripts": {
-    "synth": "cdk synth --quiet",
-    "synth:staging": "cdk synth --quiet -c env=staging",
-    "synth:production": "cdk synth --quiet -c env=production",
+    "synth": "cdk synth --quiet -c alarmEmails=alarm-test@example.com",
+    "synth:staging": "cdk synth --quiet -c env=staging -c alarmEmails=alarm-test@example.com",
+    "synth:production": "cdk synth --quiet -c env=production -c alarmEmails=alarm-test@example.com",
     "diff": "cdk diff",
     "test": "node --test \"test/**/*.test.js\""
   },

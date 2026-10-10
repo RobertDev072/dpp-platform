@@ -78,8 +78,8 @@ jobs:
 
       - name: Synth staging en productie
         run: |
-          npx cdk synth --quiet -c env=staging
-          npx cdk synth --quiet -c env=production
+          npm run synth:staging
+          npm run synth:production
 
       - name: Infrastructuurtests
         run: npm test

@@ -12,7 +12,8 @@ const { validateConfig } = require("../lib/config");
 // CloudFormation, zonder AWS-account en zonder iets aan te maken.
 
 function loadConfig(env) {
-  return validateConfig(JSON.parse(fs.readFileSync(path.join(__dirname, "..", "config", `${env}.json`), "utf8")));
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "config", `${env}.json`), "utf8"));
+  return validateConfig({ ...raw, alarmEmails: ["alarm-test@example.com"] });
 }
 
 function synthApp(env) {
@@ -83,25 +84,23 @@ test("CloudFront: minimaal TLS 1.2, HTTP/2 en HTTP/3, HTTPS afgedwongen, WAF gek
       ViewerCertificate: Match.objectLike({ MinimumProtocolVersion: "TLSv1.2_2021", SslSupportMethod: "sni-only" }),
       WebACLId: Match.anyValue(),
       DefaultCacheBehavior: Match.objectLike({ ViewerProtocolPolicy: "redirect-to-https" }),
-      Origins: Match.arrayWith([
-        Match.objectLike({
-          CustomOriginConfig: Match.objectLike({ OriginProtocolPolicy: "https-only", OriginSSLProtocols: ["TLSv1.2"] })
-        })
-      ])
+      Origins: Match.arrayWith([Match.objectLike({ VpcOriginConfig: Match.anyValue() })])
     })
   });
 });
 
-test("ALB: alleen HTTPS met TLS 1.2+-policy; zonder geheime CloudFront-header 403", () => {
-  template.hasResourceProperties("AWS::ElasticLoadBalancingV2::Listener", {
-    Protocol: "HTTPS",
-    SslPolicy: Match.stringLikeRegexp("TLS13"),
-    DefaultActions: [Match.objectLike({ Type: "fixed-response", FixedResponseConfig: Match.objectLike({ StatusCode: "403" }) })]
+test("ALB: intern, alleen via de CloudFront VPC origin, ook daar TLS 1.2+ (versleuteld over de hele route)", () => {
+  template.hasResourceProperties("AWS::ElasticLoadBalancingV2::LoadBalancer", { Scheme: "internal" });
+  template.resourcePropertiesCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", { Scheme: "internet-facing" }, 0);
+  template.hasResourceProperties("AWS::CloudFront::VpcOrigin", {
+    VpcOriginEndpointConfig: Match.objectLike({ OriginProtocolPolicy: "https-only", HTTPSPort: 443, OriginSSLProtocols: ["TLSv1.2"] })
   });
-  template.hasResourceProperties("AWS::ElasticLoadBalancingV2::ListenerRule", {
-    Conditions: [Match.objectLike({ Field: "http-header", HttpHeaderConfig: Match.objectLike({ HttpHeaderName: "X-Origin-Verify" }) })]
-  });
+  template.hasResourceProperties("AWS::ElasticLoadBalancingV2::Listener", { Protocol: "HTTPS", SslPolicy: Match.stringLikeRegexp("TLS13") });
   template.resourcePropertiesCountIs("AWS::ElasticLoadBalancingV2::Listener", { Protocol: "HTTP" }, 0);
+  const ingress = Object.values(template.findResources("AWS::EC2::SecurityGroup"))
+    .flatMap((sg) => sg.Properties.SecurityGroupIngress || [])
+    .filter((r) => r.FromPort === 443);
+  assert.ok(ingress.length >= 1 && ingress.every((r) => r.CidrIp !== "0.0.0.0/0"), "ALB nooit open voor internet");
 });
 
 test("ECS: geen geheimen als platte env-var; COOKIE_SECRET uit Secrets Manager; logs met bewaartermijn", () => {
@@ -165,5 +164,7 @@ test("Config-validatie: ontbrekende of ongeldige waarden stoppen de synth", () =
   const good = loadConfig("staging");
   assert.throws(() => validateConfig({ ...good, account: "123" }), /12 cijfers/);
   assert.throws(() => validateConfig({ ...good, cloudFrontCertificateArn: "arn:aws:acm:eu-west-1:000000000000:certificate/x" }), /us-east-1/);
+  assert.throws(() => validateConfig({ ...good, cloudFrontDomains: ["app.example.com"] }), /qrDomain/);
+  assert.throws(() => validateConfig({ ...good, alarmEmails: [] }), /alarmEmails/);
   assert.throws(() => validateConfig({ ...good, envName: "production", dbDeletionProtection: false }), /dbDeletionProtection/);
 });

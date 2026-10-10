@@ -64,7 +64,7 @@ de cutover ongewijzigd.
 | Certificaat (ACM) | Regio | Namen | Gebruik |
 |---|---|---|---|
 | CloudFront | **us-east-1** | `app.veripasso.com`, `qr.veripasso.com` (staging: eigen namen) | `cloudFrontCertificateArn` |
-| Origin | **eu-west-1** | `origin.veripasso.com` | `originCertificateArn` |
+| Origin (interne ALB, VPC origin) | **eu-west-1** | `origin.veripasso.com` | `originCertificateArn` |
 
 Vraag beide aan met DNS-validatie en zet de validatie-CNAME's bij TransIP.
 

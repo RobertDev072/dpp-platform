@@ -22,11 +22,12 @@ const events = require("aws-cdk-lib/aws-events");
 
 // VeriPasso op AWS - één regio, eenvoudig en goedkoop te beginnen, schaalbaar:
 //
-//   bezoeker ─TLS1.2+/HTTP2-3─> CloudFront (+WAF) ─TLS─> ALB ─> ECS Fargate (Next.js+Express)
-//                                                               │            │
-//                                                               │            ├─> RDS PostgreSQL 17 (privé subnet, TLS verplicht)
-//                                                               │            └─> S3 (privé buckets, presigned URL's)
-//                                                               └─ alleen CloudFront mag de ALB bereiken (prefix list + geheime header)
+//   bezoeker ─TLS1.2+/HTTP2-3─> CloudFront (+WAF) ─TLS1.2+, VPC origin (privé AWS-netwerk)─> interne ALB ─> ECS Fargate
+//                                                                                                 ├─> RDS PostgreSQL 17 (privé subnet, TLS verplicht)
+//                                                                                                 └─> S3 (privé buckets, presigned URL's)
+//   De ALB is intern (geen publiek adres): alleen CloudFront bereikt hem, via een
+//   CloudFront VPC origin. Ook dat laatste stuk is versleuteld (TLS, certificaat voor
+//   originDomain in de regio van de app), zodat de hele route TLS heeft (EN 18216 §4).
 //
 // Bewuste kostenkeuzes: geen NAT-gateway (taken in publieke subnets met een publiek
 // IP, maar inkomend alleen via de ALB-securitygroup), geen interface-endpoints, S3 via
@@ -54,14 +55,10 @@ class VeriPassoAppStack extends cdk.Stack {
       gatewayEndpoints: { S3: { service: ec2.GatewayVpcEndpointAwsService.S3 } }
     });
 
-    const albSg = new ec2.SecurityGroup(this, "AlbSg", { vpc, description: "ALB: alleen HTTPS van CloudFront", allowAllOutbound: true });
-    if (config.cloudFrontPrefixListId) {
-      albSg.addIngressRule(ec2.Peer.prefixList(config.cloudFrontPrefixListId), ec2.Port.tcp(443), "CloudFront origin-facing");
-    } else {
-      // Zonder prefix list: open op 443, maar de listener weigert alles zonder de
-      // geheime origin-header (zie hieronder). Zet de prefix list voor productie.
-      albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS (beperkt via origin-header)");
-    }
+    // Interne ALB: alleen bereikbaar binnen de VPC. De CloudFront VPC origin maakt
+    // netwerkinterfaces in de VPC aan; die verkeer komt dus uit het VPC-adresbereik.
+    const albSg = new ec2.SecurityGroup(this, "AlbSg", { vpc, description: "Interne ALB: alleen CloudFront VPC origin", allowAllOutbound: true });
+    albSg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(443), "CloudFront VPC origin (binnen de VPC)");
     const appSg = new ec2.SecurityGroup(this, "AppSg", { vpc, description: "ECS-taken: alleen van de ALB", allowAllOutbound: true });
     appSg.addIngressRule(albSg, ec2.Port.tcp(3000), "ALB naar app");
     const dbSg = new ec2.SecurityGroup(this, "DbSg", { vpc, description: "RDS: alleen van de app", allowAllOutbound: false });
@@ -86,14 +83,6 @@ class VeriPassoAppStack extends cdk.Stack {
       generateSecretString: { secretStringTemplate: JSON.stringify({}), generateStringKey: "value", passwordLength: 64, excludePunctuation: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN
     });
-    // Gedeeld geheim tussen CloudFront en de ALB: verzoeken zonder deze header
-    // (dus rechtstreeks naar de ALB) krijgen 403.
-    const originSecret = new secretsmanager.Secret(this, "OriginVerifySecret", {
-      secretName: name("origin-verify"),
-      generateSecretString: { secretStringTemplate: JSON.stringify({}), generateStringKey: "value", passwordLength: 48, excludePunctuation: true },
-      removalPolicy: cdk.RemovalPolicy.RETAIN
-    });
-    const originVerifyValue = originSecret.secretValueFromJson("value").unsafeUnwrap();
 
     // --- database ----------------------------------------------------------------------
     const parameterGroup = new rds.ParameterGroup(this, "DbParams", {
@@ -335,9 +324,9 @@ class VeriPassoAppStack extends cdk.Stack {
     // --- load balancer ----------------------------------------------------------------
     const alb = new elbv2.ApplicationLoadBalancer(this, "Alb", {
       vpc,
-      internetFacing: true,
+      internetFacing: false,
       securityGroup: albSg,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       idleTimeout: cdk.Duration.seconds(120),
       dropInvalidHeaderFields: true,
       http2Enabled: true
@@ -348,7 +337,8 @@ class VeriPassoAppStack extends cdk.Stack {
       protocol: elbv2.ApplicationProtocol.HTTPS,
       certificates: [originCertificate],
       sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
-      defaultAction: elbv2.ListenerAction.fixedResponse(403, { contentType: "text/plain", messageBody: "Forbidden" })
+      open: false,
+      defaultAction: elbv2.ListenerAction.fixedResponse(404, { contentType: "text/plain", messageBody: "Not found" })
     });
     const targetGroup = new elbv2.ApplicationTargetGroup(this, "Targets", {
       vpc,
@@ -359,9 +349,9 @@ class VeriPassoAppStack extends cdk.Stack {
       deregistrationDelay: cdk.Duration.seconds(30),
       healthCheck: { path: "/api/health", healthyHttpCodes: "200", interval: cdk.Duration.seconds(15), healthyThresholdCount: 2 }
     });
-    listener.addAction("FromCloudFront", {
+    listener.addAction("App", {
       priority: 10,
-      conditions: [elbv2.ListenerCondition.httpHeader("X-Origin-Verify", [originVerifyValue])],
+      conditions: [elbv2.ListenerCondition.pathPatterns(["/*"])],
       action: elbv2.ListenerAction.forward([targetGroup])
     });
     scaling.scaleOnRequestCount("Requests", { requestsPerTarget: 600, targetGroup });
@@ -370,10 +360,14 @@ class VeriPassoAppStack extends cdk.Stack {
     // Geen caching van dynamische pagina's en API's: paspoorten zijn altijd actueel en
     // elke scan wordt geteld (de app cachet zelf waar het veilig is). Wel caching van
     // de onveranderlijke Next.js-assets.
-    const origin = new origins.HttpOrigin(config.originDomain, {
+    const origin = origins.VpcOrigin.withApplicationLoadBalancer(alb, {
+      vpcOriginName: name("alb"),
+      // CloudFront controleert het ALB-certificaat tegen deze naam (SNI). Er is geen
+      // publiek DNS-record nodig: het verkeer gaat via de VPC origin, niet via DNS.
+      domainName: config.originDomain,
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+      httpsPort: 443,
       originSslProtocols: [cloudfront.OriginSslPolicy.TLS_V1_2],
-      customHeaders: { "X-Origin-Verify": originVerifyValue },
       readTimeout: cdk.Duration.seconds(60),
       keepaliveTimeout: cdk.Duration.seconds(30)
     });
@@ -395,7 +389,8 @@ class VeriPassoAppStack extends cdk.Stack {
     });
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       comment: name("cdn"),
-      domainNames: [config.appDomain, config.qrDomain],
+      // Alle publieke domeinen; het certificaat (us-east-1) moet ze allemaal dekken.
+      domainNames: config.cloudFrontDomains || [config.appDomain, config.qrDomain],
       certificate: acm.Certificate.fromCertificateArn(this, "CdnCert", config.cloudFrontCertificateArn),
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
@@ -418,7 +413,9 @@ class VeriPassoAppStack extends cdk.Stack {
 
     // --- monitoring en alarmen ----------------------------------------------------------
     const alarmTopic = new sns.Topic(this, "Alarms", { topicName: name("alarms") });
-    alarmTopic.addSubscription(new subscriptions.EmailSubscription(config.alarmEmail));
+    for (const address of config.alarmEmails) {
+      alarmTopic.addSubscription(new subscriptions.EmailSubscription(address));
+    }
     const alarmAction = new cwActions.SnsAction(alarmTopic);
     const alarm = (id, metric, threshold, description, comparisonOperator, evaluationPeriods = 3) => {
       const created = new cloudwatch.Alarm(this, id, {
@@ -470,11 +467,11 @@ class VeriPassoAppStack extends cdk.Stack {
       },
       notificationsWithSubscribers: [50, 80, 100].map((threshold) => ({
         notification: { notificationType: "ACTUAL", comparisonOperator: "GREATER_THAN", threshold, thresholdType: "PERCENTAGE" },
-        subscribers: [{ subscriptionType: "EMAIL", address: config.alarmEmail }]
+        subscribers: config.alarmEmails.map((address) => ({ subscriptionType: "EMAIL", address }))
       })).concat([
         {
           notification: { notificationType: "FORECASTED", comparisonOperator: "GREATER_THAN", threshold: 100, thresholdType: "PERCENTAGE" },
-          subscribers: [{ subscriptionType: "EMAIL", address: config.alarmEmail }]
+          subscribers: config.alarmEmails.map((address) => ({ subscriptionType: "EMAIL", address }))
         }
       ])
     });
@@ -487,7 +484,7 @@ class VeriPassoAppStack extends cdk.Stack {
       subscriptionName: name("anomalies"),
       frequency: "DAILY",
       monitorArnList: [anomalyMonitor.attrMonitorArn],
-      subscribers: [{ type: "EMAIL", address: config.alarmEmail }],
+      subscribers: config.alarmEmails.map((address) => ({ type: "EMAIL", address })),
       thresholdExpression: JSON.stringify({
         Dimensions: { Key: "ANOMALY_TOTAL_IMPACT_ABSOLUTE", MatchOptions: ["GREATER_THAN_OR_EQUAL"], Values: ["20"] }
       })
@@ -526,7 +523,11 @@ class VeriPassoAppStack extends cdk.Stack {
 
     // --- outputs ------------------------------------------------------------------------
     new cdk.CfnOutput(this, "CloudFrontDomain", { value: distribution.distributionDomainName, description: "CNAME-doel voor app- en QR-domein (DNS bij TransIP)" });
-    new cdk.CfnOutput(this, "AlbDnsName", { value: alb.loadBalancerDnsName, description: "CNAME-doel voor het origin-domein" });
+
+    new cdk.CfnOutput(this, "AlbDnsName", {
+      value: alb.loadBalancerDnsName,
+      description: "Intern adres van de load balancer: CNAME-doel voor originDomain bij TransIP (privé-IP's, van buitenaf onbereikbaar)"
+    });
     new cdk.CfnOutput(this, "EcrRepositoryUri", { value: repository.repositoryUri });
     new cdk.CfnOutput(this, "ClusterName", { value: cluster.clusterName });
     new cdk.CfnOutput(this, "ServiceName", { value: service.serviceName });

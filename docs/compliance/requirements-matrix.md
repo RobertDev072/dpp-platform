@@ -47,7 +47,7 @@ vragen.
 
 | ID | Clausule | Eis (eigen parafrase) | Soort | Implementatie | Verificatie / bewijs | Status | Sign-off |
 |---|---|---|---|---|---|---|---|
-| R-EXCH-01 | §4 | Gestandaardiseerde DPP-toegang via HTTPS; TLS 1.2 minimaal, oudere TLS/SSL niet toegestaan | (b) | CloudFront `TLSv1.2_2021`, ALB TLS 1.2/1.3-policy, origin TLS 1.2, RDS `ssl_min_protocol_version`, S3 `s3:TlsVersion ≥ 1.2` | infra (CloudFront, ALB, S3, RDS) | VERIFIED (IaC); live-scan na uitrol open | ja |
+| R-EXCH-01 | §4 | Gestandaardiseerde DPP-toegang via HTTPS; TLS 1.2 minimaal, oudere TLS/SSL niet toegestaan | (b) | CloudFront `TLSv1.2_2021`; ook CloudFront → interne ALB (VPC origin) TLS 1.2+ met eigen certificaat, dus versleuteld over de hele route; ALB TLS 1.2/1.3-policy, RDS `ssl_min_protocol_version`, S3 `s3:TlsVersion ≥ 1.2` | infra (CloudFront, ALB, S3, RDS) | VERIFIED (IaC); live-scan na uitrol open | ja |
 | R-EXCH-02 | §4 | TLS 1.3 sterk aanbevolen | (d) | CloudFront- en ALB-policy's ondersteunen TLS 1.3 | infra (ALB `TLS13`) | VERIFIED (IaC) | nee |
 | R-EXCH-03 | §4 | HTTP/2 minimaal, oudere versies niet gebruiken; HTTP/3 aanbevolen | (b) | CloudFront `http2and3`, ALB HTTP/2 | infra (CloudFront) | **BLOCKED**: CloudFront accepteert HTTP/1.1 van oude clients en kan dat niet uitschakelen. Interpretatie nodig | ja |
 | R-EXCH-04 | §4 | API volgens REST-stijl (aanbevolen) | (d) | REST-API's (`/api/dpp`, `/api/products`) | test passport-compliance | VERIFIED | nee |

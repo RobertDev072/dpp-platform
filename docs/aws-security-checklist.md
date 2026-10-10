@@ -41,7 +41,7 @@ Legenda: ✅ geregeld en getest · 🟡 geregeld, nog niet live geverifieerd ·
 |---|---|---|
 | CloudFront: TLS ≥ 1.2 (`TLSv1.2_2021`), HTTP/2 + HTTP/3, HTTPS afgedwongen | ✅ (IaC) / 🟡 live | infra-test "CloudFront"; runbook §6 (testssl) |
 | HTTP/1.1 voor oude clients | ⬜ | CloudFront kan dit niet uitzetten; interpretatie EN 18216 §4 door certificeerder |
-| ALB alleen via CloudFront (prefix list + geheime header, anders 403) | ✅ (IaC) / ⬜ prefix-list-id | `cloudFrontPrefixListId` invullen |
+| ALB intern (geen publiek adres), alleen via CloudFront VPC origin; ook die verbinding TLS ≥ 1.2 | ✅ (IaC) | infra-test "ALB" |
 | Taken alleen bereikbaar vanaf de ALB; database alleen vanaf de taken | ✅ (IaC) | infra-test "Netwerk" |
 | WAF: AWS managed rules + rate limits (paspoort, publieke API, DPP-API, login) | ✅ (IaC) | `infra/lib/edge-stack.js` |
 | App-rate-limit op publieke API per IP (loopback uitgezonderd) | ✅ | test `platform-ops` |
