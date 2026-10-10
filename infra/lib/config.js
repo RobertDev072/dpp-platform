@@ -49,6 +49,9 @@ function validateConfig(config) {
   if (config.cloudFrontDomains && (!Array.isArray(config.cloudFrontDomains) || !config.cloudFrontDomains.includes(config.qrDomain))) {
     errors.push("cloudFrontDomains moet een lijst zijn die in elk geval qrDomain bevat");
   }
+  if (config.webAclArn && !/^arn:aws:wafv2:us-east-1:\d{12}:global\/webacl\//.test(config.webAclArn)) {
+    errors.push("webAclArn moet een WAF-web-ACL met scope CLOUDFRONT in us-east-1 zijn");
+  }
   if (!["X86_64", "ARM64"].includes(config.cpuArchitecture)) errors.push("cpuArchitecture: X86_64 of ARM64");
   if (config.minTasks > config.maxTasks) errors.push("minTasks > maxTasks");
   if (config.dbMaxAllocatedStorageGiB < config.dbAllocatedStorageGiB) errors.push("dbMaxAllocatedStorageGiB < dbAllocatedStorageGiB");

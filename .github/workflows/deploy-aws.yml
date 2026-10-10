@@ -55,7 +55,8 @@ jobs:
         id: cfg
         run: |
           echo "region=$(jq -r .region infra/config/$ENV_NAME.json)" >> "$GITHUB_OUTPUT"
-          echo "waf=$(jq -r .enableWaf infra/config/$ENV_NAME.json)" >> "$GITHUB_OUTPUT"
+          # Edge-stack (us-east-1) alleen als WAF aan staat en er nog geen bestaande web-ACL is opgegeven.
+          echo "waf=$(jq -r 'if .enableWaf and (.webAclArn // "") == "" then "true" else "false" end' infra/config/$ENV_NAME.json)" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:

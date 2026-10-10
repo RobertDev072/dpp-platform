@@ -30,7 +30,10 @@ config.imageTag = app.node.tryGetContext("imageTag") || config.imageTag;
 const stackName = (part) => `VeriPasso-${config.envName}-${part}`;
 const tags = { Application: "VeriPasso", Environment: config.envName };
 
-const edge = config.enableWaf
+// Bestaat de CloudFront-WAF al buiten CloudFormation (bijv. omdat een organisatiebeleid
+// CloudFormation in us-east-1 verbiedt), dan gebruiken we die via config.webAclArn en
+// maken we geen Edge-stack. Zie scripts/create-cloudfront-waf.js.
+const edge = config.enableWaf && !config.webAclArn
   ? new VeriPassoEdgeStack(app, stackName("Edge"), {
       env: { account: config.account, region: "us-east-1" },
       crossRegionReferences: true,
@@ -60,7 +63,7 @@ const appStack = new VeriPassoAppStack(app, stackName("App"), {
   crossRegionReferences: true,
   config,
   tags,
-  webAclArn: edge ? edge.webAclArn : undefined,
+  webAclArn: config.webAclArn || (edge ? edge.webAclArn : undefined),
   drImagesBucketName: dr ? dr.imagesReplicaBucketName : undefined,
   drDocumentsBucketName: dr ? dr.documentsReplicaBucketName : undefined,
   drBackupVaultArn: dr ? dr.backupVaultArn : undefined

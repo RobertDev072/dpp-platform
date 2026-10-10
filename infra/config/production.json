@@ -24,6 +24,7 @@
   "dbDeletionProtection": true,
   "enableDbSecretRotation": false,
   "enableWaf": true,
+  "webAclArn": "arn:aws:wafv2:us-east-1:707191185248:global/webacl/veripasso-production/efb452a2-d93d-4a23-95ee-aa132a2f6e49",
   "publicRateLimitPer5Min": 1500,
   "enableS3CrossRegionReplication": false,
   "enableAwsBackupCopy": false,
