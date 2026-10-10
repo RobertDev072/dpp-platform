@@ -19,6 +19,7 @@ const budgets = require("aws-cdk-lib/aws-budgets");
 const ce = require("aws-cdk-lib/aws-ce");
 const backup = require("aws-cdk-lib/aws-backup");
 const events = require("aws-cdk-lib/aws-events");
+const { buildRouterCode } = require("./domain-router");
 
 // VeriPasso op AWS - één regio, eenvoudig en goedkoop te beginnen, schaalbaar:
 //
@@ -397,6 +398,25 @@ class VeriPassoAppStack extends cdk.Stack {
         referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN, override: true }
       }
     });
+    // Domeinverdeling (landingspagina / SaaS / QR) aan de rand; zie domain-router.js.
+    const allDomains = config.cloudFrontDomains || [config.appDomain, config.qrDomain];
+    const siteDomains = allDomains.filter((d) => d !== config.appDomain && d !== config.qrDomain);
+    const domainRouter = siteDomains.length
+      ? new cloudfront.Function(this, "DomainRouter", {
+          functionName: name("domain-router"),
+          comment: "Domeinverdeling: landingspagina, app en QR",
+          runtime: cloudfront.FunctionRuntime.JS_2_0,
+          code: cloudfront.FunctionCode.fromInline(
+            buildRouterCode({
+              siteDomains,
+              canonicalSiteDomain: config.siteDomain || siteDomains.find((d) => d.startsWith("www.")) || siteDomains[0],
+              appDomain: config.appDomain,
+              qrDomain: config.qrDomain
+            })
+          )
+        })
+      : null;
+
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       comment: name("cdn"),
       // Alle publieke domeinen; het certificaat (us-east-1) moet ze allemaal dekken.
@@ -413,7 +433,10 @@ class VeriPassoAppStack extends cdk.Stack {
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
         originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         responseHeadersPolicy: securityHeaders,
-        compress: true
+        compress: true,
+        ...(domainRouter
+          ? { functionAssociations: [{ function: domainRouter, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }] }
+          : {})
       },
       additionalBehaviors: {
         "/_next/static/*": { ...staticBehavior, responseHeadersPolicy: securityHeaders },

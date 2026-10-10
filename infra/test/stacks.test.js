@@ -168,3 +168,28 @@ test("Config-validatie: ontbrekende of ongeldige waarden stoppen de synth", () =
   assert.throws(() => validateConfig({ ...good, alarmEmails: [] }), /alarmEmails/);
   assert.throws(() => validateConfig({ ...good, envName: "production", dbDeletionProtection: false }), /dbDeletionProtection/);
 });
+
+test("Domeinverdeling: CloudFront Function op het standaardgedrag (landingspagina / app / QR)", () => {
+  const { buildRouterCode } = require("../lib/domain-router");
+  const code = buildRouterCode({
+    siteDomains: ["veripasso.com", "www.veripasso.com"],
+    canonicalSiteDomain: "www.veripasso.com",
+    appDomain: "app.veripasso.com",
+    qrDomain: "qr.veripasso.com"
+  });
+  const handler = new Function(`${code}; return handler;`)();
+  const route = (host, uri) => {
+    const r = handler({ request: { headers: { host: { value: host } }, uri, querystring: {} } });
+    return r.statusCode ? `${r.statusCode} ${r.headers.location.value}` : "pass";
+  };
+  assert.equal(route("veripasso.com", "/"), "301 https://www.veripasso.com/");
+  assert.equal(route("www.veripasso.com", "/"), "pass");
+  assert.equal(route("www.veripasso.com", "/login"), "302 https://app.veripasso.com/login");
+  assert.equal(route("app.veripasso.com", "/"), "302 https://app.veripasso.com/login");
+  assert.equal(route("app.veripasso.com", "/p/X"), "301 https://qr.veripasso.com/p/X");
+  assert.equal(route("qr.veripasso.com", "/p/X"), "pass", "gedrukte QR-codes blijven werken");
+  assert.equal(route("qr.veripasso.com", "/api/dpp/X"), "pass");
+  if ((config.cloudFrontDomains || []).includes("www.veripasso.com")) {
+    template.resourceCountIs("AWS::CloudFront::Function", 1);
+  }
+});
