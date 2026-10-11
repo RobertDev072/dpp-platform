@@ -150,8 +150,9 @@ router.get("/licenses/overview", requireAuth, requireRole(...PLATFORM_OWNER_ROLE
     const companiesRepo = require("../repositories/companies.repository");
     const { buildUsage } = require("../services/license.service");
     const rows = await companiesRepo.listCompaniesWithStats();
+    // Alleen klantbedrijven: partners hebben geen abonnement of licentie.
     res.json(
-      rows.map((row) => ({
+      rows.filter((row) => row.kind !== "partner").map((row) => ({
         companyId: row.id,
         name: row.name,
         slug: row.slug,

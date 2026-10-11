@@ -41,7 +41,9 @@ Aanvullende regels (in code én database): soft delete van gebruikers
 Bedrijfsbeheerder; company-rollen niet op een partnerbedrijf en andersom;
 impersonatie ("Inloggen als") max. 1 uur, nooit genest, volledig in de auditlog.
 
-Licenties: `src/services/license.service.js` is de enige bron van waarheid. Een
+Licenties: alleen **klantbedrijven** hebben een abonnement/licentie; partners nooit
+(API én database-constraint `chk_companies_partner_no_license`).
+`src/services/license.service.js` is de enige bron van waarheid. Een
 verlopen licentie blokkeert alleen **aanmaken**; bestaande data en publieke paspoorten
 blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 

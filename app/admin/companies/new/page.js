@@ -88,7 +88,8 @@ export default function NewCompanyPage() {
       const created = await api.post("/api/admin/companies", {
         name: form.values.name.trim(),
         slug: form.values.slug.trim(),
-        planId: form.values.planId ? Number(form.values.planId) : undefined,
+        // Partners hebben geen abonnement; alleen hun klanten.
+        planId: form.values.kind === "customer" && form.values.planId ? Number(form.values.planId) : undefined,
         kind: form.values.kind,
         // Alleen klantbedrijven kunnen aan een partner hangen; de backend weigert
         // een partner-op-partner-koppeling sowieso met een veldfout.
@@ -158,13 +159,14 @@ export default function NewCompanyPage() {
             name="kind"
             required
             options={KIND_OPTIONS}
-            help="Een partnerbedrijf beheert eigen klanttenants en heeft zelf geen producten of DPP's."
+            help="Een partnerbedrijf beheert eigen klanttenants en heeft zelf geen producten, DPP's of abonnement."
             value={form.values.kind}
             onChange={(e) => {
               form.setValue("kind", e.target.value);
-              // Een partnerbedrijf kan niet zelf aan een partner hangen.
+              // Een partnerbedrijf kan niet zelf aan een partner hangen en heeft geen abonnement.
               if (e.target.value === "partner") {
                 form.setValue("partnerId", "");
+                form.setValue("planId", "");
               }
             }}
             error={form.errors.kind}
@@ -183,15 +185,17 @@ export default function NewCompanyPage() {
             />
           )}
 
-          <Select
-            label="Plan"
-            name="planId"
-            placeholder="— geen plan —"
-            options={plans.map((plan) => ({ value: String(plan.id), label: plan.name }))}
-            value={form.values.planId}
-            onChange={(e) => form.setValue("planId", e.target.value)}
-            error={form.errors.planId}
-          />
+          {form.values.kind === "customer" && (
+            <Select
+              label="Plan"
+              name="planId"
+              placeholder="— geen plan —"
+              options={plans.map((plan) => ({ value: String(plan.id), label: plan.name }))}
+              value={form.values.planId}
+              onChange={(e) => form.setValue("planId", e.target.value)}
+              error={form.errors.planId}
+            />
+          )}
 
           <SubmitButton loading={creating}>Aanmaken</SubmitButton>
         </form>

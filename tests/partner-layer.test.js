@@ -269,4 +269,37 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
     const rij = overzicht.data.find((r) => r.companyId === klantCo);
     assert.equal(rij.partnerId, partnerCo1);
   });
+
+  // --- Partners hebben zelf geen abonnement of licentie, alleen hun klanten ---
+  await t.test("partner krijgt geen plan of licentie: niet bij aanmaken, niet bij wijzigen, niet in de database", async () => {
+    const aanmaken = await request(baseUrl, "POST", "/api/admin/companies", {
+      cookie: ownerCookie,
+      body: { name: `Partner Met Plan ${Date.now()}`, slug: `partner-plan-${Date.now()}`, kind: "partner", planId: partnerPlanId }
+    });
+    assert.equal(aanmaken.status, 400);
+    assert.ok(aanmaken.data.error.details.fieldErrors.planId);
+
+    const wijzigen = await request(baseUrl, "PATCH", `/api/admin/companies/${partnerCo1}`, {
+      cookie: ownerCookie,
+      body: { planId: partnerPlanId, licenseEnd: "2020-01-01" }
+    });
+    assert.equal(wijzigen.status, 400);
+    assert.ok(wijzigen.data.error.details.fieldErrors.planId);
+    assert.ok(wijzigen.data.error.details.fieldErrors.licenseEnd);
+
+    // Plan weghalen (null) blijft gewoon toegestaan.
+    const leegmaken = await request(baseUrl, "PATCH", `/api/admin/companies/${partnerCo1}`, {
+      cookie: ownerCookie,
+      body: { planId: null }
+    });
+    assert.equal(leegmaken.status, 200);
+
+    await assert.rejects(
+      pool.request().input("id", sql.Int, partnerCo2).query("UPDATE dbo.Companies SET license_end = '2020-01-01' WHERE id = @id"),
+      /chk_companies_partner_no_license/
+    );
+
+    const overzicht = await request(baseUrl, "GET", "/api/admin/licenses/overview", { cookie: ownerCookie });
+    assert.ok(!overzicht.data.some((r) => r.companyId === partnerCo1 || r.companyId === partnerCo2));
+  });
 });

@@ -37,8 +37,22 @@ async function assertValidPartnerLink({ kind, partnerId }, next) {
   return true;
 }
 
+// Partners hebben zelf geen abonnement of licentie, alleen hun klanten. Ook in de
+// database afgedwongen (chk_companies_partner_no_license).
+function assertNoLicenseOnPartner(kind, body, next) {
+  if (kind !== "partner") return true;
+  const fieldErrors = {};
+  for (const field of ["planId", "licenseStart", "licenseEnd"]) {
+    if (body[field] != null) fieldErrors[field] = ["Partners hebben geen abonnement of licentie; alleen hun klanten"];
+  }
+  if (Object.keys(fieldErrors).length === 0) return true;
+  next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors }));
+  return false;
+}
+
 router.post("/", validateBody(createCompanySchema), async (req, res, next) => {
   try {
+    if (!assertNoLicenseOnPartner(req.body.kind, req.body, next)) return;
     if (!(await assertValidPartnerLink(req.body, next))) return;
     const company = await companiesRepo.createCompany(req.body);
 
@@ -133,6 +147,7 @@ router.patch("/:id", validateBody(updateCompanySchema), async (req, res, next) =
       return;
     }
 
+    if (!assertNoLicenseOnPartner(existing.kind, req.body, next)) return;
     if (req.body.partnerId !== undefined && !(await assertValidPartnerLink({ kind: existing.kind, partnerId: req.body.partnerId }, next))) {
       return;
     }

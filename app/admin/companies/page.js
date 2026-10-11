@@ -379,7 +379,10 @@ export default function CompaniesPage() {
                         )}
                       </td>
                       <td className="py-2.5 pr-3">
-                        {planEditId === company.id ? (
+                        {kindOf(company) === "partner" ? (
+                          // Partners hebben geen abonnement; alleen hun klanten.
+                          <span className="text-xs text-slate-400">n.v.t.</span>
+                        ) : planEditId === company.id ? (
                           <div className="flex items-center gap-2">
                             <select
                               aria-label={`Plan van ${company.name}`}
