@@ -17,7 +17,7 @@ Legenda: ✅ geregeld en getest · 🟡 geregeld, nog niet live geverifieerd ·
 | Entra-overgangslogin verwijderd | ✅ | accounts zonder wachtwoord: runbook §5.3 |
 | AWS: geen IAM-users met vaste sleutels; SSO met MFA | ⬜ | runbook §2 [MENS] |
 | CI/CD via GitHub OIDC, rol beperkt tot repo + environment | 🟡 | `infra/lib/ci-stack.js`, `.github/workflows/deploy-aws.yml` |
-| App-rol least privilege (2 buckets, geen delete buiten `products/*`, alleen eigen DB-geheim) | ✅ | `infra/lib/app-stack.js`; infra-test "IAM" |
+| App-rol least privilege (2 buckets, geen delete buiten `products/*`, geen andere AWS-rechten) | ✅ | `infra/lib/app-stack.js`; infra-test "IAM" |
 
 ## Gegevens en opslag
 
@@ -29,7 +29,7 @@ Legenda: ✅ geregeld en getest · 🟡 geregeld, nog niet live geverifieerd ·
 | Geen persoonsgegevens in objectsleutels of publieke URL's | ✅ | sleutels `products/{id}/{uuid}.{ext}`; QR bevat alleen een UUID |
 | RDS: versleuteld, niet publiek, `rds.force_ssl=1`, TLS ≥ 1.2, deletion protection | ✅ (IaC) | infra-test "RDS" |
 | App ↔ RDS: TLS met certificaatcontrole (RDS-CA in het image) | 🟡 | `src/config/db.js`, `Dockerfile` |
-| Database-wachtwoord nooit in env-vars; app leest Secrets Manager (rotatie-bestendig) | ✅ (code) / 🟡 | `DB_SECRET_ARN`. Automatische rotatie staat uit (zou een betaald VPC-endpoint vergen); **actie**: periodiek handmatig roteren of `enableDbSecretRotation` aanzetten |
+| Geheimen (DB-wachtwoord, `COOKIE_SECRET`, MFA-sleutel, origin-geheim) nooit in code of template | ✅ (IaC) / 🟡 | CloudFormation-verwijzing naar Secrets Manager → Lambda-omgevingsvariabelen (infra-test "Geheimen"). **Afweging:** zichtbaar voor wie `lambda:GetFunctionConfiguration` heeft; dat recht alleen aan beheerders geven. Bewust gekozen boven een Secrets Manager-endpoint in de VPC (~$15/maand). Automatische DB-rotatie staat uit; na handmatig roteren opnieuw uitrollen |
 | Applicatierol met minimale rechten i.p.v. de RDS-beheerder | ⬜ | Nu gebruikt de app `veripasso_admin`. Aanbevolen na go-live: rol `veripasso_app` (SELECT/INSERT/UPDATE/DELETE op `dbo`, geen DDL, geen eigenaar van `passportversions`), migraties met de beheerder. Let op: de bestaande tabellen hebben RLS aan zonder policies (Supabase-erfenis); voor een niet-eigenaar-rol eerst `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` of policies toevoegen |
 | Paspoortversies append-only (trigger) + hash-keten + verificatie | ✅ | migratie `20261010000000`; test `passport-compliance`. Beperking: de tabeleigenaar kan triggers uitzetten; daarom de aparte app-rol hierboven |
 | Back-ups, PITR, maandelijks archief, DR-kopie | ✅ (IaC) / ⬜ restore-test | runbook §8 |
@@ -41,11 +41,13 @@ Legenda: ✅ geregeld en getest · 🟡 geregeld, nog niet live geverifieerd ·
 |---|---|---|
 | CloudFront: TLS ≥ 1.2 (`TLSv1.2_2021`), HTTP/2 + HTTP/3, HTTPS afgedwongen | ✅ (IaC) / 🟡 live | infra-test "CloudFront"; runbook §6 (testssl) |
 | HTTP/1.1 voor oude clients | ⬜ | CloudFront kan dit niet uitzetten; interpretatie EN 18216 §4 door certificeerder |
-| ALB intern (geen publiek adres), alleen via CloudFront VPC origin; ook die verbinding TLS ≥ 1.2 | ✅ (IaC) | infra-test "ALB" |
-| Taken alleen bereikbaar vanaf de ALB; database alleen vanaf de taken | ✅ (IaC) | infra-test "Netwerk" |
+| App (Lambda Function URL) alleen via CloudFront: geheime header `X-Origin-Verify`, anders 403 (`proxy.js`); verbinding CloudFront → Function URL TLS ≥ 1.2 | ✅ (IaC + code) | infra-test "App op Lambda"; test `cost-optimization` |
+| App in geïsoleerde subnets (geen internetroute); database alleen vanaf de app | ✅ (IaC) | infra-test "Netwerk" |
+| Interne taken (`/api/internal/events`: migraties, onderhoud, seed) alleen via directe Lambda-aanroep met IAM-recht; via internet 404 (router + app) | ✅ | infra-test "Domeinverdeling"; test `cost-optimization` |
+| Productfoto's via CloudFront Origin Access Control; bucket blijft privé; objectnamen met willekeurige UUID | ✅ (IaC) | infra-test "Caching" |
 | WAF: AWS managed rules + rate limits (paspoort, publieke API, DPP-API, login) | ✅ (IaC) | `infra/lib/edge-stack.js` |
 | App-rate-limit op publieke API per IP (loopback uitgezonderd) | ✅ | test `platform-ops` |
-| `trust proxy` exact 2 hops (CloudFront + ALB) | ✅ | `TRUST_PROXY_HOPS=2` (infra-test "ECS") |
+| Echt bezoekers-IP (rate limiting, audit) uit `CloudFront-Viewer-Address`, niet uit een door de bezoeker te vervalsen header | ✅ | `CLIENT_IP_FROM_CLOUDFRONT` in `src/app.js` |
 | Securityheaders (HSTS, nosniff, frame DENY, referrer-policy) | ✅ | `next.config.mjs` + CloudFront response-headers-policy |
 | Content-Security-Policy | ⬜ | nog niet ingesteld (Next.js inline scripts vergen nonces); aanbevolen vervolgstap |
 
@@ -67,8 +69,8 @@ Legenda: ✅ geregeld en getest · 🟡 geregeld, nog niet live geverifieerd ·
 | Punt | Status | Waar / hoe |
 |---|---|---|
 | Health (liveness) en readiness | ✅ | `/api/health`, `/api/health/ready`; test `platform-ops` |
-| Nette afsluiting bij SIGTERM (telemetrie wegschrijven, pool sluiten) | 🟡 | `instrumentation.js` |
-| Alarmen: 5xx, ongezonde taken, latency, DB-CPU/opslag/verbindingen, archieffouten | ✅ (IaC) | SNS-e-mail; bevestigingsmail accepteren [MENS] |
+| Nette afsluiting bij SIGTERM (telemetrie wegschrijven, pool sluiten) | 🟡 | `instrumentation-node.js`; op Lambda via de Web Adapter-extensie |
+| Alarmen: Lambda-fouten/throttling/duur, DB-CPU/opslag/verbindingen, archieffouten, onverwachte fouten | ✅ (IaC) | SNS-e-mail; bevestigingsmail accepteren [MENS] |
 | Budget + kostenanomalie | ✅ (IaC) | geen harde limiet |
 | AVG: geen IP-adressen in scans, geen persoonsgegevens in publieke DPP of logs | ✅ | `scanevents` (UA + referrer), logger-redactie |
 | AVG: inzage/export en verwijdering van gebruikersgegevens | 🟡 | soft delete bestaat; formeel verwerkingsregister en bewaartermijnen ⬜ |

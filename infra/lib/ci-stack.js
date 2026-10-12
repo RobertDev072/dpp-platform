@@ -61,45 +61,31 @@ class VeriPassoCiStack extends cdk.Stack {
         resources: [`arn:aws:ecr:${config.region}:${this.account}:repository/veripasso-${config.envName}-app`]
       })
     );
+    // Eenmalige taken na de uitrol (migraties, versies aanvullen, Platform Owner) via een
+    // directe aanroep van de app-functie, en pauzeren/hervatten (aws-pause.yml) via de
+    // gelijktijdigheidslimiet. Alleen de app-functie van deze omgeving.
+    const appFunctionArn = `arn:aws:lambda:${config.region}:${this.account}:function:veripasso-${config.envName}-app`;
     role.addToPolicy(
       new iam.PolicyStatement({
-        actions: ["ecs:RunTask", "ecs:DescribeTasks", "ecs:DescribeServices"],
-        resources: ["*"],
-        conditions: { ArnEquals: { "ecs:cluster": `arn:aws:ecs:${config.region}:${this.account}:cluster/veripasso-${config.envName}-cluster` } }
+        actions: [
+          "lambda:InvokeFunction",
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:PutFunctionConcurrency",
+          "lambda:DeleteFunctionConcurrency"
+        ],
+        resources: [appFunctionArn]
       })
     );
-    // Migratietaak: een taakdefinitie-revisie met het nieuwe image registreren en de
-    // stack-outputs (cluster, subnets) lezen.
-    role.addToPolicy(new iam.PolicyStatement({ actions: ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"], resources: ["*"] }));
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["cloudformation:DescribeStacks"],
         resources: [`arn:aws:cloudformation:${config.region}:${this.account}:stack/VeriPasso-${config.envName}-*/*`]
       })
     );
-    role.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["iam:PassRole"],
-        resources: [`arn:aws:iam::${this.account}:role/*`],
-        conditions: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } }
-      })
-    );
 
-    // Pauzeren/hervatten (workflow aws-pause.yml): de app-service op 0 of terug, en de
-    // database stoppen/starten. Alleen deze service en databases met het label van
+    // Pauzeren/hervatten: database stoppen/starten. Alleen databases met het label van
     // deze omgeving.
-    role.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["ecs:UpdateService"],
-        resources: [`arn:aws:ecs:${config.region}:${this.account}:service/veripasso-${config.envName}-cluster/veripasso-${config.envName}-app`]
-      })
-    );
-    role.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ["application-autoscaling:RegisterScalableTarget", "application-autoscaling:DescribeScalableTargets"],
-        resources: ["*"]
-      })
-    );
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ["rds:StopDBInstance", "rds:StartDBInstance"],

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { VeriPassoWordmark } from "@/components/landing/VeriPassoLogo";
 import { documentCategoryLabel, formatFileSize } from "@/components/products/documentUtils";
+import ScanBeacon from "@/components/passport/ScanBeacon";
 
 // Publiek productpaspoort (bestemming van elke QR-code). Mobiel eerst: de meeste
 // bezoekers scannen met hun telefoon. Server-gerenderd, zonder login en zonder
@@ -10,24 +11,15 @@ import { documentCategoryLabel, formatFileSize } from "@/components/products/doc
 
 // Op AWS haalt de server de data via loopback op (INTERNAL_API_ORIGIN, bijv.
 // http://127.0.0.1:3000) i.p.v. via het publieke adres: geen omweg langs CloudFront
-// en de WAF. User-Agent en Referer van de bezoeker gaan mee voor de scanstatistiek.
-// cache(): generateMetadata en de pagina delen per request één aanroep, zodat één
-// bezoek ook precies één scan oplevert.
+// en de WAF. Scans telt de pagina zelf in de browser (ScanBeacon), omdat CloudFront
+// de pagina cachet. cache(): generateMetadata en de pagina delen per request één aanroep.
 const getProduct = cache(async function getProduct(id) {
   const headersList = await headers();
   const host = headersList.get("host");
   const protocol = headersList.get("x-forwarded-proto") || (host?.startsWith("localhost") ? "http" : "https");
   const origin = process.env.INTERNAL_API_ORIGIN || `${protocol}://${host}`;
-  const forwarded = {};
-  for (const name of ["user-agent", "referer"]) {
-    const value = headersList.get(name);
-    if (value) forwarded[name] = value;
-  }
 
-  const response = await fetch(`${origin}/api/public/products/${encodeURIComponent(id)}`, {
-    cache: "no-store",
-    headers: forwarded
-  });
+  const response = await fetch(`${origin}/api/public/products/${encodeURIComponent(id)}`, { cache: "no-store" });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Kon productpaspoort niet laden (${response.status})`);
   return response.json();
@@ -120,7 +112,7 @@ export default async function ProductPassportPage({ params }) {
         <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
           {product.issuer?.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={product.issuer.logo} alt={product.issuer.name} className="h-8 max-w-[10rem] object-contain" />
+            <img src={product.issuer.logo} alt={product.issuer.name} height={32} decoding="async" className="h-8 max-w-[10rem] object-contain" />
           ) : (
             <span className="truncate text-sm font-semibold text-slate-900">{product.issuer?.name || product.brand || ""}</span>
           )}
@@ -129,6 +121,7 @@ export default async function ProductPassportPage({ params }) {
       </header>
 
       <main className="mx-auto max-w-2xl space-y-4 px-4 py-5 sm:py-8">
+        <ScanBeacon publicId={id} />
         {product.archived && (
           <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
             Dit product wordt niet meer actief aangeboden. De gegevens hieronder blijven beschikbaar als naslag.
@@ -138,7 +131,7 @@ export default async function ProductPassportPage({ params }) {
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           {product.photoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={product.photoUrl} alt={product.name} className="aspect-[4/3] w-full bg-slate-100 object-cover" />
+            <img src={product.photoUrl} alt={product.name} width={800} height={600} decoding="async" fetchPriority="high" className="aspect-[4/3] w-full bg-slate-100 object-cover" />
           )}
           <div className="space-y-3 p-5">
             {product.categoryLabel && <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">{product.categoryLabel}</p>}

@@ -4,7 +4,7 @@ const { calculateProductCompleteness } = require("../utils/completeness");
 
 const PUBLIC_COLUMNS = `
   id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
-  manufacturer, country_of_origin, photo_url, photo_blob_name, status, highlights, public_id,
+  manufacturer, country_of_origin, photo_url, photo_blob_name, photo_thumb_blob_name, status, highlights, public_id,
   published_at, created_by, created_at, updated_at
 `;
 
@@ -426,6 +426,7 @@ const UPDATABLE_FIELDS = [
   "countryOfOrigin",
   "photoUrl",
   "photoBlobName",
+  "photoThumbBlobName",
   "status"
 ];
 const FIELD_TO_COLUMN = {
@@ -440,6 +441,7 @@ const FIELD_TO_COLUMN = {
   countryOfOrigin: "country_of_origin",
   photoUrl: "photo_url",
   photoBlobName: "photo_blob_name",
+  photoThumbBlobName: "photo_thumb_blob_name",
   status: "status"
 };
 const FIELD_TO_SQL_TYPE = {
@@ -454,6 +456,7 @@ const FIELD_TO_SQL_TYPE = {
   countryOfOrigin: () => sql.NVarChar(100),
   photoUrl: () => sql.NVarChar(1000),
   photoBlobName: () => sql.NVarChar(255),
+  photoThumbBlobName: () => sql.NVarChar(300),
   status: () => sql.NVarChar(20)
 };
 

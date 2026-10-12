@@ -1,13 +1,13 @@
 # AWS pauzeren of hervatten - ALLEEN HANDMATIG. Bespaart kosten tijdens ontwikkelen.
 #
-# Pauzeren:  app-service naar 0 taken (ook autoscaling op 0) en de database gestopt.
-#            De website is dan offline (CloudFront geeft een foutpagina). Kosten die
-#            doorlopen: load balancer, publieke IP's, opslag en (indien aan) de WAF.
-# Hervatten: database starten, wachten tot beschikbaar, app terug naar de configuratie
-#            (desiredCount/minTasks/maxTasks uit infra/config/<env>.json).
+# Pauzeren:  de app-functie (Lambda) op gelijktijdigheid 0 (alle verzoeken worden
+#            geweigerd; CloudFront toont een foutpagina) en de database gestopt.
+#            Kosten die doorlopen: opslag (database, S3, back-ups) en Secrets Manager.
+# Hervatten: database starten, wachten tot beschikbaar, de app weer vrijgeven.
 #
+# Een draaiende Lambda zonder verkeer kost niets; de besparing zit in de database.
 # Let op: AWS start een gestopte database na 7 dagen automatisch weer op. Hervat de
-# omgeving vóór een uitrol (Deploy naar AWS), anders start de nieuwe versie niet.
+# omgeving vóór een uitrol (Deploy naar AWS), anders mislukken de migraties.
 
 name: AWS pauzeren / hervatten
 
@@ -45,12 +45,7 @@ jobs:
 
       - name: Configuratie lezen
         id: cfg
-        run: |
-          C=infra/config/$ENV_NAME.json
-          echo "region=$(jq -r .region $C)" >> "$GITHUB_OUTPUT"
-          echo "desired=$(jq -r .desiredCount $C)" >> "$GITHUB_OUTPUT"
-          echo "min=$(jq -r .minTasks $C)" >> "$GITHUB_OUTPUT"
-          echo "max=$(jq -r .maxTasks $C)" >> "$GITHUB_OUTPUT"
+        run: echo "region=$(jq -r .region infra/config/$ENV_NAME.json)" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -63,23 +58,20 @@ jobs:
           set -euo pipefail
           STACK="VeriPasso-$ENV_NAME-App"
           out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
-          echo "cluster=$(out ClusterName)" >> "$GITHUB_OUTPUT"
-          echo "service=$(out ServiceName)" >> "$GITHUB_OUTPUT"
+          echo "fn=$(out FunctionName)" >> "$GITHUB_OUTPUT"
           DB_HOST=$(out DbEndpoint)
           echo "db=${DB_HOST%%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Pauzeren
         if: inputs.action == 'pauzeren'
         env:
-          CLUSTER: ${{ steps.res.outputs.cluster }}
-          SERVICE: ${{ steps.res.outputs.service }}
+          FN: ${{ steps.res.outputs.fn }}
           DB: ${{ steps.res.outputs.db }}
         run: |
           set -euo pipefail
-          aws application-autoscaling register-scalable-target --service-namespace ecs \
-            --resource-id "service/$CLUSTER/$SERVICE" --scalable-dimension ecs:service:DesiredCount \
-            --min-capacity 0 --max-capacity 0
-          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --desired-count 0 --query 'service.desiredCount'
+          if [ -n "$FN" ] && [ "$FN" != "None" ]; then
+            aws lambda put-function-concurrency --function-name "$FN" --reserved-concurrent-executions 0
+          fi
           STATUS=$(aws rds describe-db-instances --db-instance-identifier "$DB" --query 'DBInstances[0].DBInstanceStatus' --output text)
           echo "Database-status: $STATUS"
           if [ "$STATUS" = "available" ]; then
@@ -90,8 +82,7 @@ jobs:
       - name: Hervatten
         if: inputs.action == 'hervatten'
         env:
-          CLUSTER: ${{ steps.res.outputs.cluster }}
-          SERVICE: ${{ steps.res.outputs.service }}
+          FN: ${{ steps.res.outputs.fn }}
           DB: ${{ steps.res.outputs.db }}
         run: |
           set -euo pipefail
@@ -105,9 +96,16 @@ jobs:
             aws rds start-db-instance --db-instance-identifier "$DB" --query 'DBInstance.DBInstanceStatus' --output text
           fi
           aws rds wait db-instance-available --db-instance-identifier "$DB"
-          aws application-autoscaling register-scalable-target --service-namespace ecs \
-            --resource-id "service/$CLUSTER/$SERVICE" --scalable-dimension ecs:service:DesiredCount \
-            --min-capacity "${{ steps.cfg.outputs.min }}" --max-capacity "${{ steps.cfg.outputs.max }}"
-          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --desired-count "${{ steps.cfg.outputs.desired }}" --query 'service.desiredCount'
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
-          echo "Hervat: de app draait weer."
+          # Bestaat de functie nog niet (omgeving nog van vóór de overstap naar Lambda),
+          # dan maakt de volgende uitrol hem aan.
+          if [ -n "$FN" ] && [ "$FN" != "None" ]; then
+            # De limiet uit de configuratie (lambdaReservedConcurrency) zet de uitrol
+            # terug; zonder limiet de pauze-instelling verwijderen.
+            LIMIT=$(jq -r '.lambdaReservedConcurrency // empty' infra/config/$ENV_NAME.json)
+            if [ -n "$LIMIT" ]; then
+              aws lambda put-function-concurrency --function-name "$FN" --reserved-concurrent-executions "$LIMIT"
+            else
+              aws lambda delete-function-concurrency --function-name "$FN"
+            fi
+          fi
+          echo "Hervat: database beschikbaar, app vrijgegeven."

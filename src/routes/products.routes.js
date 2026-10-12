@@ -290,7 +290,7 @@ router.post(
         mimeType: req.file.mimetype
       });
 
-      res.json(await savePhoto(req, existing, photoBlobName));
+      res.json(await savePhoto(req, existing, photoBlobName, { sourceBuffer: req.file.buffer }));
     } catch (error) {
       next(error);
     }
@@ -299,9 +299,18 @@ router.post(
 
 // Een upload vervangt een eventueel eerder geplakte externe URL - er kan maar één
 // actieve foto-bron tegelijk zijn.
-async function savePhoto(req, product, photoBlobName) {
+async function savePhoto(req, product, photoBlobName, { sourceBuffer } = {}) {
+  // Kleine WebP-versie voor het publieke paspoort (minder dataverkeer). Mislukt dat,
+  // dan toont het paspoort gewoon het origineel; de upload zelf is geslaagd.
+  let photoThumbBlobName = null;
+  try {
+    photoThumbBlobName = await require("../services/blobStorage.service").createPhotoThumbnail(photoBlobName, { sourceBuffer });
+  } catch (error) {
+    require("../utils/logger").warn("photo_thumbnail_failed", { productId: product.id, errorMessage: error.message });
+  }
   const updated = await productsRepo.updateProduct(product.id, {
     photoBlobName,
+    photoThumbBlobName,
     photoUrl: null
   });
 

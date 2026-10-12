@@ -181,7 +181,9 @@ function documentUrl(publicId, doc, versionNumber) {
 // De bestaande JSON voor de paspoortpagina (vorm ongewijzigd t.o.v. vóór de
 // migratie). urlPublicId = de id zoals in de URL (hoofdletters uit de Azure-tijd
 // blijven zo werken).
-function toPublicPageView(snapshot, { urlPublicId, issuerLogo = null, versionNumber = null } = {}) {
+// photoUrl/issuerLogo: door de route bepaald (CDN-pad of API-route), zodat de pagina
+// lichte, cachebare afbeeldingen laadt i.p.v. inline data of zware originelen.
+function toPublicPageView(snapshot, { urlPublicId, issuerLogo = null, photoUrl = null, versionNumber = null } = {}) {
   const id = urlPublicId || snapshot.publicId;
   const p = snapshot.product;
   return {
@@ -195,7 +197,7 @@ function toPublicPageView(snapshot, { urlPublicId, issuerLogo = null, versionNum
     description: p.description,
     manufacturer: p.manufacturer,
     countryOfOrigin: p.countryOfOrigin,
-    photoUrl: p.photo ? `/api/public/products/${id}/photo` : null,
+    photoUrl: p.photo ? photoUrl || `/api/public/products/${id}/photo` : null,
     archived: snapshot.status === "archived",
     highlights: p.highlights,
     publishedAt: snapshot.publishedAt,

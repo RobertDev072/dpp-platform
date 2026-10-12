@@ -7,18 +7,13 @@ const REQUIRED_STRINGS = [
   "appDomain",
   "qrDomain",
   "cloudFrontCertificateArn",
-  "originDomain",
-  "originCertificateArn",
   "imageTag",
   "dbInstanceClass",
   "cpuArchitecture"
 ];
 const REQUIRED_NUMBERS = [
-  "cpu",
-  "memoryMiB",
-  "desiredCount",
-  "minTasks",
-  "maxTasks",
+  "lambdaMemoryMb",
+  "lambdaTimeoutSeconds",
   "dbAllocatedStorageGiB",
   "dbMaxAllocatedStorageGiB",
   "dbBackupRetentionDays",
@@ -43,9 +38,6 @@ function validateConfig(config) {
   if (!/^arn:aws:acm:us-east-1:/.test(config.cloudFrontCertificateArn || "")) {
     errors.push("cloudFrontCertificateArn moet een ACM-certificaat in us-east-1 zijn (eis van CloudFront)");
   }
-  if (!String(config.originCertificateArn || "").startsWith(`arn:aws:acm:${config.region}:`)) {
-    errors.push(`originCertificateArn moet een ACM-certificaat in ${config.region} zijn`);
-  }
   if (config.cloudFrontDomains && (!Array.isArray(config.cloudFrontDomains) || !config.cloudFrontDomains.includes(config.qrDomain))) {
     errors.push("cloudFrontDomains moet een lijst zijn die in elk geval qrDomain bevat");
   }
@@ -53,7 +45,11 @@ function validateConfig(config) {
     errors.push("webAclArn moet een WAF-web-ACL met scope CLOUDFRONT in us-east-1 zijn");
   }
   if (!["X86_64", "ARM64"].includes(config.cpuArchitecture)) errors.push("cpuArchitecture: X86_64 of ARM64");
-  if (config.minTasks > config.maxTasks) errors.push("minTasks > maxTasks");
+  if (config.lambdaMemoryMb < 512 || config.lambdaMemoryMb > 10240) errors.push("lambdaMemoryMb: 512-10240");
+  if (config.lambdaTimeoutSeconds < 10 || config.lambdaTimeoutSeconds > 900) errors.push("lambdaTimeoutSeconds: 10-900");
+  if (config.lambdaReservedConcurrency != null && !(Number.isInteger(config.lambdaReservedConcurrency) && config.lambdaReservedConcurrency > 0)) {
+    errors.push("lambdaReservedConcurrency: positief geheel getal of weglaten");
+  }
   if (config.dbMaxAllocatedStorageGiB < config.dbAllocatedStorageGiB) errors.push("dbMaxAllocatedStorageGiB < dbAllocatedStorageGiB");
   if (config.dbBackupRetentionDays < 1 || config.dbBackupRetentionDays > 35) errors.push("dbBackupRetentionDays: 1-35");
   if (config.envName === "production" && !config.dbDeletionProtection) errors.push("productie vereist dbDeletionProtection");

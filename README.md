@@ -133,18 +133,22 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
 ## 5. Monitoring
 
 - **Owner-dashboard** `/admin/systeemstatus`: request-telemetrie in-process (alleen
-  tellers en duur, routes genormaliseerd), elke ~5 minuten per taak weggeschreven naar
+  tellers en duur, routes genormaliseerd), elke ~5 minuten per serverproces weggeschreven naar
   `SystemRequestMetricsHourly`; dagelijkse snapshot (DB-grootte, tabellen, S3-opslag per
   bucket/extensie) en opschonen van oude telemetrie.
-- **Achtergrondtaken** draaien in het serverproces (`instrumentation.js` →
-  `src/monitoring/scheduler.js`); het dagelijkse onderhoud gebruikt een lease-lock in
-  `dbo.joblocks`, zodat bij meerdere taken er precies één het doet. Het onderhoud vult ook
+- **Achtergrondtaken**: lokaal timers in het serverproces (`instrumentation.js` →
+  `src/monitoring/scheduler.js`); op AWS Lambda roept EventBridge elk uur
+  `/api/internal/events` aan. Het dagelijkse onderhoud gebruikt een lease-lock in
+  `dbo.joblocks`, zodat er altijd precies één proces het doet. Het onderhoud vult ook
   ontbrekende paspoortversies aan.
-- **Health**: `GET /api/health` (liveness, alleen `OK`, gebruikt door ALB en ECS) en
+- **Scans**: de publieke paspoortpagina meldt elke weergave met een lichte beacon
+  (`POST /api/public/products/:id/scan`), zodat scans ook kloppen als CloudFront de
+  pagina uit de cache serveert.
+- **Health**: `GET /api/health` (liveness, alleen `OK`, gebruikt door de Lambda Web Adapter) en
   `GET /api/health/ready` (database bereikbaar). Gedetailleerd: owner-only
   `/api/admin/system/health`.
 - **Logs**: JSON-regels op stdout (`src/utils/logger.js`) → CloudWatch Logs; gevoelige
-  velden worden altijd gemaskeerd. CloudWatch-alarmen op 5xx, ongezonde taken, latency,
+  velden worden altijd gemaskeerd. CloudWatch-alarmen op Lambda-fouten, throttling, duur,
   database, archieffouten (`passport_archive_failed`) en onverwachte fouten.
 
 ---
@@ -184,16 +188,21 @@ Kort overzicht; alle details (resources, netwerk, certificaten, DNS, beveiliging
 back-ups, kosten, beheer) staan in [docs/infrastructuur.md](docs/infrastructuur.md).
 
 ```
-bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF + domeinrouter ─TLS, VPC origin─> interne ALB ─> ECS Fargate
-                                                                                         ├─> RDS PostgreSQL 17
-                                                                                         └─> S3 (privé)
+bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF + domeinrouter + cache ─TLS─> Lambda (Next.js + API, Web Adapter)
+                                   │                                            ├─> RDS PostgreSQL 17
+                                   └─ /products/* (foto's, OAC) ─> S3           └─> S3 (privé)
 ```
 
+Kosten in de kleinste opzet ≈ $19–21/maand (vooral de database); de app kost bij weinig
+verkeer niets (Lambda en CloudFront binnen de gratis tegoeden). Zie
+[docs/aws-cost-model.md](docs/aws-cost-model.md).
+
 - **Uitrollen**: GitHub → Actions → **"Deploy naar AWS"** → `production`. De workflow
-  bouwt het image, draait de databasemigraties en vervangt de app; bij ongezonde taken
-  rolt ECS automatisch terug. GitHub gebruikt een tijdelijke OIDC-rol (geen AWS-sleutels).
+  bouwt het image, rolt de app uit (CloudFormation rolt terug bij een fout) en draait
+  daarna de databasemigraties via een directe aanroep van de functie. GitHub gebruikt een
+  tijdelijke OIDC-rol (geen AWS-sleutels).
 - **Pauzeren tijdens ontwikkelen** (bespaart kosten): GitHub → Actions → **"AWS pauzeren /
-  hervatten"** → `pauzeren` (app op 0, database gestopt; site offline) of `hervatten`. Hervat
+  hervatten"** → `pauzeren` (app geblokkeerd, database gestopt; site offline, ~$5/maand) of `hervatten`. Hervat
   vóór een uitrol. Let op: AWS start een gestopte database na 7 dagen vanzelf.
 - **Firewall (WAF)** staat tijdens ontwikkeling uit (kosten). Vóór livegang met klanten:
   `node scripts/create-cloudfront-waf.js production`, ARN als `webAclArn` in de config en
@@ -202,7 +211,10 @@ bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF + domeinrouter ─TLS, VPC 
   `cd infra && npm test`, pushen en dezelfde workflow draaien.
 - **Domeinverdeling**: een CloudFront Function stuurt elk domein naar zijn rol
   (`infra/lib/domain-router.js`); de app zelf kent de domeinnamen niet.
-- **Geheimen**: alleen in AWS Secrets Manager; de app gebruikt de IAM-rol van de taak.
+- **Geheimen**: alleen in AWS Secrets Manager (bij de uitrol als verwijzing in de
+  Lambda-omgeving gezet); S3 via de IAM-rol van de functie.
+- **Caching**: paspoorten 5 minuten in CloudFront, productfoto's (WebP-miniaturen) en
+  statische bestanden een jaar, bedrijfslogo's een dag.
 - **Valkuilen**: route-volgorde in Express (letterlijke routes vóór `/:id`); Postgres vouwt
   ongequote namen naar kleine letters (camelCase-aliassen quoten); `QR_BASE_URL` en de
   DNS van `qr.veripasso.com` nooit wijzigen of verwijderen.
@@ -263,7 +275,8 @@ docs/                     infrastructuur, AWS-assessment, kosten, runbook, bevei
 ### Beheer
 - [ ] Platform Owner: MFA koppelen; alarm-abonnementen in beide mailboxen bevestigen.
 - [ ] Restore-test van de database (runbook §8) en een loadtest op een testomgeving.
-- [ ] Opschalen vóór echte klanten: 2 taken, Multi-AZ-database, DR-kopieën
+- [ ] Eerste uitrol na de overstap naar Lambda (docs/infrastructuur.md §7).
+- [ ] Opschalen vóór echte klanten: Multi-AZ-database, DR-kopieën, WAF aan
       (`infra/config/production.json`).
 - [ ] Opruimen van bestanden die niet meer gebruikt worden (verwijderen was in de
       migratiesessie niet toegestaan): `vercel.json`, `.vercelignore`, `supabase/`,

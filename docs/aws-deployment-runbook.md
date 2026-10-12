@@ -63,10 +63,10 @@ de cutover ongewijzigd.
 
 | Certificaat (ACM) | Regio | Namen | Gebruik |
 |---|---|---|---|
-| CloudFront | **us-east-1** | `app.veripasso.com`, `qr.veripasso.com` (staging: eigen namen) | `cloudFrontCertificateArn` |
-| Origin (interne ALB, VPC origin) | **eu-west-1** | `origin.veripasso.com` | `originCertificateArn` |
+| CloudFront | **us-east-1** | `veripasso.com`, `www`, `app`, `qr` (staging: eigen namen) | `cloudFrontCertificateArn` |
 
-Vraag beide aan met DNS-validatie en zet de validatie-CNAME's bij TransIP.
+Vraag het aan met DNS-validatie en zet de validatie-CNAME's bij TransIP. De verbinding
+CloudFront → Lambda Function URL gebruikt het certificaat van AWS zelf.
 
 ## 4. Staging uitrollen [MENS]
 
@@ -77,32 +77,33 @@ npx cdk deploy --all -c env=staging      # vraagt bevestiging bij IAM/security-w
 ```
 
 De eerste keer bestaat er nog geen image. Volgorde:
-1. `npx cdk deploy VeriPasso-staging-Edge VeriPasso-staging-App -c env=staging -c imageTag=initial`.
-   De service start nog niet goed (image ontbreekt). Dat is verwacht; de circuit
-   breaker stopt de poging.
-2. Image bouwen en pushen naar de ECR-URI uit de output `EcrRepositoryUri`:
+1. Register aanmaken: `npx cdk deploy VeriPasso-staging-Registry -c env=staging`.
+2. Image bouwen en pushen naar de ECR-URI (Lambda accepteert geen
+   attestation-manifest, dus `--provenance=false`):
    ```bash
    aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin <ACCOUNT>.dkr.ecr.eu-west-1.amazonaws.com
-   docker build --build-arg GIT_SHA=$(git rev-parse HEAD) -t <ECR_URI>:$(git rev-parse HEAD) .
+   docker build --provenance=false --platform linux/amd64 --build-arg GIT_SHA=$(git rev-parse HEAD) -t <ECR_URI>:$(git rev-parse HEAD) .
    docker push <ECR_URI>:$(git rev-parse HEAD)
    ```
-3. Migraties als eenmalige taak (zie §4.1), daarna
-   `npx cdk deploy VeriPasso-staging-App -c env=staging -c imageTag=<sha>`.
-4. DNS (staging): `staging-app`/`staging-qr` → CNAME naar `CloudFrontDomain`;
-   `staging-origin` → CNAME naar `AlbDnsName`.
-5. Platform Owner aanmaken: eenmalige taak met `node scripts/seed-system-owner.js` en
-   `SYSTEM_OWNER_*` als **overrides** (niet in de taakdefinitie laten staan).
+3. `npx cdk deploy VeriPasso-staging-App -c env=staging -c imageTag=<sha>`.
+4. Migraties via een directe aanroep (zie §4.1).
+5. DNS (staging): alle staging-domeinen → CNAME naar `CloudFrontDomain`.
+6. Platform Owner aanmaken: directe aanroep met `{"task":"seed-owner",…}` (§4.1). Het
+   wachtwoord staat dan alleen in die ene aanroep, niet in de configuratie.
 
 Daarna kan elke uitrol via GitHub Actions → "Deploy naar AWS" (handmatig, met
 goedkeuring op de GitHub-environment). Eenmalig: CI-stack uitrollen en
 `AWS_DEPLOY_ROLE_ARN` als variabele op de GitHub-environment zetten.
 
-### 4.1 Eenmalige taak (migraties, seed, backfill)
+### 4.1 Interne taken (migraties, seed, backfill)
+Een directe aanroep van de app-functie (IAM-recht `lambda:InvokeFunction` nodig; van
+buitenaf niet bereikbaar). De Lambda Web Adapter stuurt de payload als POST naar
+`/api/internal/events`.
 ```bash
-aws ecs run-task --cluster <ClusterName> --launch-type FARGATE \
-  --task-definition <TaskDefinitionFamily> \
-  --network-configuration "awsvpcConfiguration={subnets=[<AppSubnets>],securityGroups=[<AppSecurityGroup>],assignPublicIp=ENABLED}" \
-  --overrides '{"containerOverrides":[{"name":"app","command":["node","scripts/migrate.js"]}]}'
+aws lambda invoke --function-name veripasso-<env>-app --cli-binary-format raw-in-base64-out \
+  --cli-read-timeout 900 --payload '{"task":"migrate"}' out.json && cat out.json
+# andere taken: {"task":"backfill"}, {"task":"maintenance"},
+# {"task":"seed-owner","email":"…","password":"…","firstName":"…","lastName":"…"}
 ```
 Logs: CloudWatch Logs-groep `/veripasso/<env>/app`.
 
@@ -115,9 +116,8 @@ Logs: CloudWatch Logs-groep `/veripasso/<env>/app`.
    pg_dump "<SUPABASE_SESSION_POOLER_URL>" --schema=dbo --no-owner --no-privileges \
      --format=custom --file=veripasso-dbo.dump
    ```
-3. Herstellen in RDS, via een tijdelijke beheerverbinding (bijv. een eenmalige ECS-taak
-   met de PostgreSQL-client, of SSM-port-forwarding via een tijdelijke bastion; de
-   database is niet publiek):
+3. Herstellen in RDS, via een tijdelijke beheerverbinding (bijv. SSM-port-forwarding via
+   een tijdelijke bastion in de VPC; de database is niet publiek):
    ```bash
    pg_restore --no-owner --no-privileges -d "<RDS_URL>" veripasso-dbo.dump
    ```
@@ -127,9 +127,8 @@ Logs: CloudWatch Logs-groep `/veripasso/<env>/app`.
      npm run verify:db-copy > db-verificatie.txt
    ```
    Alle tabellen moeten "ja" geven. Bewaar `db-verificatie.txt` als bewijs.
-5. Daarna pas de nieuwe migraties (`passport_versions`, `user_mfa`) en de backfill:
-   `node scripts/migrate.js` en `node scripts/backfill-passport-versions.js` als
-   eenmalige taken.
+5. Daarna pas de nieuwe migraties en de backfill: `{"task":"migrate"}` en
+   `{"task":"backfill"}` als interne taken (§4.1).
 
 ### 5.2 Bestanden (Supabase Storage → S3)
 Supabase → Storage → S3 Connection: S3-sleutels aanmaken (alleen lezen nodig).
@@ -162,7 +161,10 @@ vóór de cutover via "Wachtwoord resetten" een tijdelijk wachtwoord.
       versie; `GET /api/products/<id>/versions/verify` → `valid: true`.
 - [ ] TLS: `nmap --script ssl-enum-ciphers -p 443 <domein>` of testssl.sh: geen TLS 1.0/1.1.
       `curl -I --http2` en `--http3` werken.
-- [ ] Directe toegang tot de ALB zonder CloudFront-header geeft 403.
+- [ ] Directe toegang tot de Lambda Function URL (zonder CloudFront-header) geeft 403;
+      `POST https://<domein>/api/internal/events` geeft 404.
+- [ ] Paspoort twee keer openen: tweede keer `x-cache: Hit from cloudfront`; de scan
+      telt toch twee keer (beacon). Foto komt van `/products/…` (WebP).
 - [ ] Loadtest (bijv. k6) op staging tot 50 scans/s, nooit op productie; P95 < 800 ms.
 - [ ] Restore-test (§8) uitgevoerd en gedocumenteerd.
 - [ ] Toegankelijkheid publiek paspoort (EN 301 549 / WCAG 2.1 AA): audit met axe +
@@ -198,19 +200,19 @@ vóór de cutover via "Wachtwoord resetten" een tijdelijk wachtwoord.
 
 **Restore-test (minimaal elk kwartaal, en vóór go-live):**
 1. RDS → "Restore to point in time" naar een **nieuwe** instantie (niet de bestaande).
-2. Tijdelijke taak met `DB_HOST` naar die instantie: `npm run verify:db-copy` tegen de
-   productie-instantie (alleen lezen) en een steekproef van paspoorten +
-   `/versions/verify`.
+2. Vanaf een tijdelijke beheerverbinding (bastion in de VPC) met die instantie:
+   `npm run verify:db-copy` tegen de productie-instantie (alleen lezen) en een
+   steekproef van paspoorten + `/versions/verify`.
 3. Tijd tot herstel noteren (RTO), instantie verwijderen, resultaat vastleggen.
 
-Hoge beschikbaarheid: alleen binnen eu-west-1 (Multi-AZ database, ≥ 2 taken in 2 AZ's).
+Hoge beschikbaarheid: alleen binnen eu-west-1 (Multi-AZ database; Lambda draait al in 2 AZ's).
 Een regio-storing betekent: handmatig herstel in eu-central-1 vanuit de kopieën (uren).
 
 ## 9. Rollback van een gewone deploy
 
-- ECS rolt automatisch terug als nieuwe taken niet gezond worden (circuit breaker).
+- CloudFormation rolt automatisch terug als de stack-update mislukt.
 - Handmatig: `npx cdk deploy VeriPasso-<env>-App -c env=<env> -c imageTag=<vorige-sha>`.
-  Images zijn onveranderlijk getagd; de laatste 30 blijven bewaard.
+  Images zijn onveranderlijk getagd; de laatste 10 blijven bewaard.
 - Migraties zijn additief. Een migratie terugdraaien gebeurt nooit automatisch.
   Paspoortversies blijven altijd bewaard.
 

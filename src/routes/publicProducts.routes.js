@@ -8,6 +8,15 @@ const { publicApiLimiter } = require("../middleware/rateLimit");
 const { HttpError } = require("../middleware/errorHandler");
 
 const router = express.Router();
+
+// Op AWS serveert CloudFront het pad /products/* rechtstreeks uit de (privé) fotobucket,
+// lang gecachet (PUBLIC_MEDIA_FROM_CDN=true). Dan gebruikt de paspoortpagina de kleine
+// WebP-versie via dat pad: geen app-aanroep, geen S3-uitgaand verkeer per weergave.
+function publicPhotoUrl(product) {
+  if (process.env.PUBLIC_MEDIA_FROM_CDN !== "true" || !product.photo_blob_name) return null;
+  const key = product.photo_thumb_blob_name || product.photo_blob_name;
+  return key.startsWith("products/") ? `/${key}` : null;
+}
 router.use(publicApiLimiter);
 
 // Publiek endpoint, geen requireAuth/requireRole: iedereen met de public_id (via de
@@ -28,24 +37,39 @@ router.get("/:publicId", async (req, res, next) => {
     const data = await passport.loadPassportData(product);
     const snapshot = passport.snapshotFromData(product, data);
 
-    // Fire-and-forget: een mislukte scan-registratie mag de paspoortweergave nooit blokkeren.
-    Promise.resolve()
-      .then(() =>
-        scanEventsRepo.recordScanEvent({
-          productId: product.id,
-          userAgent: req.get("user-agent"),
-          referrer: req.get("referer")
-        })
-      )
-      .catch(() => {});
-
+    // Geen scanregistratie hier: deze data wordt (via de paspoortpagina) door
+    // CloudFront gecachet, dus niet elke scan bereikt deze route. De pagina meldt elke
+    // weergave zelf via POST /:publicId/scan (zie hieronder).
     res.set("Cache-Control", "no-store");
     res.json(
       passport.toPublicPageView(snapshot, {
         urlPublicId: req.params.publicId,
-        issuerLogo: data.company?.logo || null
+        // Logo als losse, lang cachebare afbeelding i.p.v. inline base64 in elke pagina.
+        issuerLogo: data.company?.logo ? `/api/public/products/${req.params.publicId}/logo` : null,
+        photoUrl: publicPhotoUrl(product)
       })
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Scansignaal van de paspoortpagina (navigator.sendBeacon): telt precies één scan per
+// weergave, ook als de pagina uit de CloudFront-cache komt. Bots zonder JavaScript
+// tellen zo niet mee. Geen persoonsgegevens: alleen user-agent en referrer, geen IP.
+router.post("/:publicId/scan", async (req, res, next) => {
+  try {
+    const product = await productsRepo.getProductByPublicId(req.params.publicId);
+    if (!product) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    await scanEventsRepo.recordScanEvent({
+      productId: product.id,
+      userAgent: req.get("user-agent"),
+      referrer: req.get("referer")
+    });
+    res.set("Cache-Control", "no-store").status(204).end();
   } catch (error) {
     next(error);
   }
@@ -81,6 +105,32 @@ router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
       return;
     }
     next(new HttpError(404, "Niet gevonden"));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bedrijfslogo van de uitgever (opgeslagen als data-URI) als echte afbeelding, zodat
+// browsers en CloudFront het kunnen cachen.
+router.get("/:publicId/logo", async (req, res, next) => {
+  try {
+    const product = await productsRepo.getProductByPublicId(req.params.publicId);
+    const company = product ? await require("../repositories/companies.repository").getCompanyById(product.company_id) : null;
+    const match = company?.logo ? /^data:(image\/(?:png|jpeg|webp|gif|svg\+xml));base64,(.+)$/i.exec(company.logo) : null;
+    if (!match) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    const buffer = Buffer.from(match[2], "base64");
+    const etag = `"${require("crypto").createHash("sha1").update(buffer).digest("hex")}"`;
+    res.set("Cache-Control", "public, max-age=86400");
+    res.set("ETag", etag);
+    if (req.get("if-none-match") === etag) {
+      res.status(304).end();
+      return;
+    }
+    if (match[1].toLowerCase() === "image/svg+xml") res.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+    res.type(match[1]).send(buffer);
   } catch (error) {
     next(error);
   }

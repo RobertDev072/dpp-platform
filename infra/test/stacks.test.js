@@ -84,37 +84,81 @@ test("CloudFront: minimaal TLS 1.2, HTTP/2 en HTTP/3, HTTPS afgedwongen, WAF gek
       ViewerCertificate: Match.objectLike({ MinimumProtocolVersion: "TLSv1.2_2021", SslSupportMethod: "sni-only" }),
       // Firewall gekoppeld zodra die in de config aan staat (tijdens ontwikkeling mag hij uit).
       ...(config.enableWaf ? { WebACLId: Match.anyValue() } : {}),
-      DefaultCacheBehavior: Match.objectLike({ ViewerProtocolPolicy: "redirect-to-https" }),
-      Origins: Match.arrayWith([Match.objectLike({ VpcOriginConfig: Match.anyValue() })])
+      DefaultCacheBehavior: Match.objectLike({ ViewerProtocolPolicy: "redirect-to-https" })
     })
   });
 });
 
-test("ALB: intern, alleen via de CloudFront VPC origin, ook daar TLS 1.2+ (versleuteld over de hele route)", () => {
-  template.hasResourceProperties("AWS::ElasticLoadBalancingV2::LoadBalancer", { Scheme: "internal" });
-  template.resourcePropertiesCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", { Scheme: "internet-facing" }, 0);
-  template.hasResourceProperties("AWS::CloudFront::VpcOrigin", {
-    VpcOriginEndpointConfig: Match.objectLike({ OriginProtocolPolicy: "https-only", HTTPSPort: 443, OriginSSLProtocols: ["TLSv1.2"] })
-  });
-  template.hasResourceProperties("AWS::ElasticLoadBalancingV2::Listener", { Protocol: "HTTPS", SslPolicy: Match.stringLikeRegexp("TLS13") });
-  template.resourcePropertiesCountIs("AWS::ElasticLoadBalancingV2::Listener", { Protocol: "HTTP" }, 0);
-  const ingress = Object.values(template.findResources("AWS::EC2::SecurityGroup"))
-    .flatMap((sg) => sg.Properties.SecurityGroupIngress || [])
-    .filter((r) => r.FromPort === 443);
-  assert.ok(ingress.length >= 1 && ingress.every((r) => r.CidrIp !== "0.0.0.0/0"), "ALB nooit open voor internet");
+const appFunction = () =>
+  Object.values(template.findResources("AWS::Lambda::Function")).find((r) => r.Properties.PackageType === "Image").Properties;
+const distributionConfig = () => Object.values(template.findResources("AWS::CloudFront::Distribution"))[0].Properties.DistributionConfig;
+
+test("App op Lambda: geen ECS/load balancer; Function URL alleen via CloudFront (geheime header, TLS 1.2+)", () => {
+  template.resourceCountIs("AWS::ECS::Service", 0);
+  template.resourceCountIs("AWS::ElasticLoadBalancingV2::LoadBalancer", 0);
+  template.resourceCountIs("AWS::EC2::EIP", 0);
+  const fn = appFunction();
+  assert.ok(fn.VpcConfig, "in de VPC (database privé)");
+  assert.equal(fn.Environment.Variables.AWS_LWA_PASS_THROUGH_PATH, "/api/internal/events");
+  template.hasResourceProperties("AWS::Lambda::Url", { InvokeMode: "RESPONSE_STREAM" });
+
+  const origin = distributionConfig().Origins.find((o) => o.OriginCustomHeaders);
+  const header = origin.OriginCustomHeaders.find((h) => h.HeaderName === "X-Origin-Verify");
+  assert.match(JSON.stringify(header.HeaderValue), /resolve:secretsmanager/, "geheim uit Secrets Manager, niet in de code");
+  assert.equal(origin.CustomOriginConfig.OriginProtocolPolicy, "https-only");
+  assert.deepEqual(origin.CustomOriginConfig.OriginSSLProtocols, ["TLSv1.2"]);
+  assert.equal(
+    JSON.stringify(fn.Environment.Variables.ORIGIN_VERIFY_SECRET),
+    JSON.stringify(header.HeaderValue),
+    "app en CloudFront gebruiken hetzelfde geheim"
+  );
+  template.hasResourceProperties("AWS::Events::Rule", { ScheduleExpression: "rate(1 hour)" });
 });
 
-test("ECS: geen geheimen als platte env-var; COOKIE_SECRET uit Secrets Manager; logs met bewaartermijn", () => {
-  const taskDefs = template.findResources("AWS::ECS::TaskDefinition");
-  const container = Object.values(taskDefs)[0].Properties.ContainerDefinitions[0];
-  const envNames = container.Environment.map((e) => e.Name);
-  for (const forbidden of ["COOKIE_SECRET", "MFA_ENCRYPTION_KEY", "DB_PASSWORD", "DATABASE_URL", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]) {
-    assert.ok(!envNames.includes(forbidden), `${forbidden} hoort niet als platte env-var`);
+test("Geheimen: nooit als platte waarde in het template; logs met bewaartermijn", () => {
+  const env = appFunction().Environment.Variables;
+  for (const secret of ["COOKIE_SECRET", "MFA_ENCRYPTION_KEY", "DB_PASSWORD", "ORIGIN_VERIFY_SECRET"]) {
+    assert.match(JSON.stringify(env[secret]), /\{\{resolve:secretsmanager:/, `${secret} via Secrets Manager-verwijzing`);
   }
-  assert.ok(container.Secrets.some((s) => s.Name === "COOKIE_SECRET"));
-  assert.ok(container.Secrets.some((s) => s.Name === "MFA_ENCRYPTION_KEY"));
-  assert.equal(container.Environment.find((e) => e.Name === "TRUST_PROXY_HOPS").Value, "2");
+  for (const forbidden of ["DATABASE_URL", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]) {
+    assert.ok(!(forbidden in env), `${forbidden} hoort niet in de omgeving`);
+  }
   template.hasResourceProperties("AWS::Logs::LogGroup", { RetentionInDays: config.logRetentionDays });
+});
+
+test("Caching: paspoorten 5 min (sleutel op Accept, geen cookies), foto's via OAC lang, interne paden nooit gecachet", () => {
+  const behaviors = Object.fromEntries(distributionConfig().CacheBehaviors.map((b) => [b.PathPattern, b]));
+  for (const p of ["/_next/static/*", "/products/*", "/p/*", "/api/public/products/*/logo"]) assert.ok(behaviors[p], `gedrag voor ${p}`);
+  assert.deepEqual(behaviors["/p/*"].AllowedMethods, ["GET", "HEAD"]);
+
+  template.hasResourceProperties("AWS::CloudFront::CachePolicy", {
+    CachePolicyConfig: Match.objectLike({
+      MinTTL: 300,
+      DefaultTTL: 300,
+      MaxTTL: 300,
+      ParametersInCacheKeyAndForwardedToOrigin: Match.objectLike({
+        HeadersConfig: { HeaderBehavior: "whitelist", Headers: ["Accept"] },
+        CookiesConfig: { CookieBehavior: "none" }
+      })
+    })
+  });
+  template.resourceCountIs("AWS::CloudFront::OriginAccessControl", 1);
+  const mediaOrigin = distributionConfig().Origins.find((o) => o.OriginAccessControlId);
+  assert.ok(mediaOrigin, "fotobucket via Origin Access Control (bucket blijft privé)");
+  template.hasResourceProperties("AWS::CloudFront::ResponseHeadersPolicy", {
+    ResponseHeadersPolicyConfig: Match.objectLike({
+      CustomHeadersConfig: { Items: [{ Header: "Cache-Control", Value: "public, max-age=31536000, immutable", Override: true }] }
+    })
+  });
+  // Standaardgedrag (API, inloggen, beheer): nooit cachen.
+  assert.equal(distributionConfig().DefaultCacheBehavior.CachePolicyId, "4135ea2d-6df8-44a3-9df3-4b5a84be39ad");
+});
+
+test("S3: Intelligent-Tiering voor huidige objecten", () => {
+  for (const bucket of Object.values(template.findResources("AWS::S3::Bucket"))) {
+    const rules = bucket.Properties.LifecycleConfiguration.Rules;
+    assert.ok(rules.some((r) => (r.Transitions || []).some((t) => t.StorageClass === "INTELLIGENT_TIERING")));
+  }
 });
 
 test("IAM: de app-rol mag niets verwijderen buiten products/* en heeft geen wildcard-rechten", () => {
@@ -190,6 +234,20 @@ test("Domeinverdeling: CloudFront Function op het standaardgedrag (landingspagin
   assert.equal(route("app.veripasso.com", "/p/X"), "301 https://qr.veripasso.com/p/X");
   assert.equal(route("qr.veripasso.com", "/p/X"), "pass", "gedrukte QR-codes blijven werken");
   assert.equal(route("qr.veripasso.com", "/api/dpp/X"), "pass");
+  assert.equal(route("qr.veripasso.com", "/products/1/a.jpg.w800.webp"), "pass", "productfoto's op elk domein");
+  for (const host of ["qr.veripasso.com", "app.veripasso.com", "www.veripasso.com"]) {
+    assert.equal(handler({ request: { headers: { host: { value: host } }, uri: "/api/internal/events", querystring: {} } }).statusCode, 404);
+  }
+
+  // Accept-normalisatie voor de paspoortcache.
+  const accept = (value) => {
+    const request = { headers: { host: { value: "qr.veripasso.com" }, accept: { value } }, uri: "/p/X", querystring: {} };
+    return handler({ request }).headers.accept.value;
+  };
+  assert.equal(accept("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"), "text/html", "browser");
+  assert.equal(accept("*/*"), "text/html");
+  assert.equal(accept("application/ld+json"), "application/ld+json", "systeem behoudt eigen Accept");
+  assert.equal(accept("application/json"), "application/json");
   if ((config.cloudFrontDomains || []).includes("www.veripasso.com")) {
     template.resourceCountIs("AWS::CloudFront::Function", 1);
   }

@@ -1,8 +1,8 @@
 const cdk = require("aws-cdk-lib");
 const ec2 = require("aws-cdk-lib/aws-ec2");
-const ecs = require("aws-cdk-lib/aws-ecs");
 const ecr = require("aws-cdk-lib/aws-ecr");
-const elbv2 = require("aws-cdk-lib/aws-elasticloadbalancingv2");
+const lambda = require("aws-cdk-lib/aws-lambda");
+const targets = require("aws-cdk-lib/aws-events-targets");
 const acm = require("aws-cdk-lib/aws-certificatemanager");
 const cloudfront = require("aws-cdk-lib/aws-cloudfront");
 const origins = require("aws-cdk-lib/aws-cloudfront-origins");
@@ -21,18 +21,24 @@ const backup = require("aws-cdk-lib/aws-backup");
 const events = require("aws-cdk-lib/aws-events");
 const { buildRouterCode } = require("./domain-router");
 
-// VeriPasso op AWS - één regio, eenvoudig en goedkoop te beginnen, schaalbaar:
+// VeriPasso op AWS - één regio, goedkoop bij weinig verkeer, schaalt vanzelf:
 //
-//   bezoeker ─TLS1.2+/HTTP2-3─> CloudFront (+WAF) ─TLS1.2+, VPC origin (privé AWS-netwerk)─> interne ALB ─> ECS Fargate
-//                                                                                                 ├─> RDS PostgreSQL 17 (privé subnet, TLS verplicht)
-//                                                                                                 └─> S3 (privé buckets, presigned URL's)
-//   De ALB is intern (geen publiek adres): alleen CloudFront bereikt hem, via een
-//   CloudFront VPC origin. Ook dat laatste stuk is versleuteld (TLS, certificaat voor
-//   originDomain in de regio van de app), zodat de hele route TLS heeft (EN 18216 §4).
+//   bezoeker ─TLS1.2+/HTTP2-3─> CloudFront (+WAF) ─TLS─> Lambda Function URL ─> Lambda (container-image: Next.js + API)
+//                                   │                                             ├─> RDS PostgreSQL 17 (privé subnet, TLS verplicht)
+//                                   │                                             └─> S3 (privé buckets, presigned URL's; gateway-endpoint)
+//                                   └─ /products/* rechtstreeks uit de fotobucket (Origin Access Control), lang gecachet
 //
-// Bewuste kostenkeuzes: geen NAT-gateway (taken in publieke subnets met een publiek
-// IP, maar inkomend alleen via de ALB-securitygroup), geen interface-endpoints, S3 via
-// een gratis gateway-endpoint. Zie docs/aws-cost-model.md.
+// Waarom Lambda i.p.v. ECS + load balancer: geen vaste kosten voor een draaiende taak,
+// load balancer en publieke IP's; je betaalt per verzoek (bij het huidige verkeer ruim
+// binnen de gratis laag). Het image blijft een gewone Next.js-server; de Lambda Web
+// Adapter (in het image) vertaalt Lambda-aanroepen naar HTTP-verzoeken op poort 3000.
+//
+// Afscherming van de Function URL: CloudFront voegt een geheime header (X-Origin-Verify)
+// toe; de app (proxy.js) weigert verzoeken zonder die header. Het hele pad is TLS.
+//
+// Caching (minder aanroepen en dataverkeer): statische Next.js-bestanden en
+// productfoto's lang, paspoortpagina's (/p/*) 5 minuten aan de rand. Scans worden per
+// weergave geteld via een beacon (POST, nooit gecachet). Zie docs/aws-cost-model.md.
 class VeriPassoAppStack extends cdk.Stack {
   // Vaste AZ's voor alle constructs (geen context-lookup, dus synth zonder account).
   get availabilityZones() {
@@ -56,22 +62,10 @@ class VeriPassoAppStack extends cdk.Stack {
       gatewayEndpoints: { S3: { service: ec2.GatewayVpcEndpointAwsService.S3 } }
     });
 
-    // Interne ALB: alleen bereikbaar binnen de VPC. De CloudFront VPC origin maakt
-    // netwerkinterfaces in de VPC aan; die verkeer komt dus uit het VPC-adresbereik.
-    const albSg = new ec2.SecurityGroup(this, "AlbSg", { vpc, description: "Interne ALB: alleen CloudFront VPC origin", allowAllOutbound: true });
-    albSg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(443), "CloudFront VPC origin (binnen de VPC)");
-    // CloudFront maakt bij de eerste VPC origin in deze VPC zelf de security group
-    // "CloudFront-VPCOrigins-Service-SG" aan; het verkeer komt daarvandaan. Die id is pas
-    // na de eerste uitrol bekend en staat daarom in de config.
-    if (config.cloudFrontVpcOriginSecurityGroupId) {
-      albSg.addIngressRule(
-        ec2.Peer.securityGroupId(config.cloudFrontVpcOriginSecurityGroupId),
-        ec2.Port.tcp(443),
-        "CloudFront-VPCOrigins-Service-SG"
-      );
-    }
-    const appSg = new ec2.SecurityGroup(this, "AppSg", { vpc, description: "ECS-taken: alleen van de ALB", allowAllOutbound: true });
-    appSg.addIngressRule(albSg, ec2.Port.tcp(3000), "ALB naar app");
+    // De app (Lambda) draait in de geïsoleerde subnets en heeft geen internettoegang
+    // nodig: S3 via het gateway-endpoint, de database binnen de VPC, logs via de
+    // Lambda-dienst zelf.
+    const appSg = new ec2.SecurityGroup(this, "LambdaSg", { vpc, description: "App (Lambda): alleen uitgaand", allowAllOutbound: true });
     const dbSg = new ec2.SecurityGroup(this, "DbSg", { vpc, description: "RDS: alleen van de app", allowAllOutbound: false });
     dbSg.addIngressRule(appSg, ec2.Port.tcp(5432), "App naar PostgreSQL");
 
@@ -92,6 +86,14 @@ class VeriPassoAppStack extends cdk.Stack {
       secretName: name("mfa-key"),
       description: "Versleutelingssleutel voor MFA-geheimen (AES-256-GCM). Niet roteren zonder herversleuteling.",
       generateSecretString: { secretStringTemplate: JSON.stringify({}), generateStringKey: "value", passwordLength: 64, excludePunctuation: true },
+      removalPolicy: cdk.RemovalPolicy.RETAIN
+    });
+
+    // Gedeeld geheim tussen CloudFront en de Function URL (zie proxy.js).
+    const originVerifySecret = new secretsmanager.Secret(this, "OriginVerifySecret", {
+      secretName: name("origin-verify"),
+      description: "Gedeeld geheim CloudFront -> Lambda Function URL (X-Origin-Verify).",
+      generateSecretString: { secretStringTemplate: JSON.stringify({}), generateStringKey: "value", passwordLength: 48, excludePunctuation: true },
       removalPolicy: cdk.RemovalPolicy.RETAIN
     });
 
@@ -135,6 +137,8 @@ class VeriPassoAppStack extends cdk.Stack {
       publiclyAccessible: false
     });
     if (config.enableDbSecretRotation) {
+      // Let op: de app krijgt het wachtwoord als omgevingsvariabele (zie hieronder). Na
+      // een rotatie is een nieuwe uitrol nodig; daarom staat rotatie standaard uit.
       // Rotatie via een Lambda in de VPC; die heeft een interface-endpoint naar
       // Secrets Manager nodig (extra kosten, zie kostenmodel). De app leest het
       // wachtwoord bij elke nieuwe verbinding opnieuw (src/config/db.js).
@@ -191,7 +195,10 @@ class VeriPassoAppStack extends cdk.Stack {
         lifecycleRules: [
           // Oude (vervangen) objectversies goedkoper opslaan; nooit automatisch weg.
           { noncurrentVersionTransitions: [{ storageClass: s3.StorageClass.GLACIER_INSTANT_RETRIEVAL, transitionAfter: cdk.Duration.days(90) }] },
-          { abortIncompleteMultipartUploadAfter: cdk.Duration.days(7) }
+          { abortIncompleteMultipartUploadAfter: cdk.Duration.days(7) },
+          // Huidige objecten: S3 Intelligent-Tiering zet weinig opgevraagde bestanden
+          // automatisch in goedkopere lagen, zonder ophaalkosten of vertraging.
+          { transitions: [{ storageClass: s3.StorageClass.INTELLIGENT_TIERING, transitionAfter: cdk.Duration.days(0) }] }
         ],
         ...(replicationRules ? { replicationRules, replicationRole } : {})
       });
@@ -221,16 +228,10 @@ class VeriPassoAppStack extends cdk.Stack {
       config.enableS3CrossRegionReplication ? drDocumentsBucketName : null
     );
 
-    // --- container --------------------------------------------------------------------
+    // --- app (Lambda) -----------------------------------------------------------------
     // Het register staat in een eigen stack (registry-stack.js), zodat het image al
-    // bestaat vóór deze stack de service start.
+    // bestaat vóór deze stack de functie aanmaakt.
     const repository = ecr.Repository.fromRepositoryName(this, "Repository", name("app"));
-
-    const cluster = new ecs.Cluster(this, "Cluster", {
-      vpc,
-      clusterName: name("cluster"),
-      containerInsightsV2: config.containerInsights ? ecs.ContainerInsights.ENHANCED : ecs.ContainerInsights.DISABLED
-    });
 
     const logGroup = new logs.LogGroup(this, "AppLogs", {
       logGroupName: `/veripasso/${config.envName}/app`,
@@ -238,22 +239,67 @@ class VeriPassoAppStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN
     });
 
-    const taskDefinition = new ecs.FargateTaskDefinition(this, "TaskDef", {
-      family: name("app"),
-      cpu: config.cpu,
-      memoryLimitMiB: config.memoryMiB,
-      runtimePlatform: {
-        cpuArchitecture: ecs.CpuArchitecture[config.cpuArchitecture],
-        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX
+    // Geheimen als omgevingsvariabelen via een CloudFormation-verwijzing naar Secrets
+    // Manager (de waarde staat niet in de repo of het template). De functie heeft geen
+    // internettoegang, dus geen Secrets Manager-aanroep tijdens het draaien (bespaart een
+    // interface-endpoint). Zichtbaar voor wie lambda:GetFunctionConfiguration mag; zie
+    // docs/aws-security-checklist.md.
+    const secretEnv = (secret, key) => secret.secretValueFromJson(key).unsafeUnwrap();
+
+    const fn = new lambda.DockerImageFunction(this, "App", {
+      functionName: name("app"),
+      description: "VeriPasso (Next.js + API) via de Lambda Web Adapter",
+      code: lambda.DockerImageCode.fromEcr(repository, { tagOrDigest: config.imageTag }),
+      architecture: config.cpuArchitecture === "ARM64" ? lambda.Architecture.ARM_64 : lambda.Architecture.X86_64,
+      memorySize: config.lambdaMemoryMb,
+      timeout: cdk.Duration.seconds(config.lambdaTimeoutSeconds),
+      ...(config.lambdaReservedConcurrency ? { reservedConcurrentExecutions: config.lambdaReservedConcurrency } : {}),
+      vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [appSg],
+      logGroup,
+      environment: {
+        // Lambda Web Adapter
+        AWS_LWA_PORT: "3000",
+        AWS_LWA_READINESS_CHECK_PATH: "/api/health",
+        AWS_LWA_INVOKE_MODE: "response_stream",
+        // Directe aanroepen (EventBridge, uitrol-workflow) gaan als POST naar dit pad.
+        AWS_LWA_PASS_THROUGH_PATH: "/api/internal/events",
+        INTERNAL_EVENTS_ENABLED: "true",
+        NODE_ENV: "production",
+        APP_ENV: config.envName,
+        PORT: "3000",
+        HOSTNAME: "127.0.0.1",
+        INTERNAL_API_ORIGIN: "http://127.0.0.1:3000",
+        // Echte bezoekers-IP uit CloudFront-Viewer-Address (rate limiting, audit).
+        CLIENT_IP_FROM_CLOUDFRONT: "true",
+        ORIGIN_VERIFY_SECRET: secretEnv(originVerifySecret, "value"),
+        PUBLIC_MEDIA_FROM_CDN: "true",
+        APP_BASE_URL: `https://${config.appDomain}`,
+        QR_BASE_URL: `https://${config.qrDomain}`,
+        DB_HOST: db.dbInstanceEndpointAddress,
+        DB_PORT: db.dbInstanceEndpointPort,
+        DB_NAME: "veripasso",
+        DB_USER: "veripasso_admin",
+        DB_PASSWORD: secretEnv(db.secret, "password"),
+        // Weinig verbindingen per uitvoeringsomgeving: elke gelijktijdige aanroep heeft
+        // een eigen omgeving (lambdaReservedConcurrency begrenst het totaal).
+        DB_POOL_MAX: "2",
+        DATABASE_MAX_BYTES: String(config.dbMaxAllocatedStorageGiB * 1024 * 1024 * 1024),
+        S3_IMAGES_BUCKET: imagesBucket.bucketName,
+        S3_DOCUMENTS_BUCKET: documentsBucket.bucketName,
+        CONTAINER_MEMORY_MB: String(config.lambdaMemoryMb),
+        COOKIE_SECRET: secretEnv(appSecret, "cookieSecret"),
+        MFA_ENCRYPTION_KEY: secretEnv(mfaKeySecret, "value")
       }
     });
-    // Least privilege: de taak mag alleen deze twee buckets lezen/schrijven (geen
-    // delete) en alleen het eigen database-geheim lezen.
-    imagesBucket.grantRead(taskDefinition.taskRole);
-    imagesBucket.grantPut(taskDefinition.taskRole);
-    documentsBucket.grantRead(taskDefinition.taskRole);
-    documentsBucket.grantPut(taskDefinition.taskRole);
-    taskDefinition.taskRole.addToPrincipalPolicy(
+    // Least privilege: alleen deze twee buckets lezen/schrijven (verwijderen alleen zoals
+    // hieronder) en geen andere AWS-rechten.
+    imagesBucket.grantRead(fn);
+    imagesBucket.grantPut(fn);
+    documentsBucket.grantRead(fn);
+    documentsBucket.grantPut(fn);
+    fn.addToRolePolicy(
       new iam.PolicyStatement({
         // Mislukte/afgekeurde directe uploads opruimen (verifyUploadedObject) mag
         // alleen voor objecten die nog niet aan een product gekoppeld zijn; S3-
@@ -262,165 +308,104 @@ class VeriPassoAppStack extends cdk.Stack {
         resources: [imagesBucket.arnForObjects("products/*"), documentsBucket.arnForObjects("products/*")]
       })
     );
-    taskDefinition.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({ actions: ["s3:ListBucket"], resources: [imagesBucket.bucketArn, documentsBucket.bucketArn] })
-    );
-    db.secret.grantRead(taskDefinition.taskRole);
+    fn.addToRolePolicy(new iam.PolicyStatement({ actions: ["s3:ListBucket"], resources: [imagesBucket.bucketArn, documentsBucket.bucketArn] }));
 
-    const container = taskDefinition.addContainer("app", {
-      containerName: "app",
-      image: ecs.ContainerImage.fromEcrRepository(repository, config.imageTag),
-      logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: "app" }),
-      environment: {
-        NODE_ENV: "production",
-        APP_ENV: config.envName,
-        AWS_REGION: config.region,
-        PORT: "3000",
-        HOSTNAME: "0.0.0.0",
-        TRUST_PROXY_HOPS: "2",
-        INTERNAL_API_ORIGIN: "http://127.0.0.1:3000",
-        APP_BASE_URL: `https://${config.appDomain}`,
-        QR_BASE_URL: `https://${config.qrDomain}`,
-        DB_HOST: db.dbInstanceEndpointAddress,
-        DB_PORT: db.dbInstanceEndpointPort,
-        DB_NAME: "veripasso",
-        DB_USER: "veripasso_admin",
-        DB_SECRET_ARN: db.secret.secretArn,
-        DB_POOL_MAX: "10",
-        DATABASE_MAX_BYTES: String(config.dbMaxAllocatedStorageGiB * 1024 * 1024 * 1024),
-        S3_IMAGES_BUCKET: imagesBucket.bucketName,
-        S3_DOCUMENTS_BUCKET: documentsBucket.bucketName,
-        CONTAINER_MEMORY_MB: String(config.memoryMiB)
-      },
-      secrets: {
-        COOKIE_SECRET: ecs.Secret.fromSecretsManager(appSecret, "cookieSecret"),
-        MFA_ENCRYPTION_KEY: ecs.Secret.fromSecretsManager(mfaKeySecret, "value")
-      },
-      portMappings: [{ containerPort: 3000 }],
-      healthCheck: {
-        command: [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-        ],
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        retries: 3,
-        startPeriod: cdk.Duration.seconds(60)
-      },
-      stopTimeout: cdk.Duration.seconds(30),
-      readonlyRootFilesystem: false
+    // Alleen via CloudFront bruikbaar (geheime header, gecontroleerd in proxy.js).
+    const functionUrl = fn.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      invokeMode: lambda.InvokeMode.RESPONSE_STREAM
     });
 
-    const service = new ecs.FargateService(this, "Service", {
-      cluster,
-      serviceName: name("app"),
-      taskDefinition,
-      desiredCount: config.desiredCount,
-      assignPublicIp: true,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-      securityGroups: [appSg],
-      minHealthyPercent: 100,
-      maxHealthyPercent: 200,
-      circuitBreaker: { enable: true, rollback: true },
-      healthCheckGracePeriod: cdk.Duration.seconds(90),
-      enableExecuteCommand: false
+    // Onderhoud elk uur (telemetrie, dagelijkse snapshot, opschonen, versies aanvullen);
+    // vervangt de timers van het vroegere langlopende proces. Lease-lock in de database.
+    new events.Rule(this, "Maintenance", {
+      ruleName: name("maintenance"),
+      description: "Uurlijks onderhoud van de app",
+      schedule: events.Schedule.rate(cdk.Duration.hours(1)),
+      targets: [new targets.LambdaFunction(fn, { retryAttempts: 1 })]
     });
-
-    const scaling = service.autoScaleTaskCount({ minCapacity: config.minTasks, maxCapacity: config.maxTasks });
-    scaling.scaleOnCpuUtilization("Cpu", { targetUtilizationPercent: 60 });
-    scaling.scaleOnMemoryUtilization("Memory", { targetUtilizationPercent: 75 });
-
-    // --- load balancer ----------------------------------------------------------------
-    const alb = new elbv2.ApplicationLoadBalancer(this, "Alb", {
-      vpc,
-      internetFacing: false,
-      securityGroup: albSg,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      idleTimeout: cdk.Duration.seconds(120),
-      dropInvalidHeaderFields: true,
-      http2Enabled: true
-    });
-    const originCertificate = acm.Certificate.fromCertificateArn(this, "OriginCert", config.originCertificateArn);
-    const listener = alb.addListener("Https", {
-      port: 443,
-      protocol: elbv2.ApplicationProtocol.HTTPS,
-      certificates: [originCertificate],
-      sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
-      open: false,
-      defaultAction: elbv2.ListenerAction.fixedResponse(404, { contentType: "text/plain", messageBody: "Not found" })
-    });
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, "Targets", {
-      vpc,
-      port: 3000,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targetType: elbv2.TargetType.IP,
-      targets: [service],
-      deregistrationDelay: cdk.Duration.seconds(30),
-      healthCheck: { path: "/api/health", healthyHttpCodes: "200", interval: cdk.Duration.seconds(15), healthyThresholdCount: 2 }
-    });
-    listener.addAction("App", {
-      priority: 10,
-      conditions: [elbv2.ListenerCondition.pathPatterns(["/*"])],
-      action: elbv2.ListenerAction.forward([targetGroup])
-    });
-    scaling.scaleOnRequestCount("Requests", { requestsPerTarget: 600, targetGroup });
 
     // --- CloudFront -------------------------------------------------------------------
-    // Geen caching van dynamische pagina's en API's: paspoorten zijn altijd actueel en
-    // elke scan wordt geteld (de app cachet zelf waar het veilig is). Wel caching van
-    // de onveranderlijke Next.js-assets.
-    const origin = origins.VpcOrigin.withApplicationLoadBalancer(alb, {
-      vpcOriginName: name("alb"),
-      // CloudFront controleert het ALB-certificaat tegen deze naam (SNI). Er is geen
-      // publiek DNS-record nodig: het verkeer gaat via de VPC origin, niet via DNS.
-      domainName: config.originDomain,
-      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
-      httpsPort: 443,
+    const origin = new origins.FunctionUrlOrigin(functionUrl, {
+      customHeaders: { "X-Origin-Verify": secretEnv(originVerifySecret, "value") },
       originSslProtocols: [cloudfront.OriginSslPolicy.TLS_V1_2],
       readTimeout: cdk.Duration.seconds(60),
       keepaliveTimeout: cdk.Duration.seconds(30)
     });
+    // Productfoto's rechtstreeks uit S3 (Origin Access Control: de bucket blijft privé,
+    // alleen deze distributie mag lezen). Objectnamen zijn willekeurig en worden nooit
+    // overschreven, dus mogen ze een jaar in browser en CDN blijven.
+    const mediaOrigin = origins.S3BucketOrigin.withOriginAccessControl(imagesBucket, {
+      originAccessLevels: [cloudfront.AccessLevel.READ]
+    });
+    const securityHeadersBehavior = {
+      strictTransportSecurity: { accessControlMaxAge: cdk.Duration.days(730), includeSubdomains: true, override: true },
+      contentTypeOptions: { override: true },
+      frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+      referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN, override: true }
+    };
+    const securityHeaders = new cloudfront.ResponseHeadersPolicy(this, "SecurityHeaders", {
+      responseHeadersPolicyName: name("security-headers"),
+      securityHeadersBehavior
+    });
+    // Zelfde beveiligingsheaders, plus een vaste Cache-Control voor de browser.
+    const headersWithCache = (id, policyName, cacheControl) =>
+      new cloudfront.ResponseHeadersPolicy(this, id, {
+        responseHeadersPolicyName: name(policyName),
+        securityHeadersBehavior,
+        customHeadersBehavior: { customHeaders: [{ header: "Cache-Control", value: cacheControl, override: true }] }
+      });
+    const mediaHeaders = headersWithCache("MediaHeaders", "media-headers", "public, max-age=31536000, immutable");
+    const passportHeaders = headersWithCache("PassportHeaders", "passport-headers", "public, max-age=60");
+
+    // Paspoortpagina's: 5 minuten aan de rand (vast, ongeacht de headers van de app), in
+    // de browser 1 minuut. De domeinrouter zet de Accept-header van browsers om naar
+    // "text/html", zodat alle browsers dezelfde cache delen; systemen die JSON/JSON-LD/XML
+    // vragen (content negotiation) krijgen een eigen cache-ingang.
+    const passportCache = new cloudfront.CachePolicy(this, "PassportCache", {
+      cachePolicyName: name("passport"),
+      comment: "Publieke paspoorten: 5 minuten, sleutel op Accept",
+      minTtl: cdk.Duration.minutes(5),
+      defaultTtl: cdk.Duration.minutes(5),
+      maxTtl: cdk.Duration.minutes(5),
+      headerBehavior: cloudfront.CacheHeaderBehavior.allowList("Accept"),
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.all(),
+      cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true
+    });
+
+    // Domeinverdeling (landingspagina / SaaS / QR) en afscherming van interne paden aan
+    // de rand; zie domain-router.js.
+    const allDomains = config.cloudFrontDomains || [config.appDomain, config.qrDomain];
+    const siteDomains = allDomains.filter((d) => d !== config.appDomain && d !== config.qrDomain);
+    const domainRouter = new cloudfront.Function(this, "DomainRouter", {
+      functionName: name("domain-router"),
+      comment: "Domeinverdeling: landingspagina, app en QR",
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      code: cloudfront.FunctionCode.fromInline(
+        buildRouterCode({
+          siteDomains,
+          canonicalSiteDomain: config.siteDomain || siteDomains.find((d) => d.startsWith("www.")) || siteDomains[0] || null,
+          appDomain: config.appDomain,
+          qrDomain: config.qrDomain
+        })
+      )
+    });
+    const routed = { functionAssociations: [{ function: domainRouter, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }] };
     const staticBehavior = {
       origin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+      responseHeadersPolicy: securityHeaders,
       compress: true,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD
     };
-    const securityHeaders = new cloudfront.ResponseHeadersPolicy(this, "SecurityHeaders", {
-      responseHeadersPolicyName: name("security-headers"),
-      securityHeadersBehavior: {
-        strictTransportSecurity: { accessControlMaxAge: cdk.Duration.days(730), includeSubdomains: true, override: true },
-        contentTypeOptions: { override: true },
-        frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
-        referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN, override: true }
-      }
-    });
-    // Domeinverdeling (landingspagina / SaaS / QR) aan de rand; zie domain-router.js.
-    const allDomains = config.cloudFrontDomains || [config.appDomain, config.qrDomain];
-    const siteDomains = allDomains.filter((d) => d !== config.appDomain && d !== config.qrDomain);
-    const domainRouter = siteDomains.length
-      ? new cloudfront.Function(this, "DomainRouter", {
-          functionName: name("domain-router"),
-          comment: "Domeinverdeling: landingspagina, app en QR",
-          runtime: cloudfront.FunctionRuntime.JS_2_0,
-          code: cloudfront.FunctionCode.fromInline(
-            buildRouterCode({
-              siteDomains,
-              canonicalSiteDomain: config.siteDomain || siteDomains.find((d) => d.startsWith("www.")) || siteDomains[0],
-              appDomain: config.appDomain,
-              qrDomain: config.qrDomain
-            })
-          )
-        })
-      : null;
 
     const distribution = new cloudfront.Distribution(this, "Cdn", {
       comment: name("cdn"),
       // Alle publieke domeinen; het certificaat (us-east-1) moet ze allemaal dekken.
-      domainNames: config.cloudFrontDomains || [config.appDomain, config.qrDomain],
+      domainNames: allDomains,
       certificate: acm.Certificate.fromCertificateArn(this, "CdnCert", config.cloudFrontCertificateArn),
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
@@ -431,16 +416,35 @@ class VeriPassoAppStack extends cdk.Stack {
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+        // Alle headers, cookies en query's behalve Host (de Function URL heeft een eigen
+        // hostnaam), plus CloudFront-Viewer-Address voor het echte bezoekers-IP.
         originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         responseHeadersPolicy: securityHeaders,
         compress: true,
-        ...(domainRouter
-          ? { functionAssociations: [{ function: domainRouter, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }] }
-          : {})
+        ...routed
       },
       additionalBehaviors: {
-        "/_next/static/*": { ...staticBehavior, responseHeadersPolicy: securityHeaders },
-        "/brand/*": { ...staticBehavior, responseHeadersPolicy: securityHeaders }
+        "/_next/static/*": staticBehavior,
+        "/brand/*": staticBehavior,
+        "/products/*": {
+          origin: mediaOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          responseHeadersPolicy: mediaHeaders,
+          compress: true,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD
+        },
+        // Bedrijfslogo's: de app geeft max-age=86400 mee; CloudFront volgt die.
+        "/api/public/products/*/logo": staticBehavior,
+        "/p/*": {
+          origin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          cachePolicy: passportCache,
+          responseHeadersPolicy: passportHeaders,
+          compress: true,
+          ...routed
+        }
       }
     });
 
@@ -465,13 +469,12 @@ class VeriPassoAppStack extends cdk.Stack {
       return created;
     };
     const fiveMin = cdk.Duration.minutes(5);
-    alarm("Alb5xx", alb.metrics.httpCodeTarget(elbv2.HttpCodeTarget.TARGET_5XX_COUNT, { period: fiveMin, statistic: "Sum" }), 20, "Veel 5xx-fouten van de app");
-    alarm("UnhealthyTargets", targetGroup.metrics.unhealthyHostCount({ period: cdk.Duration.minutes(1), statistic: "Maximum" }), 1, "Er is een ongezonde app-taak", undefined, 5);
-    alarm("TargetLatency", targetGroup.metrics.targetResponseTime({ period: fiveMin, statistic: "p95" }), 2, "P95-responstijd > 2 s");
+    alarm("AppErrors", fn.metricErrors({ period: fiveMin, statistic: "Sum" }), 10, "Lambda-fouten (crashes/time-outs) van de app");
+    alarm("AppThrottles", fn.metricThrottles({ period: fiveMin, statistic: "Sum" }), 5, "Lambda wordt afgeknepen (gelijktijdigheidslimiet)");
+    alarm("AppDuration", fn.metricDuration({ period: fiveMin, statistic: "p95" }), 3000, "P95-verwerkingstijd > 3 s");
     alarm("DbCpu", db.metricCPUUtilization({ period: fiveMin }), 80, "Database-CPU > 80%");
     alarm("DbFreeStorage", db.metricFreeStorageSpace({ period: fiveMin }), 5 * 1024 * 1024 * 1024, "Minder dan 5 GB vrije databaseopslag", cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD);
     alarm("DbConnections", db.metricDatabaseConnections({ period: fiveMin }), 80, "Veel databaseverbindingen");
-    alarm("ServiceCpu", service.metricCpuUtilization({ period: fiveMin }), 85, "App-CPU > 85%");
 
     // Applicatiefouten uit de gestructureerde logs (src/utils/logger.js).
     const logAlarm = (id, msg, threshold, description) => {
@@ -555,18 +558,11 @@ class VeriPassoAppStack extends cdk.Stack {
     }
 
     // --- outputs ------------------------------------------------------------------------
-    new cdk.CfnOutput(this, "CloudFrontDomain", { value: distribution.distributionDomainName, description: "CNAME-doel voor app- en QR-domein (DNS bij TransIP)" });
+    new cdk.CfnOutput(this, "CloudFrontDomain", { value: distribution.distributionDomainName, description: "CNAME-doel voor alle domeinen (DNS bij TransIP)" });
 
-    new cdk.CfnOutput(this, "AlbDnsName", {
-      value: alb.loadBalancerDnsName,
-      description: "Intern adres van de load balancer: CNAME-doel voor originDomain bij TransIP (privé-IP's, van buitenaf onbereikbaar)"
-    });
     new cdk.CfnOutput(this, "EcrRepositoryUri", { value: repository.repositoryUri });
-    new cdk.CfnOutput(this, "ClusterName", { value: cluster.clusterName });
-    new cdk.CfnOutput(this, "ServiceName", { value: service.serviceName });
-    new cdk.CfnOutput(this, "TaskDefinitionFamily", { value: taskDefinition.family });
-    new cdk.CfnOutput(this, "AppSubnets", { value: vpc.publicSubnets.map((s) => s.subnetId).join(",") });
-    new cdk.CfnOutput(this, "AppSecurityGroup", { value: appSg.securityGroupId });
+    new cdk.CfnOutput(this, "FunctionName", { value: fn.functionName });
+    new cdk.CfnOutput(this, "DistributionId", { value: distribution.distributionId });
     new cdk.CfnOutput(this, "DbEndpoint", { value: db.dbInstanceEndpointAddress });
     new cdk.CfnOutput(this, "DbSecretArn", { value: db.secret.secretArn });
     new cdk.CfnOutput(this, "ImagesBucketName", { value: imagesBucket.bucketName });
@@ -574,8 +570,7 @@ class VeriPassoAppStack extends cdk.Stack {
     new cdk.CfnOutput(this, "LogGroup", { value: logGroup.logGroupName });
 
     this.repository = repository;
-    this.service = service;
-    this.container = container;
+    this.fn = fn;
   }
 }
 

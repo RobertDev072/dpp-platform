@@ -161,7 +161,7 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     assert.equal((await request(baseUrl, "GET", `/api/products/${p2}/documents`, { cookie: cookieB })).status, 404);
   });
 
-  await t.test("SCAN-01: elke paspoortopvraging telt precies één scan, per bedrijf gescheiden; concepten tellen niet", async () => {
+  await t.test("SCAN-01: elke paspoortweergave (scan-beacon) telt precies één scan, per bedrijf gescheiden; concepten tellen niet", async () => {
     const p3 = await createTestProduct({ companyId: companyA, name: "Scan Product" });
     const pub3 = await request(baseUrl, "POST", `/api/products/${p3}/publish`, { cookie: cookieA });
     const pool = await getPool();
@@ -169,11 +169,16 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
       Number((await pool.query("SELECT COUNT(*)::int AS n FROM dbo.scanevents WHERE product_id = $1", [p3])).rows[0].n);
 
     const before = await count();
+    // De pagina zelf is cachebaar (CloudFront); het ophalen van de gegevens telt dus niet,
+    // de beacon die de browser per weergave stuurt wel.
+    assert.equal((await request(baseUrl, "GET", `/api/public/products/${pub3.data.public_id}`)).status, 200);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await count(), before, "ophalen van gegevens telt niet als scan");
     for (let i = 0; i < 5; i++) {
-      assert.equal((await request(baseUrl, "GET", `/api/public/products/${pub3.data.public_id}`)).status, 200);
+      assert.equal((await request(baseUrl, "POST", `/api/public/products/${pub3.data.public_id}/scan`)).status, 204);
     }
     await new Promise((r) => setTimeout(r, 300)); // registratie gebeurt asynchroon
-    assert.equal(await count(), before + 5, "5 opvragingen = 5 scans");
+    assert.equal(await count(), before + 5, "5 weergaven = 5 scans");
 
     // Machineleesbare opvraging (/api/dpp) telt ook als scan.
     await fetch(`${baseUrl}/api/dpp/${pub3.data.public_id}`, { headers: { Accept: "application/json" } });
@@ -188,7 +193,7 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
 
     const pool2 = await getPool();
     const draft = await createTestProduct({ companyId: companyA, name: "Niet gepubliceerd" });
-    await request(baseUrl, "GET", `/api/public/products/0f8fad5b-d9cb-469f-a165-70867728950e`);
+    assert.equal((await request(baseUrl, "POST", `/api/public/products/0f8fad5b-d9cb-469f-a165-70867728950e/scan`)).status, 404);
     const draftScans = (await pool2.query("SELECT COUNT(*)::int AS n FROM dbo.scanevents WHERE product_id = $1", [draft])).rows[0].n;
     assert.equal(draftScans, 0);
   });

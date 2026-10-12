@@ -8,7 +8,13 @@
 //   qrDomain    (qr.veripasso.com): QR-scans en paspoorten (permanent, staat op elke code)
 //
 // Altijd en op elk domein toegestaan: /api/* (de pagina's roepen de API relatief aan),
-// /_next/* en /brand/* (bestanden van de pagina's), favicon/icon.
+// /_next/* en /brand/* (bestanden van de pagina's), /products/* (productfoto's uit S3),
+// favicon/icon. Nooit toegestaan: /api/internal/* (alleen voor directe Lambda-aanroepen).
+//
+// Paspoorten (/p/*) worden 5 minuten aan de rand gecachet met de Accept-header in de
+// cachesleutel. Browsers sturen allemaal een net andere Accept; die wordt hier omgezet
+// naar "text/html", zodat ze één cache-ingang delen. Systemen die JSON, JSON-LD of XML
+// vragen (zelfde regel als de rewrite in next.config.mjs) houden hun eigen Accept.
 
 const APP_PREFIXES = ["/login", "/admin", "/company", "/partner", "/activate", "/wachtwoord-vergeten"];
 
@@ -53,20 +59,33 @@ function redirect(status, host, uri, qs) {
   };
 }
 
+function notFound() {
+  return { statusCode: 404, statusDescription: "Not Found", headers: { "cache-control": { value: "no-store" } } };
+}
+
+function normalizeAccept(request) {
+  var accept = (request.headers.accept && request.headers.accept.value || "").toLowerCase();
+  var machine = accept.indexOf("text/html") === -1 && /application\\/(?:ld\\+json|json|xml)/.test(accept);
+  if (!machine) request.headers.accept = { value: "text/html" };
+}
+
 function handler(event) {
   var request = event.request;
   var host = (request.headers.host && request.headers.host.value || "").toLowerCase();
   var uri = request.uri;
   var qs = request.querystring;
+  var home = CANONICAL_SITE || APP;
+
+  if (uri === "/api/internal" || uri.indexOf("/api/internal/") === 0) return notFound();
 
   // Gedeelde onderdelen: overal laten passeren.
   if (uri.indexOf("/api/") === 0 || uri.indexOf("/_next/") === 0 || uri.indexOf("/brand/") === 0 ||
-      uri === "/favicon.ico" || uri === "/icon.png" || uri === "/robots.txt") {
+      uri.indexOf("/products/") === 0 || uri === "/favicon.ico" || uri === "/icon.png" || uri === "/robots.txt") {
     return request;
   }
 
   // Hoofddomein zonder www -> één vast adres voor de landingspagina.
-  if (SITE.indexOf(host) !== -1 && host !== CANONICAL_SITE) {
+  if (CANONICAL_SITE && SITE.indexOf(host) !== -1 && host !== CANONICAL_SITE) {
     return redirect(301, CANONICAL_SITE, uri, qs);
   }
 
@@ -75,7 +94,7 @@ function handler(event) {
     return redirect(301, QR, uri, qs);
   }
 
-  if (host === CANONICAL_SITE) {
+  if (CANONICAL_SITE && host === CANONICAL_SITE) {
     if (startsWithAny(uri, APP_PREFIXES)) return redirect(302, APP, uri, qs);
     return request;
   }
@@ -86,9 +105,12 @@ function handler(event) {
   }
 
   if (host === QR) {
-    if (uri.indexOf("/p/") === 0) return request;
+    if (uri.indexOf("/p/") === 0) {
+      normalizeAccept(request);
+      return request;
+    }
     if (startsWithAny(uri, APP_PREFIXES)) return redirect(302, APP, uri, qs);
-    return redirect(302, CANONICAL_SITE, uri === "/" ? "/" : uri, qs);
+    return redirect(302, home, uri === "/" ? (home === APP ? "/login" : "/") : uri, qs);
   }
 
   return request;

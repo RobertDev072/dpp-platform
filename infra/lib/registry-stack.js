@@ -15,7 +15,7 @@ class VeriPassoRegistryStack extends cdk.Stack {
       imageTagMutability: ecr.TagMutability.IMMUTABLE,
       encryption: ecr.RepositoryEncryption.AES_256,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      lifecycleRules: [{ maxImageCount: 30, description: "Bewaar de laatste 30 images (rollback)" }]
+      lifecycleRules: [{ maxImageCount: 10, description: "Bewaar de laatste 10 images (rollback)" }]
     });
 
     this.repository = repository;

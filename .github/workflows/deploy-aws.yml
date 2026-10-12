@@ -9,10 +9,13 @@
 #   AWS_DEPLOY_ROLE_ARN; optioneel secrets SYSTEM_OWNER_EMAIL/PASSWORD/FIRST_NAME/
 #   LAST_NAME voor het eenmalig aanmaken van de Platform Owner.
 #
-# Volgorde: registry-stack → image bouwen en pushen → databasemigraties (eenmalige
-# ECS-taak met het nieuwe image) → app-stack met de nieuwe image-tag. Bij de
-# allereerste uitrol bestaat de app nog niet; dan eerst de app-stack, daarna de
-# migraties. ECS rolt automatisch terug als nieuwe taken niet gezond worden.
+# Volgorde: registry-stack → image bouwen en pushen → app-stack met de nieuwe
+# image-tag (Lambda) → databasemigraties en versie-aanvulling via een directe aanroep
+# van de functie (geen extra infrastructuur). Migraties zijn altijd additief, zodat de
+# korte periode tussen nieuwe code en nieuw schema veilig is. Faalt de stack-update,
+# dan rolt CloudFormation automatisch terug naar de vorige versie.
+#
+# De database moet draaien (na een pauze eerst "AWS pauzeren / hervatten" → hervatten).
 
 name: Deploy naar AWS
 
@@ -55,6 +58,7 @@ jobs:
         id: cfg
         run: |
           echo "region=$(jq -r .region infra/config/$ENV_NAME.json)" >> "$GITHUB_OUTPUT"
+          echo "platform=$(jq -r 'if .cpuArchitecture == "ARM64" then "linux/arm64" else "linux/amd64" end' infra/config/$ENV_NAME.json)" >> "$GITHUB_OUTPUT"
           # Edge-stack (us-east-1) alleen als WAF aan staat en er nog geen bestaande web-ACL is opgegeven.
           echo "waf=$(jq -r 'if .enableWaf and (.webAclArn // "") == "" then "true" else "false" end' infra/config/$ENV_NAME.json)" >> "$GITHUB_OUTPUT"
 
@@ -80,6 +84,9 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
         id: ecr
 
+      - uses: docker/setup-qemu-action@v3
+        if: steps.cfg.outputs.platform == 'linux/arm64'
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Image bouwen en pushen
@@ -89,69 +96,47 @@ jobs:
           push: true
           build-args: GIT_SHA=${{ github.sha }}
           tags: ${{ steps.ecr.outputs.registry }}/veripasso-${{ inputs.environment }}-app:${{ github.sha }}
+          # Lambda accepteert alleen een enkelvoudig image-manifest (geen attestations).
+          provenance: false
+          sbom: false
+          platforms: ${{ steps.cfg.outputs.platform }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Hulpfunctie voor eenmalige taken
-        run: |
-          cat > run-once.sh <<'EOF'
-          #!/usr/bin/env bash
-          # Gebruik: run-once.sh <task-definition-arn> <overrides-json>
-          set -euo pipefail
-          STACK="VeriPasso-$ENV_NAME-App"
-          out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
-          CLUSTER=$(out ClusterName); SUBNETS=$(out AppSubnets); SG=$(out AppSecurityGroup)
-          TASK=$(aws ecs run-task --cluster "$CLUSTER" --launch-type FARGATE --task-definition "$1" \
-            --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[$SG],assignPublicIp=ENABLED}" \
-            --overrides "$2" --query 'tasks[0].taskArn' --output text)
-          echo "Taak: $TASK"
-          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK"
-          CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" --query 'tasks[0].containers[0].exitCode' --output text)
-          echo "Exitcode: $CODE"
-          test "$CODE" = "0"
-          EOF
-          chmod +x run-once.sh
-
-      - name: Bestaat de app al?
-        id: exists
-        run: |
-          if aws cloudformation describe-stacks --stack-name "VeriPasso-$ENV_NAME-App" >/dev/null 2>&1; then
-            echo "app=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "app=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Bestaande omgeving: migraties eerst (met het nieuwe image), dan pas de nieuwe app.
-      - name: Databasemigraties (vóór de uitrol)
-        if: steps.exists.outputs.app == 'true'
-        run: |
-          set -euo pipefail
-          FAMILY=$(aws cloudformation describe-stacks --stack-name "VeriPasso-$ENV_NAME-App" --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionFamily'].OutputValue" --output text)
-          aws ecs describe-task-definition --task-definition "$FAMILY" --query taskDefinition > td.json
-          IMAGE="${{ steps.ecr.outputs.registry }}/veripasso-$ENV_NAME-app:$IMAGE_TAG"
-          jq --arg img "$IMAGE" '.containerDefinitions[0].image=$img
-            | {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions, requiresCompatibilities, cpu, memory, runtimePlatform}' td.json > td-migrate.json
-          TD_ARN=$(aws ecs register-task-definition --cli-input-json file://td-migrate.json --query taskDefinition.taskDefinitionArn --output text)
-          ./run-once.sh "$TD_ARN" '{"containerOverrides":[{"name":"app","command":["node","scripts/migrate.js"]}]}'
 
       - name: Uitrollen (CDK)
         working-directory: infra
         run: |
-          STACKS="VeriPasso-$ENV_NAME-App"
+          # Ook de CI-stack (rechten van deze deployrol), zodat nieuwe rechten direct gelden.
+          STACKS="VeriPasso-$ENV_NAME-Ci VeriPasso-$ENV_NAME-App"
           if [ "${{ steps.cfg.outputs.waf }}" = "true" ]; then STACKS="VeriPasso-$ENV_NAME-Edge $STACKS"; fi
           npx cdk deploy $STACKS -c env=$ENV_NAME -c imageTag=$IMAGE_TAG --require-approval never
 
-      # Eerste uitrol: de app draait (health hangt niet van de database af); nu het schema.
-      - name: Databasemigraties (eerste uitrol)
-        if: steps.exists.outputs.app == 'false'
+      - name: Hulpfunctie voor interne taken
         run: |
-          FAMILY=$(aws cloudformation describe-stacks --stack-name "VeriPasso-$ENV_NAME-App" --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionFamily'].OutputValue" --output text)
-          ./run-once.sh "$FAMILY" '{"containerOverrides":[{"name":"app","command":["node","scripts/migrate.js"]}]}'
+          cat > run-task.sh <<'EOF'
+          #!/usr/bin/env bash
+          # Gebruik: run-task.sh <payload-json>
+          # Directe aanroep van de app-functie (IAM-rechten vereist; niet via internet
+          # bereikbaar). De Lambda Web Adapter stuurt de payload als POST naar
+          # /api/internal/events; het antwoord komt terug in out.json.
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stacks --stack-name "VeriPasso-$ENV_NAME-App" --query "Stacks[0].Outputs[?OutputKey=='FunctionName'].OutputValue" --output text)
+          aws lambda wait function-updated-v2 --function-name "$FN"
+          printf '%s' "$1" > payload.json
+          aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --cli-read-timeout 900 \
+            --payload file://payload.json out.json --query 'FunctionError' --output text | grep -qv Unhandled
+          rm -f payload.json
+          # Alleen de taaknaam en het resultaat tonen (nooit de payload: die kan een wachtwoord bevatten).
+          jq -c '{ok, task, result, error}' out.json 2>/dev/null || cat out.json
+          jq -e '.ok == true' out.json >/dev/null
+          EOF
+          chmod +x run-task.sh
+
+      - name: Databasemigraties
+        run: ./run-task.sh '{"task":"migrate"}'
 
       - name: Paspoortversies aanvullen
-        run: |
-          FAMILY=$(aws cloudformation describe-stacks --stack-name "VeriPasso-$ENV_NAME-App" --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionFamily'].OutputValue" --output text)
-          ./run-once.sh "$FAMILY" '{"containerOverrides":[{"name":"app","command":["node","scripts/backfill-passport-versions.js"]}]}'
+        run: ./run-task.sh '{"task":"backfill"}'
 
       - name: Platform Owner aanmaken (optioneel)
         if: inputs.seed_owner
@@ -163,14 +148,23 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$OWNER_EMAIL" && test -n "$OWNER_PASSWORD" || { echo "SYSTEM_OWNER_EMAIL/PASSWORD ontbreken als environment-secret"; exit 1; }
-          FAMILY=$(aws cloudformation describe-stacks --stack-name "VeriPasso-$ENV_NAME-App" --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionFamily'].OutputValue" --output text)
-          OVERRIDES=$(jq -n --arg e "$OWNER_EMAIL" --arg p "$OWNER_PASSWORD" --arg f "${OWNER_FIRST:-Platform}" --arg l "${OWNER_LAST:-Owner}" \
-            '{containerOverrides:[{name:"app",command:["node","scripts/seed-system-owner.js"],environment:[
-              {name:"SYSTEM_OWNER_EMAIL",value:$e},{name:"SYSTEM_OWNER_PASSWORD",value:$p},
-              {name:"SYSTEM_OWNER_FIRST_NAME",value:$f},{name:"SYSTEM_OWNER_LAST_NAME",value:$l}]}]}')
-          ./run-once.sh "$FAMILY" "$OVERRIDES"
+          PAYLOAD=$(jq -cn --arg e "$OWNER_EMAIL" --arg p "$OWNER_PASSWORD" --arg f "${OWNER_FIRST:-Platform}" --arg l "${OWNER_LAST:-Owner}" \
+            '{task:"seed-owner",email:$e,password:$p,firstName:$f,lastName:$l}')
+          ./run-task.sh "$PAYLOAD"
+
+      - name: Rooktest
+        run: |
+          set -euo pipefail
+          APP=$(jq -r .appDomain infra/config/$ENV_NAME.json)
+          for i in 1 2 3 4 5 6; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://$APP/api/health" || true)
+            echo "https://$APP/api/health -> $CODE"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 10
+          done
+          exit 1
 
       - name: Adressen
         run: |
           aws cloudformation describe-stacks --stack-name "VeriPasso-$ENV_NAME-App" \
-            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomain' || OutputKey=='AlbDnsName'].[OutputKey,OutputValue]" --output table
+            --query "Stacks[0].Outputs[?OutputKey=='CloudFrontDomain' || OutputKey=='FunctionName'].[OutputKey,OutputValue]" --output table

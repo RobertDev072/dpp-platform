@@ -36,13 +36,13 @@ bevestigd. Dit document vervangt geen certificering; de compliance-eisen staan i
 | Excel/CSV-import | 🟡 | `ux-workflows`: 10 rijen + duplicaten, 251 rijen hervatten, 1.000+ rijen xlsx/xls + productlimiet; importrun eigen bestanden (§2.6) | **bevinding**: waarde "deels" bij Recyclebaar wordt geweigerd (34 van 50 rijen) |
 | Bedrijfsisolatie | ✅ | `tenant-isolation`, `license-tenant-isolation`, ISO-01 (QR, labels, versies, documenten, bulk, ZIP, export), S3-upload (`s3-storage`), R-ARCH-06, DOC-01 | — |
 | Productdocumenten | 🟡 | DOC-01 (openbaar/privé, direct van paspoort af bij privé zetten, ander bedrijf 404); S3-presign 5 min en SVG nooit inline (`s3-storage`); validatie (`product-documents`) | 👤 echte upload en download op productie (S3) |
-| Scanstatistieken | 🟡 | SCAN-01 (5 opvragingen = 5 scans, machineleesbaar telt mee, per bedrijf gescheiden, concepten tellen niet); `ux-workflows` QR-statistieken | **besluit**: dubbele scans (zelfde bezoeker/refresh) worden nu allemaal geteld |
+| Scanstatistieken | 🟡 | SCAN-01 (ophalen telt niet, 5 weergaven via de beacon = 5 scans, machineleesbaar telt mee, per bedrijf gescheiden, concepten tellen niet); `ux-workflows` QR-statistieken | **besluit**: dubbele scans (zelfde bezoeker/refresh) worden nu allemaal geteld |
 | Accounts en rollen | ✅ | `auth`, `password-change`, `mfa`, `impersonation`, `partner-layer`, `partner-password-reset`, `user-delete`, ACC-01 (uitnodiging → activeren → inloggen, link eenmalig) | ⛔ zelfregistratie bestaat bewust niet |
 | Abonnementen en betalingen | 🟡 / ⛔ | abonnementen, limieten en verlopen licenties: `license-limit`, `license-tenant-isolation`, `ux-workflows` (productlimiet bij import) | ⛔ **online betalen/facturatie is niet gebouwd** |
 | Printinstellingen | ✅ | `ux-workflows`: profielen per bedrijf, alleen beheerder, leesbaarheidscontrole blokkeert, labels-PDF, tenant-isolatie | 👤 previews en printer in de browser bekijken |
 | Versie-archief en DPP-compliance | ✅ | R-ARCH-01..06, R-EXCH, R-PERS, R-REPL → `passport-compliance` | zie compliance-matrix (certificeerder) |
 | Beveiliging en platform | ✅ | `platform-ops` (logging, health, 4xx, rate limit), `system-monitoring`; live: TLS 1.1 geweigerd, headers aanwezig, beheer-API zonder login 401 | — |
-| Infrastructuur | ✅ | infra-tests (S3 privé, RDS versleuteld/niet publiek, TLS, interne ALB, IAM, WAF, budget, domeinrouter); live-check | restore-test en loadtest (runbook) |
+| Infrastructuur | ✅ | infra-tests (S3 privé + Intelligent-Tiering, RDS versleuteld/niet publiek, TLS, app op Lambda alleen via CloudFront, geheimen via Secrets Manager, caching, IAM, WAF, budget, domeinrouter); `cost-optimization` (WebP-miniatuur, cachebaar logo, foto via CDN-pad, interne taken afgeschermd, origin-controle); live-check (vorige ECS-opzet) | restore-test en loadtest (runbook) |
 
 ---
 

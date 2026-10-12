@@ -280,6 +280,43 @@ function getProductDocumentUrl(objectName) {
   return getSignedDownloadUrl(bucketFor("document"), objectName);
 }
 
+// --- thumbnails ---------------------------------------------------------------------
+// Kleine WebP-versie (max. 800 px breed) van een productfoto voor het publieke
+// paspoort: ~50-100 kB i.p.v. tot 5 MB. Het origineel blijft ongewijzigd. Sleutel:
+// <origineel>.w800.webp, dus ook altijd onder products/<id>/ en nooit overschreven.
+const THUMB_WIDTH = 800;
+
+async function streamToBuffer(body) {
+  if (body && typeof body.transformToByteArray === "function") {
+    return Buffer.from(await body.transformToByteArray());
+  }
+  const chunks = [];
+  for await (const chunk of body) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+async function createPhotoThumbnail(objectName, { sourceBuffer } = {}) {
+  const sharp = require("sharp");
+  const bucket = bucketFor("image");
+  let input = sourceBuffer;
+  if (!input) {
+    try {
+      const object = await getClient().send(new GetObjectCommand({ Bucket: bucket, Key: objectName }));
+      input = await streamToBuffer(object.Body);
+    } catch (error) {
+      throw storageError("de foto lezen", bucket, error);
+    }
+  }
+  const output = await sharp(input, { failOn: "error" })
+    .rotate()
+    .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
+    .webp({ quality: 78 })
+    .toBuffer();
+  const thumbName = `${objectName}.w${THUMB_WIDTH}.webp`;
+  await uploadObject({ bucket, objectName: thumbName, buffer: output, mimeType: "image/webp" });
+  return thumbName;
+}
+
 // Lichte bereikbaarheidscheck voor de healthcheck.
 async function pingStorage() {
   await getClient().send(new HeadBucketCommand({ Bucket: bucketFor("image") }));
@@ -287,6 +324,7 @@ async function pingStorage() {
 
 module.exports = {
   uploadProductPhoto,
+  createPhotoThumbnail,
   uploadProductDocument,
   createPhotoUpload,
   createDocumentUpload,

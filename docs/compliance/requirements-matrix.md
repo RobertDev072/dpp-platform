@@ -47,9 +47,9 @@ vragen.
 
 | ID | Clausule | Eis (eigen parafrase) | Soort | Implementatie | Verificatie / bewijs | Status | Sign-off |
 |---|---|---|---|---|---|---|---|
-| R-EXCH-01 | §4 | Gestandaardiseerde DPP-toegang via HTTPS; TLS 1.2 minimaal, oudere TLS/SSL niet toegestaan | (b) | CloudFront `TLSv1.2_2021`; ook CloudFront → interne ALB (VPC origin) TLS 1.2+ met eigen certificaat, dus versleuteld over de hele route; ALB TLS 1.2/1.3-policy, RDS `ssl_min_protocol_version`, S3 `s3:TlsVersion ≥ 1.2` | infra (CloudFront, ALB, S3, RDS) | VERIFIED (IaC); live-scan na uitrol open | ja |
-| R-EXCH-02 | §4 | TLS 1.3 sterk aanbevolen | (d) | CloudFront- en ALB-policy's ondersteunen TLS 1.3 | infra (ALB `TLS13`) | VERIFIED (IaC) | nee |
-| R-EXCH-03 | §4 | HTTP/2 minimaal, oudere versies niet gebruiken; HTTP/3 aanbevolen | (b) | CloudFront `http2and3`, ALB HTTP/2 | infra (CloudFront) | **BLOCKED**: CloudFront accepteert HTTP/1.1 van oude clients en kan dat niet uitschakelen. Interpretatie nodig | ja |
+| R-EXCH-01 | §4 | Gestandaardiseerde DPP-toegang via HTTPS; TLS 1.2 minimaal, oudere TLS/SSL niet toegestaan | (b) | CloudFront `TLSv1.2_2021`; ook CloudFront → Lambda Function URL HTTPS met TLS 1.2+ (origin-protocol `https-only`), dus versleuteld over de hele route; RDS `ssl_min_protocol_version`, S3 `s3:TlsVersion ≥ 1.2` | infra (CloudFront, Lambda, S3, RDS) | VERIFIED (IaC); live-scan na uitrol open | ja |
+| R-EXCH-02 | §4 | TLS 1.3 sterk aanbevolen | (d) | CloudFront-policy `TLSv1.2_2021` ondersteunt TLS 1.3 voor bezoekers | infra (CloudFront) | VERIFIED (IaC); live-scan na uitrol | nee |
+| R-EXCH-03 | §4 | HTTP/2 minimaal, oudere versies niet gebruiken; HTTP/3 aanbevolen | (b) | CloudFront `http2and3` | infra (CloudFront) | **BLOCKED**: CloudFront accepteert HTTP/1.1 van oude clients en kan dat niet uitschakelen. Interpretatie nodig | ja |
 | R-EXCH-04 | §4 | API volgens REST-stijl (aanbevolen) | (d) | REST-API's (`/api/dpp`, `/api/products`) | test passport-compliance | VERIFIED | nee |
 | R-EXCH-05 | §5 | JSON verplicht als uitwisselformaat | (b) | `GET /api/dpp/:id` (JSON) | test passport-compliance (R-EXCH-01..04) | VERIFIED | ja |
 | R-EXCH-06 | §5 | XML optioneel via content negotiation | (b, optioneel) | `Accept: application/xml` of `?format=xml` | idem | VERIFIED | nee |
