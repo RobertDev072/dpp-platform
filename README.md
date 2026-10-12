@@ -152,12 +152,13 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
 ## 6. Lokale setup
 
 1. Node.js 24, dan `npm ci`.
-2. Een **eigen** PostgreSQL 17 (lokaal, Docker of embedded). **Nooit de productiedatabase**;
+2. Lokale database starten in een eigen terminal: `npm run db:local` (echte PostgreSQL 17,
+   zonder installatie; data in `.localdb/`, poort 5433). **Nooit de productiedatabase**;
    die staat in een privé subnet op AWS en is van buitenaf niet bereikbaar.
 3. `.env` in de projectroot (wordt nooit gecommit; zie [`.env.example`](.env.example)):
    ```
    NODE_ENV=development
-   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/veripasso
+   DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/veripasso
    COOKIE_SECRET=<lange random string>
    APP_BASE_URL=http://localhost:3000
    QR_BASE_URL=http://localhost:3000
@@ -191,6 +192,12 @@ bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF + domeinrouter ─TLS, VPC 
 - **Uitrollen**: GitHub → Actions → **"Deploy naar AWS"** → `production`. De workflow
   bouwt het image, draait de databasemigraties en vervangt de app; bij ongezonde taken
   rolt ECS automatisch terug. GitHub gebruikt een tijdelijke OIDC-rol (geen AWS-sleutels).
+- **Pauzeren tijdens ontwikkelen** (bespaart kosten): GitHub → Actions → **"AWS pauzeren /
+  hervatten"** → `pauzeren` (app op 0, database gestopt; site offline) of `hervatten`. Hervat
+  vóór een uitrol. Let op: AWS start een gestopte database na 7 dagen vanzelf.
+- **Firewall (WAF)** staat tijdens ontwikkeling uit (kosten). Vóór livegang met klanten:
+  `node scripts/create-cloudfront-waf.js production`, ARN als `webAclArn` in de config en
+  `enableWaf: true`, dan uitrollen.
 - **Infrastructuur wijzigen**: `infra/config/production.json` of `infra/lib/*` aanpassen,
   `cd infra && npm test`, pushen en dezelfde workflow draaien.
 - **Domeinverdeling**: een CloudFront Function stuurt elk domein naar zijn rol

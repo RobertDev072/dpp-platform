@@ -13,3 +13,6 @@ temp-passwords-*.csv
 manifest*.csv
 *.dump
 *.dump.gpg
+
+# Lokale ontwikkeldatabase (npm run db:local)
+.localdb/

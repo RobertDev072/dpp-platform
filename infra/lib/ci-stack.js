@@ -85,6 +85,30 @@ class VeriPassoCiStack extends cdk.Stack {
       })
     );
 
+    // Pauzeren/hervatten (workflow aws-pause.yml): de app-service op 0 of terug, en de
+    // database stoppen/starten. Alleen deze service en databases met het label van
+    // deze omgeving.
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ecs:UpdateService"],
+        resources: [`arn:aws:ecs:${config.region}:${this.account}:service/veripasso-${config.envName}-cluster/veripasso-${config.envName}-app`]
+      })
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["application-autoscaling:RegisterScalableTarget", "application-autoscaling:DescribeScalableTargets"],
+        resources: ["*"]
+      })
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["rds:StopDBInstance", "rds:StartDBInstance"],
+        resources: [`arn:aws:rds:${config.region}:${this.account}:db:*`],
+        conditions: { StringEquals: { "aws:ResourceTag/Environment": config.envName, "aws:ResourceTag/Application": "VeriPasso" } }
+      })
+    );
+    role.addToPolicy(new iam.PolicyStatement({ actions: ["rds:DescribeDBInstances"], resources: ["*"] }));
+
     new cdk.CfnOutput(this, "DeployRoleArn", { value: role.roleArn });
   }
 }

@@ -1,0 +1,113 @@
+# AWS pauzeren of hervatten - ALLEEN HANDMATIG. Bespaart kosten tijdens ontwikkelen.
+#
+# Pauzeren:  app-service naar 0 taken (ook autoscaling op 0) en de database gestopt.
+#            De website is dan offline (CloudFront geeft een foutpagina). Kosten die
+#            doorlopen: load balancer, publieke IP's, opslag en (indien aan) de WAF.
+# Hervatten: database starten, wachten tot beschikbaar, app terug naar de configuratie
+#            (desiredCount/minTasks/maxTasks uit infra/config/<env>.json).
+#
+# Let op: AWS start een gestopte database na 7 dagen automatisch weer op. Hervat de
+# omgeving vóór een uitrol (Deploy naar AWS), anders start de nieuwe versie niet.
+
+name: AWS pauzeren / hervatten
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Omgeving"
+        required: true
+        type: choice
+        options: [production, staging]
+      action:
+        description: "Actie"
+        required: true
+        type: choice
+        options: [pauzeren, hervatten]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  pause:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: ${{ inputs.environment }}
+    env:
+      ENV_NAME: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configuratie lezen
+        id: cfg
+        run: |
+          C=infra/config/$ENV_NAME.json
+          echo "region=$(jq -r .region $C)" >> "$GITHUB_OUTPUT"
+          echo "desired=$(jq -r .desiredCount $C)" >> "$GITHUB_OUTPUT"
+          echo "min=$(jq -r .minTasks $C)" >> "$GITHUB_OUTPUT"
+          echo "max=$(jq -r .maxTasks $C)" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ steps.cfg.outputs.region }}
+
+      - name: Resources opzoeken
+        id: res
+        run: |
+          set -euo pipefail
+          STACK="VeriPasso-$ENV_NAME-App"
+          out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+          echo "cluster=$(out ClusterName)" >> "$GITHUB_OUTPUT"
+          echo "service=$(out ServiceName)" >> "$GITHUB_OUTPUT"
+          DB_HOST=$(out DbEndpoint)
+          echo "db=${DB_HOST%%.*}" >> "$GITHUB_OUTPUT"
+
+      - name: Pauzeren
+        if: inputs.action == 'pauzeren'
+        env:
+          CLUSTER: ${{ steps.res.outputs.cluster }}
+          SERVICE: ${{ steps.res.outputs.service }}
+          DB: ${{ steps.res.outputs.db }}
+        run: |
+          set -euo pipefail
+          aws application-autoscaling register-scalable-target --service-namespace ecs \
+            --resource-id "service/$CLUSTER/$SERVICE" --scalable-dimension ecs:service:DesiredCount \
+            --min-capacity 0 --max-capacity 0
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --desired-count 0 --query 'service.desiredCount'
+          STATUS=$(aws rds describe-db-instances --db-instance-identifier "$DB" --query 'DBInstances[0].DBInstanceStatus' --output text)
+          echo "Database-status: $STATUS"
+          if [ "$STATUS" = "available" ]; then
+            aws rds stop-db-instance --db-instance-identifier "$DB" --query 'DBInstance.DBInstanceStatus' --output text
+          fi
+          echo "Gepauzeerd. Hervat met deze workflow (actie: hervatten)."
+
+      - name: Hervatten
+        if: inputs.action == 'hervatten'
+        env:
+          CLUSTER: ${{ steps.res.outputs.cluster }}
+          SERVICE: ${{ steps.res.outputs.service }}
+          DB: ${{ steps.res.outputs.db }}
+        run: |
+          set -euo pipefail
+          STATUS=$(aws rds describe-db-instances --db-instance-identifier "$DB" --query 'DBInstances[0].DBInstanceStatus' --output text)
+          echo "Database-status: $STATUS"
+          if [ "$STATUS" = "stopping" ]; then
+            aws rds wait db-instance-stopped --db-instance-identifier "$DB" || true
+            STATUS=stopped
+          fi
+          if [ "$STATUS" = "stopped" ]; then
+            aws rds start-db-instance --db-instance-identifier "$DB" --query 'DBInstance.DBInstanceStatus' --output text
+          fi
+          aws rds wait db-instance-available --db-instance-identifier "$DB"
+          aws application-autoscaling register-scalable-target --service-namespace ecs \
+            --resource-id "service/$CLUSTER/$SERVICE" --scalable-dimension ecs:service:DesiredCount \
+            --min-capacity "${{ steps.cfg.outputs.min }}" --max-capacity "${{ steps.cfg.outputs.max }}"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --desired-count "${{ steps.cfg.outputs.desired }}" --query 'service.desiredCount'
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          echo "Hervat: de app draait weer."

@@ -13,7 +13,8 @@
     "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\"",
     "backfill:versions": "node scripts/backfill-passport-versions.js",
     "verify:db-copy": "node scripts/verify-db-copy.js",
-    "copy:storage": "node scripts/copy-storage-to-s3.js"
+    "copy:storage": "node scripts/copy-storage-to-s3.js",
+    "db:local": "node scripts/local-db.mjs"
   },
   "keywords": [],
   "author": "",
@@ -49,6 +50,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "embedded-postgres": "^17.10.0-beta.17",
     "jsqr": "^1.4.0"
   }
 }

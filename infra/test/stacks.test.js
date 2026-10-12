@@ -77,12 +77,13 @@ test("Netwerk: geen NAT-gateway; database alleen bereikbaar vanuit de app", () =
   assert.ok(dbIngress[0].Properties.SourceSecurityGroupId, "5432 alleen vanaf een securitygroup, nooit vanaf een CIDR");
 });
 
-test("CloudFront: minimaal TLS 1.2, HTTP/2 en HTTP/3, HTTPS afgedwongen, WAF gekoppeld", () => {
+test("CloudFront: minimaal TLS 1.2, HTTP/2 en HTTP/3, HTTPS afgedwongen, WAF gekoppeld (als aan)", () => {
   template.hasResourceProperties("AWS::CloudFront::Distribution", {
     DistributionConfig: Match.objectLike({
       HttpVersion: "http2and3",
       ViewerCertificate: Match.objectLike({ MinimumProtocolVersion: "TLSv1.2_2021", SslSupportMethod: "sni-only" }),
-      WebACLId: Match.anyValue(),
+      // Firewall gekoppeld zodra die in de config aan staat (tijdens ontwikkeling mag hij uit).
+      ...(config.enableWaf ? { WebACLId: Match.anyValue() } : {}),
       DefaultCacheBehavior: Match.objectLike({ ViewerProtocolPolicy: "redirect-to-https" }),
       Origins: Match.arrayWith([Match.objectLike({ VpcOriginConfig: Match.anyValue() })])
     })

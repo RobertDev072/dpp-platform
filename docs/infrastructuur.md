@@ -129,6 +129,10 @@ eu-central-1) bestaan in de code, maar zijn in deze omgeving niet actief.
 - Origin: **VPC origin** naar de interne load balancer over HTTPS (TLS 1.2+), certificaatnaam `origin.veripasso.com`.
 
 ### Firewall (AWS WAF)
+**Stand 2026-10-12: uitgeschakeld tijdens ontwikkeling** (bespaart ~$12/maand; de web-ACL is
+verwijderd). Vóór livegang met klanten weer aanzetten: `node scripts/create-cloudfront-waf.js
+production`, de ARN als `webAclArn` in de config, `enableWaf: true`, uitrollen. De regels:
+
 Web-ACL `veripasso-production` (us-east-1, scope CloudFront):
 - AWS-beheerde regels: IP-reputatie, Common Rule Set (de groottecontrole op de body staat op "tellen" voor de import van 4 MB) en Known Bad Inputs;
 - rate limits per IP-adres per 5 minuten: 1500 op `/p/`, `/api/public/` en `/api/dpp/`; 100 op `/api/auth/` (inloggen);
@@ -221,6 +225,13 @@ In `infra/config/production.json`:
 - `enableAwsBackupCopy` en `enableS3CrossRegionReplication` → `true` (kopieën naar eu-central-1).
 
 Daarna dezelfde uitrolworkflow. Dit verhoogt de kosten (zie [aws-cost-model.md](aws-cost-model.md)).
+
+### Pauzeren en hervatten (kosten besparen)
+GitHub → Actions → **"AWS pauzeren / hervatten"** (`.github/workflows/aws-pause.yml`):
+- **pauzeren**: autoscaling en app-service naar 0 taken, database gestopt. De site is offline;
+  load balancer, publieke IP's en opslag kosten nog (~$0,85/dag).
+- **hervatten**: database starten, wachten tot beschikbaar, app terug naar de config (~5–10 min).
+- Altijd hervatten vóór een uitrol. AWS start een gestopte database na 7 dagen automatisch.
 
 ### Rollback, back-up en herstel
 Zie [aws-deployment-runbook.md](aws-deployment-runbook.md) §8 en §9: een vorige versie
