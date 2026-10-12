@@ -6,13 +6,20 @@ geïsoleerde omgeving; consumenten scannen een QR-code en zien het publieke
 productpaspoort zonder account. Systemen kunnen hetzelfde paspoort op dezelfde URL
 machineleesbaar opvragen (JSON, JSON-LD, XML).
 
-Laatst bijgewerkt: 2026-10-10. Doelplatform: **AWS** (ECS Fargate, RDS PostgreSQL 17,
-S3, CloudFront + WAF), infrastructuur als code in [`infra/`](infra/). Op deze datum
-draait productie nog op Vercel + Supabase; de overstap volgt de
-[runbook](docs/aws-deployment-runbook.md). Achtergrond en keuzes:
-[assessment](docs/aws-migration-assessment.md), [kosten](docs/aws-cost-model.md),
-[beveiliging](docs/aws-security-checklist.md),
+Laatst bijgewerkt: 2026-10-12. **Live op AWS** (regio eu-west-1, Ierland):
+
+| Adres | Rol |
+|---|---|
+| https://www.veripasso.com (en veripasso.com) | landingspagina |
+| https://app.veripasso.com | de SaaS-applicatie (inloggen, dashboards, beheer) |
+| https://qr.veripasso.com | QR-scans en publieke productpaspoorten (permanent: staat op elke gedrukte code) |
+
+Infrastructuur als code in [`infra/`](infra/) (AWS CDK). Volledige beschrijving:
+[**docs/infrastructuur.md**](docs/infrastructuur.md). Verder:
+[runbook](docs/aws-deployment-runbook.md), [assessment](docs/aws-migration-assessment.md),
+[kosten](docs/aws-cost-model.md), [beveiliging](docs/aws-security-checklist.md),
 [compliance-matrix](docs/compliance/requirements-matrix.md).
+Vercel, Supabase en Azure worden niet meer gebruikt.
 
 ---
 
@@ -145,7 +152,8 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
 ## 6. Lokale setup
 
 1. Node.js 24, dan `npm ci`.
-2. Een **eigen** PostgreSQL 17 (lokaal of Docker). **Nooit de productiedatabase.**
+2. Een **eigen** PostgreSQL 17 (lokaal, Docker of embedded). **Nooit de productiedatabase**;
+   die staat in een privé subnet op AWS en is van buitenaf niet bereikbaar.
 3. `.env` in de projectroot (wordt nooit gecommit; zie [`.env.example`](.env.example)):
    ```
    NODE_ENV=development
@@ -154,7 +162,8 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
    APP_BASE_URL=http://localhost:3000
    QR_BASE_URL=http://localhost:3000
    # Bestanden (optioneel lokaal): eigen test-buckets met een AWS-profiel, of
-   # S3-compatibel (MinIO) met S3_ENDPOINT + S3_FORCE_PATH_STYLE=true
+   # S3-compatibel (MinIO) met S3_ENDPOINT + S3_FORCE_PATH_STYLE=true.
+   # Zonder deze waarden werkt alles behalve foto-/documentuploads.
    AWS_REGION=eu-west-1
    S3_IMAGES_BUCKET=
    S3_DOCUMENTS_BUCKET=
@@ -162,47 +171,34 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
 4. `npm run test:db` → `npm run migrate` → `npm run seed:owner` (met `SYSTEM_OWNER_*`,
    daarna weer weghalen) → `npm run dev` (http://localhost:3000).
 
-Achter de zakelijke proxy (Zscaler): `NODE_EXTRA_CA_CERTS` naar het root-CA-bestand
-(`scripts/export-zscaler-ca.ps1`).
+Lokaal is er geen domeinverdeling: alle pagina's (landingspagina, app, paspoorten) staan
+op `localhost:3000`. Achter de zakelijke proxy (Zscaler): `NODE_EXTRA_CA_CERTS` naar het
+root-CA-bestand (`scripts/export-zscaler-ca.ps1`).
 
 ---
 
 ## 7. Infrastructuur en deploy (AWS)
 
+Kort overzicht; alle details (resources, netwerk, certificaten, DNS, beveiliging,
+back-ups, kosten, beheer) staan in [docs/infrastructuur.md](docs/infrastructuur.md).
+
 ```
-bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF ─TLS, VPC origin─> interne ALB ─> ECS Fargate (Next.js + Express)
-                                                              ├─> RDS PostgreSQL 17 (privé, TLS verplicht)
-                                                              └─> S3 (privé, versioning, presigned URL's)
+bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF + domeinrouter ─TLS, VPC origin─> interne ALB ─> ECS Fargate
+                                                                                         ├─> RDS PostgreSQL 17
+                                                                                         └─> S3 (privé)
 ```
 
-- **Infrastructuur als code**: AWS CDK (JavaScript) in `infra/`, per omgeving een
-  configuratiebestand (`infra/config/staging.json`, `production.json`; geen geheimen).
-  Stacks: `Edge` (WAF, us-east-1), `App` (alles in eu-west-1), `Dr` (back-upkluis en
-  S3-replica in eu-central-1), `Ci` (GitHub OIDC-deployrol).
-  ```bash
-  cd infra && npm ci
-  npm run synth:staging    # alleen genereren, geen AWS-account nodig
-  npm test                 # beveiligings- en compliance-asserties op de templates
-  ```
-- **Container**: `Dockerfile` (Next.js standalone, niet-root, RDS-CA-bundel). Migraties,
-  seed en backfill draaien als eenmalige ECS-taak met hetzelfde image.
-- **Geheimen**: alleen in AWS Secrets Manager (`COOKIE_SECRET`, `MFA_ENCRYPTION_KEY`,
-  RDS-beheerder, CloudFront-origin-header). De app gebruikt de IAM-rol van de taak voor S3.
-- **Deploy**: GitHub Actions → "Deploy naar AWS" (alleen handmatig, met goedkeuring op de
-  GitHub-environment): image bouwen → migraties → `cdk deploy` met de nieuwe image-tag.
-  ECS rolt automatisch terug bij ongezonde taken.
-- **Domeinen** (DNS bij TransIP): `app.veripasso.com` en `qr.veripasso.com` → CNAME naar
-  CloudFront. De load balancer is intern (geen publiek adres) en alleen via een CloudFront
-  VPC origin bereikbaar; `origin.veripasso.com` is alleen de certificaatnaam voor die
-  versleutelde interne verbinding (CNAME naar het interne ALB-adres, privé-IP's). `veripasso.com`
-  (hoofddomein) → doorverwijzing naar `https://app.veripasso.com`.
-- **Kosten**: [docs/aws-cost-model.md](docs/aws-cost-model.md) (schattingen; budgetten
-  waarschuwen maar begrenzen niet).
-- **Rollback, back-up, restore, cutover**: [docs/aws-deployment-runbook.md](docs/aws-deployment-runbook.md).
-
-Valkuilen: route-volgorde in Express (letterlijke routes vóór `/:id`); Postgres vouwt
-ongequote namen naar kleine letters (camelCase-aliassen quoten); `QR_BASE_URL` nooit
-wijzigen naar een tijdelijk of AWS-adres.
+- **Uitrollen**: GitHub → Actions → **"Deploy naar AWS"** → `production`. De workflow
+  bouwt het image, draait de databasemigraties en vervangt de app; bij ongezonde taken
+  rolt ECS automatisch terug. GitHub gebruikt een tijdelijke OIDC-rol (geen AWS-sleutels).
+- **Infrastructuur wijzigen**: `infra/config/production.json` of `infra/lib/*` aanpassen,
+  `cd infra && npm test`, pushen en dezelfde workflow draaien.
+- **Domeinverdeling**: een CloudFront Function stuurt elk domein naar zijn rol
+  (`infra/lib/domain-router.js`); de app zelf kent de domeinnamen niet.
+- **Geheimen**: alleen in AWS Secrets Manager; de app gebruikt de IAM-rol van de taak.
+- **Valkuilen**: route-volgorde in Express (letterlijke routes vóór `/:id`); Postgres vouwt
+  ongequote namen naar kleine letters (camelCase-aliassen quoten); `QR_BASE_URL` en de
+  DNS van `qr.veripasso.com` nooit wijzigen of verwijderen.
 
 ---
 
@@ -229,7 +225,7 @@ infra/                    AWS CDK (bin/, lib/, config/, test/)
 scripts/                  migrate, seed-system-owner, backfill-passport-versions, verify-db-copy,
                           copy-storage-to-s3, check-db-connection, cleanup-test-data
 tests/                    node --test (zie §9)
-docs/                     AWS-assessment, kosten, runbook, beveiliging, compliance-matrix
+docs/                     infrastructuur, AWS-assessment, kosten, runbook, beveiliging, compliance-matrix
 ```
 
 ---
@@ -251,18 +247,23 @@ docs/                     AWS-assessment, kosten, runbook, beveiliging, complian
 
 ## 10. Openstaand
 
-### Vóór go-live (zie runbook en compliance-matrix)
-- [ ] Certificeerder: oordeel over de geblokkeerde compliance-punten (o.a. EN 18219/18220/
-      18222/18223, back-up-dienstverlener, DPP-levensduur, HTTP/1.1, toegankelijkheid).
-- [ ] AWS-account, certificaten, staging uitrollen, datamigratie-repetitie, restore-test, loadtest.
-- [ ] Platform Owner: MFA koppelen.
-- [ ] Opruimen (bestanden die niet meer gebruikt worden; verwijderen was in deze sessie
-      niet toegestaan): `vercel.json`, `.vercelignore`, `supabase/` (vervangen door
-      `db/migrations/`), `src/config/entra.js`, `src/services/nativeAuth.service.js`,
-      `src/routes/cron.routes.js`, `scripts/e2e-monitoring-live.js`,
-      `scripts/e2e-partner-reset-live.js`, `docs/infrastructuur.md`; pakketten
-      `npm uninstall @supabase/supabase-js @vercel/functions`. Na de cutover ook
-      `.github/workflows/database-backup.yml` (Supabase-back-up).
+### Compliance (zie [docs/compliance/requirements-matrix.md](docs/compliance/requirements-matrix.md))
+- [ ] Oordeel van de certificeerder over de geblokkeerde punten: EN 18219/18220/18222/18223
+      (niet door AI beoordeeld i.v.m. de EVS-licentie), back-up-dienstverlener, DPP-levensduur
+      per productgroep, model- vs. item-paspoort, HTTP/1.1, digitale handtekeningen (EN 18246).
+- [ ] Toegankelijkheidsaudit van de publieke paspoortpagina (EN 301 549 / WCAG 2.1 AA).
+
+### Beheer
+- [ ] Platform Owner: MFA koppelen; alarm-abonnementen in beide mailboxen bevestigen.
+- [ ] Restore-test van de database (runbook §8) en een loadtest op een testomgeving.
+- [ ] Opschalen vóór echte klanten: 2 taken, Multi-AZ-database, DR-kopieën
+      (`infra/config/production.json`).
+- [ ] Opruimen van bestanden die niet meer gebruikt worden (verwijderen was in de
+      migratiesessie niet toegestaan): `vercel.json`, `.vercelignore`, `supabase/`,
+      `src/config/entra.js`, `src/services/nativeAuth.service.js`, `src/routes/cron.routes.js`,
+      `scripts/e2e-monitoring-live.js`, `scripts/e2e-partner-reset-live.js`,
+      `.github/workflows/database-backup.yml`; pakketten
+      `npm uninstall @supabase/supabase-js @vercel/functions`.
 
 ### Product / later
 - [ ] Item-niveau-paspoorten (serienummers) als de productgroep dat vereist.
