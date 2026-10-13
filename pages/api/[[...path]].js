@@ -14,5 +14,11 @@ export const config = {
 };
 
 export default function handler(req, res) {
+  // Na een rewrite (next.config.mjs: /p/:id met Accept JSON/JSON-LD/XML → /api/dpp/:id)
+  // staat in req.url nog de oorspronkelijke URL. Express moet de herschreven API-route zien.
+  if (!req.url.startsWith("/api/") && Array.isArray(req.query?.path)) {
+    const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+    req.url = `/api/${req.query.path.map(encodeURIComponent).join("/")}${query}`;
+  }
   return app(req, res);
 }
