@@ -6,8 +6,8 @@ geïsoleerde omgeving; consumenten scannen een QR-code en zien het publieke
 productpaspoort zonder account. Systemen kunnen hetzelfde paspoort op dezelfde URL
 machineleesbaar opvragen (JSON, JSON-LD, XML).
 
-Laatst bijgewerkt: 2026-10-13. **Status: lokale ontwikkeling.** Er is (nog) geen
-hosting gekozen; AWS, Supabase, Azure en Vercel worden niet meer gebruikt. De laatste
+Laatst bijgewerkt: 2026-10-13. **Status: klaar voor één Linux-server (STRATO VPS
+Linux M, zie §7).** AWS, Supabase, Azure en Vercel worden niet meer gebruikt. De laatste
 versie met AWS-infrastructuur staat onder de git-tag `aws-laatste-versie`.
 
 Domeinen (DNS bij Cloudflare):
@@ -84,9 +84,10 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   gaan rechtstreeks van de browser naar **privé buckets in S3-compatibele opslag**
   (lokaal bijv. MinIO, later bijv. Cloudflare R2; zonder ingestelde opslag staan uploads uit):
   1. `POST /api/products/:id/{photo|documents}/upload-url`: rol, tenant, type en grootte
-     worden gecontroleerd; de server geeft een **presigned POST** voor precies één object
-     (`products/{productId}/{uuid}.{ext}`), waarbij S3 zelf sleutel, type en max. grootte afdwingt;
-  2. de browser stuurt het bestand naar S3;
+     worden gecontroleerd; de server geeft een **presigned PUT** voor precies één object
+     (`products/{productId}/{uuid}.{ext}`); type en exacte grootte zitten in de handtekening,
+     dus de opslag dwingt ze af (werkt ook met Cloudflare R2, dat geen presigned POST kent);
+  2. de browser stuurt het bestand naar de opslag;
   3. `POST .../complete`: de server controleert het object (HeadObject) en koppelt het.
 - **Downloads**: eigen stabiele API-route → toegangscontrole → presigned URL (5 minuten).
   Objecten worden nooit overschreven of door de app verwijderd (zet bij de opslag
@@ -177,21 +178,25 @@ root-CA-bestand (`scripts/export-zscaler-ca.ps1`).
 
 ---
 
-## 7. Hosting (nog te kiezen)
+## 7. Hosting: één Linux-server (STRATO VPS Linux M)
 
-Er is bewust geen hosting ingericht. De app is een gewone Next.js-server
-(`npm run build` → `npm run start`, of de standalone-output) met PostgreSQL 17 en
-optioneel S3-compatibele opslag; daarmee past hij op vrijwel elke host.
+De app draait in Docker op één Linux-server: app + PostgreSQL 17 + Caddy (HTTPS),
+zie [`deploy/`](deploy/) en het stappenplan **[docs/hosting-strato.md](docs/hosting-strato.md)**.
+Bestanden optioneel in Cloudflare R2, back-ups elke nacht versleuteld naar R2.
 
-Bij het kiezen van een host regelen:
+- **Uitrollen**: `deploy/update.sh` op de server (code ophalen, image bouwen, herstarten;
+  migraties draaien automatisch bij het starten).
+- **CI** bouwt bij elke push het image en start app + database echt (rooktest).
+
+Het werkt ook op elke andere Linux-host met Docker. Aandachtspunten bij elke host:
 - **Database**: PostgreSQL 17 met back-ups; `DATABASE_URL` (of `DB_*`) als geheime variabele.
 - **Migraties**: `npm run migrate` bij elke uitrol (vóór of direct na de nieuwe code;
   migraties zijn altijd additief).
 - **Geheimen**: `COOKIE_SECRET`, `MFA_ENCRYPTION_KEY`, databasewachtwoord en eventueel
   `EDGE_SYNC_TOKEN` en `S3_*` als geheime variabelen van de host, nooit in de repository.
-- **Domeinverdeling**: elk domein heeft één rol (zie de tabel bovenaan). Vroeger deed
-  een CloudFront Function dat; bij nieuwe hosting opnieuw regelen (bijv. Cloudflare
-  Redirect Rules of middleware in de app). `/api/*`, `/_next/*`, `/brand/*` op elk domein.
+- **Domeinverdeling**: elk domein heeft één rol (zie de tabel bovenaan); de app regelt
+  dat zelf (`proxy.js` + `src/utils/domainRouting.js`) zodra `SITE_DOMAINS`, `APP_DOMAIN`
+  en `QR_DOMAIN` gezet zijn. `/api/*`, `/_next/*`, `/brand/*` werken op elk domein.
 - **Cloudflare vóór `qr.veripasso.com`**: zie [docs/cloudflare.md](docs/cloudflare.md).
 - **Valkuilen**: route-volgorde in Express (letterlijke routes vóór `/:id`); Postgres vouwt
   ongequote namen naar kleine letters (camelCase-aliassen quoten); `QR_BASE_URL` en de
@@ -221,6 +226,8 @@ src/
                           license, import, print, qrCode
   utils/                  logger, roles, tenant, auditLog, password, baseUrl
 db/migrations/            PostgreSQL-migraties (oplopend; bijgehouden in dbo.schemamigrations)
+deploy/                   Serveropzet: compose.yaml (app + PostgreSQL + Caddy), Caddyfile, .env.example,
+                          backup.sh, update.sh; Dockerfile in de root
 edge/cloudflare/          Cloudflare Worker voor qr.veripasso.com (scans bundelen, cache verversen)
 scripts/                  migrate, seed-system-owner, backfill-passport-versions, local-db,
                           check-db-connection, cleanup-test-data
@@ -255,7 +262,8 @@ docs/                     cloudflare, compliance-matrix, verificatie
 ### Beheer
 - [ ] AWS-account 707191185248 opruimen: back-up maken en de omgeving afbreken met de CDK-
       code uit de tag `aws-laatste-versie` (of het account sluiten).
-- [ ] Hosting kiezen (zie §7); daarna restore-test van de database en een loadtest.
+- [ ] STRATO-server inrichten (docs/hosting-strato.md); daarna restore-test van de
+      database en een loadtest.
 - [ ] Platform Owner: MFA koppelen.
 
 ### Product / later

@@ -1,6 +1,8 @@
-# Controle bij elke push en pull request: lockfile installeren, migraties + volledige
-# testsuite tegen een tijdelijke PostgreSQL 17 (nooit tegen productie), productiebuild
-# en een controle op kwetsbare afhankelijkheden.
+# Controle bij elke push en pull request:
+# 1. app: lockfile installeren, migraties + volledige testsuite tegen een tijdelijke
+#    PostgreSQL 17 (nooit tegen productie), productiebuild, kwetsbare afhankelijkheden;
+# 2. server: het Docker-image bouwen en de serveropzet (deploy/compose.yaml: app +
+#    database) echt starten; slaagt pas als de app gezond is en de pagina's laden.
 
 name: CI
 
@@ -55,3 +57,47 @@ jobs:
 
       - name: Afhankelijkheden controleren (hoog/kritiek)
         run: npm audit --omit=dev --audit-level=high
+
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Testconfiguratie (geen echte geheimen)
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_PASSWORD=ci-only-db-password
+          COOKIE_SECRET=ci-only-cookie-secret
+          MFA_ENCRYPTION_KEY=ci-only-mfa-key
+          APP_BASE_URL=http://localhost
+          QR_BASE_URL=http://localhost
+          DATABASE_MAX_BYTES=21474836480
+          EOF
+
+      - name: Image bouwen en app + database starten
+        run: docker compose up -d --build --wait --wait-timeout 300 db app
+        env:
+          GIT_SHA: ${{ github.sha }}
+
+      - name: Rooktest in de container
+        run: |
+          docker compose exec -T app node -e "
+            (async () => {
+              for (const path of ['/api/health', '/api/health/ready', '/', '/login']) {
+                const r = await fetch('http://127.0.0.1:3000' + path);
+                console.log(path, r.status);
+                if (!r.ok) process.exit(1);
+              }
+            })().catch((e) => { console.error(e); process.exit(1); });
+          "
+
+      - name: Migraties toegepast
+        run: docker compose exec -T db psql -U veripasso -d veripasso -tAc "SELECT count(*) FROM dbo.schemamigrations" | grep -E '^[1-9]'
+
+      - name: Logs bij een fout
+        if: failure()
+        run: docker compose logs --tail=200

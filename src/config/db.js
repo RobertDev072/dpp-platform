@@ -9,8 +9,9 @@ const logger = require("../utils/logger");
 //    die het wachtwoord als aparte geheime variabele aanlevert.
 //
 // TLS: naar een externe database altijd versleuteld met certificaatcontrole, eventueel
-// tegen een eigen CA-bundel (DATABASE_CA_CERT_FILE of DATABASE_CA_CERT). Alleen lokaal
-// (localhost) zonder TLS.
+// tegen een eigen CA-bundel (DATABASE_CA_CERT_FILE of DATABASE_CA_CERT). Zonder TLS
+// alleen lokaal (localhost) of met DATABASE_SSL=disable (database op het interne
+// Docker-netwerk van dezelfde server).
 //
 // Typeparsers: Postgres levert COUNT/SUM (int8) en DECIMAL (numeric) als string
 // aan Node - de code en de frontend rekenen overal met getallen, dus die worden
@@ -45,6 +46,9 @@ function buildSslConfig(isLocal) {
   const ca = readCaCertificate();
   if (ca) return { ca, rejectUnauthorized: true };
   if (isLocal) return false;
+  // Database op hetzelfde interne Docker-netwerk (deploy/compose.yaml): het verkeer
+  // verlaat de server nooit, dus geen TLS. Alleen expliciet aan te zetten.
+  if (process.env.DATABASE_SSL === "disable") return false;
   // Expliciete opt-out, alleen bedoeld voor een eenmalig script tegen een externe
   // database zonder CA-bundel; nooit in productie.
   if (process.env.DATABASE_SSL_INSECURE === "true") return { rejectUnauthorized: false };

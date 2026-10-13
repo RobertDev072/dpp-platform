@@ -13,7 +13,7 @@ const {
 // (TEST_S3_LIVE=true + S3_ENDPOINT/S3_IMAGES_BUCKET/S3_DOCUMENTS_BUCKET van een
 // TESTbucket, nooit productie). Zonder opt-in wordt dat deel overgeslagen; de rest
 // van dit bestand (schema/tenant-isolatie op de foto-routes) draait altijd. De
-// S3-logica zelf (presigned POST, controles) is los getest in s3-storage.test.js.
+// S3-logica zelf (presigned PUT, controles) is los getest in s3-storage.test.js.
 const { isStorageConfigured } = require("../src/config/storage");
 const hasStorageConfigured = process.env.TEST_S3_LIVE === "true" && isStorageConfigured();
 const storageSkipReason = hasStorageConfigured ? false : "TEST_S3_LIVE niet gezet - live S3-test overgeslagen (zie README.md)";
@@ -171,7 +171,7 @@ test(
     const bytesBack = Buffer.from(await photoResponse.arrayBuffer());
     assert.deepEqual(bytesBack, pngBytes, "de opgehaalde bytes moeten identiek zijn aan de upload");
 
-    // Directe upload (zoals de browser doet): upload-URL -> presigned POST -> complete.
+    // Directe upload (zoals de browser doet): upload-URL -> presigned PUT -> complete.
     const init = await request(baseUrl, "POST", `/api/products/${productId}/photo/upload-url`, {
       cookie,
       body: { mimeType: "image/png", size: pngBytes.length }
@@ -179,11 +179,20 @@ test(
     assert.equal(init.status, 200);
     assert.ok(init.data.objectName.startsWith(`products/${productId}/`));
 
-    const form = new FormData();
-    for (const [key, value] of Object.entries(init.data.fields)) form.append(key, value);
-    form.append("file", new Blob([pngBytes], { type: "image/png" }), "test.png");
-    const put = await fetch(init.data.uploadUrl, { method: "POST", body: form });
-    assert.ok(put.ok, `directe upload naar S3 moet slagen (status ${put.status})`);
+    const put = await fetch(init.data.uploadUrl, { method: "PUT", headers: init.data.headers, body: pngBytes });
+    assert.ok(put.ok, `directe upload naar de opslag moet slagen (status ${put.status})`);
+
+    // Een andere grootte dan aangemeld wordt door de opslag geweigerd.
+    const init2 = await request(baseUrl, "POST", `/api/products/${productId}/photo/upload-url`, {
+      cookie,
+      body: { mimeType: "image/png", size: pngBytes.length }
+    });
+    const tooBig = await fetch(init2.data.uploadUrl, {
+      method: "PUT",
+      headers: init2.data.headers,
+      body: Buffer.concat([pngBytes, Buffer.alloc(10)])
+    });
+    assert.ok(!tooBig.ok, "afwijkende grootte hoort geweigerd te worden");
 
     const complete = await request(baseUrl, "POST", `/api/products/${productId}/photo/complete`, {
       cookie,

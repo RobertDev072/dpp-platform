@@ -7,7 +7,6 @@ const {
   GetObjectCommand,
   HeadBucketCommand
 } = require("@aws-sdk/client-s3");
-const { createPresignedPost } = require("@aws-sdk/s3-presigned-post");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const { readConfig, isStorageConfigured } = require("../config/storage");
 const { HttpError } = require("../middleware/errorHandler");
@@ -146,32 +145,29 @@ async function uploadProductDocument({ productId, buffer, mimeType }) {
 
 // --- directe uploads vanuit de browser -------------------------------------------
 // Grote bestanden gaan niet door de applicatieserver: de browser uploadt rechtstreeks
-// naar S3 met een presigned POST. De policy in die POST wordt door S3 zelf afgedwongen:
-// exact deze objectsleutel, exact dit Content-Type en een maximale grootte. De server
-// controleert vóór het ondertekenen de tenant (in de route) en type/grootte (hier), en
-// na de upload nogmaals de werkelijke metadata (verifyUploadedObject).
+// naar de opslag met een presigned PUT (werkt met elke S3-compatibele opslag, ook
+// Cloudflare R2, die geen presigned POST kent). Content-Type en Content-Length zitten in
+// de handtekening, dus de opslag accepteert alleen exact deze sleutel, dit type en de
+// aangemelde grootte. De server controleert vóór het ondertekenen de tenant (in de
+// route) en type/grootte (hier), en na de upload nogmaals de werkelijke metadata
+// (verifyUploadedObject).
 
 async function createSignedUpload({ bucket, productId, mimeType, size, allowed, maxBytes, tooLargeMessage, typeMessage }) {
   const extension = allowed[mimeType];
   if (!extension) {
     throw new HttpError(400, typeMessage);
   }
-  if (!Number.isFinite(size) || size <= 0 || size > maxBytes) {
+  if (!Number.isInteger(size) || size <= 0 || size > maxBytes) {
     throw new HttpError(400, tooLargeMessage);
   }
   const objectName = newObjectName(productId, extension);
   try {
-    const { url, fields } = await createPresignedPost(getClient(), {
-      Bucket: bucket,
-      Key: objectName,
-      Conditions: [
-        ["content-length-range", 1, maxBytes],
-        ["eq", "$Content-Type", mimeType]
-      ],
-      Fields: { "Content-Type": mimeType },
-      Expires: SIGNED_UPLOAD_SECONDS
-    });
-    return { objectName, uploadUrl: url, method: "POST", fields };
+    const uploadUrl = await getSignedUrl(
+      getClient(),
+      new PutObjectCommand({ Bucket: bucket, Key: objectName, ContentType: mimeType, ContentLength: size }),
+      { expiresIn: SIGNED_UPLOAD_SECONDS, signableHeaders: new Set(["content-type", "content-length"]) }
+    );
+    return { objectName, uploadUrl, method: "PUT", headers: { "Content-Type": mimeType } };
   } catch (error) {
     throw storageError("een upload-URL aanmaken", bucket, error);
   }

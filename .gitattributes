@@ -1,0 +1,7 @@
+# Scripts en configuratie voor de Linux-server altijd met LF-regeleinden, ook als ze
+# op Windows worden bewerkt (anders faalt bash op "\r").
+*.sh text eol=lf
+deploy/Caddyfile text eol=lf
+deploy/compose.yaml text eol=lf
+deploy/.env.example text eol=lf
+Dockerfile text eol=lf

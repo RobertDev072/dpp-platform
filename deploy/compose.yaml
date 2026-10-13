@@ -1,0 +1,88 @@
+# VeriPasso op één Linux-server (bijv. STRATO VPS Linux M): app + PostgreSQL + Caddy.
+# Zie docs/hosting-strato.md. Starten (in deze map, met een ingevulde .env):
+#
+#   docker compose up -d --build
+#
+#   bezoeker ─> (Cloudflare) ─> Caddy :443 (HTTPS, Let's Encrypt) ─> app :3000 ─> db :5432
+#
+# Alleen Caddy is van buitenaf bereikbaar (poort 80/443). App en database praten via
+# het interne netwerk; de database heeft geen poort naar buiten. Caddy zit in het
+# profiel "web" (COMPOSE_PROFILES=web in .env); zonder dat profiel draaien alleen app en
+# database (gebruikt door de CI-rooktest).
+
+name: veripasso
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: veripasso
+      POSTGRES_USER: veripasso
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD in deploy/.env}
+    # Afgestemd op een server met 4 GB geheugen (app en Caddy draaien ernaast).
+    command: >-
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c max_connections=50
+      -c shared_preload_libraries=pg_stat_statements
+      -c idle_in_transaction_session_timeout=300000
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veripasso -d veripasso"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: ..
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: veripasso-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://veripasso:${POSTGRES_PASSWORD}@db:5432/veripasso
+      DATABASE_SSL: disable
+      # Eén proxy (Caddy) vóór de app; het echte IP komt uit X-Forwarded-For.
+      TRUST_PROXY_HOPS: "1"
+      # De paspoortpagina leest de API via loopback, niet via het internet.
+      INTERNAL_API_ORIGIN: http://127.0.0.1:3000
+      HOSTING_LABEL: Linux-server (Docker)
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["web"]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      # Verplicht voor Caddy (zie deploy/.env.example); hier niet afgedwongen, omdat
+      # Compose dat ook zou eisen als Caddy niet meestart (CI-rooktest).
+      DOMAINS: ${DOMAINS:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

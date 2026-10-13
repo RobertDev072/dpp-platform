@@ -1,0 +1,10 @@
+# Caddy: HTTPS (automatisch Let's Encrypt) en doorsturen naar de app.
+# Domeinen komen uit DOMAINS in deploy/.env (kommagescheiden).
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAINS} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

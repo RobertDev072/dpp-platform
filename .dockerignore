@@ -1,0 +1,15 @@
+node_modules
+.next
+.localdb
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+deploy/.env
+edge
+docs
+tests
+*.dump
+*.dump.gpg

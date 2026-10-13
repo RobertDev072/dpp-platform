@@ -42,27 +42,28 @@ function fakeClient({ head } = {}) {
   return { client, calls };
 }
 
-function decodePolicy(fields) {
-  return JSON.parse(Buffer.from(fields.Policy, "base64").toString("utf8"));
-}
-
-test("S3: presigned POST dwingt sleutel, Content-Type, maximale grootte en verloop af", async () => {
+test("S3: presigned PUT ondertekent sleutel, Content-Type, exacte grootte en verloop", async () => {
   storage.setS3ClientForTests(fakeClient().client);
   const upload = await storage.createDocumentUpload({ productId: 42, mimeType: "application/pdf", size: 1234 });
 
-  assert.equal(upload.method, "POST");
+  assert.equal(upload.method, "PUT");
   assert.match(upload.objectName, /^products\/42\/[0-9a-f-]{36}\.pdf$/);
-  assert.ok(upload.uploadUrl.includes("test-documents-bucket"));
-  assert.equal(upload.fields.key, upload.objectName);
-  assert.equal(upload.fields["Content-Type"], "application/pdf");
+  assert.deepEqual(upload.headers, { "Content-Type": "application/pdf" });
 
-  const policy = decodePolicy(upload.fields);
-  const conditions = JSON.stringify(policy.conditions);
-  assert.ok(conditions.includes('["content-length-range",1,10485760]'), "max. 10 MB in de policy");
-  assert.ok(conditions.includes('["eq","$Content-Type","application/pdf"]'), "exact dit type");
-  assert.ok(conditions.includes(`{"key":"${upload.objectName}"}`), "exact deze sleutel");
-  const expiresInMs = new Date(policy.expiration).getTime() - Date.now();
-  assert.ok(expiresInMs > 0 && expiresInMs <= 300 * 1000 + 5000, "policy verloopt binnen 5 minuten");
+  const url = new URL(upload.uploadUrl);
+  assert.ok(upload.uploadUrl.includes("test-documents-bucket"));
+  assert.ok(url.pathname.endsWith(`/${upload.objectName}`), "exact deze sleutel");
+  assert.equal(url.searchParams.get("X-Amz-Expires"), "300", "verloopt binnen 5 minuten");
+  const signed = url.searchParams.get("X-Amz-SignedHeaders").split(";");
+  assert.ok(signed.includes("content-type"), "type zit in de handtekening");
+  assert.ok(signed.includes("content-length"), "grootte zit in de handtekening");
+  assert.ok(url.searchParams.get("X-Amz-Signature"));
+});
+
+test("S3: grootte moet een geheel aantal bytes zijn", async () => {
+  storage.setS3ClientForTests(fakeClient().client);
+  await assert.rejects(storage.createDocumentUpload({ productId: 1, mimeType: "application/pdf", size: 10.5 }), /te groot/);
+  await assert.rejects(storage.createDocumentUpload({ productId: 1, mimeType: "application/pdf", size: "100" }), /te groot/);
 });
 
 test("S3: verkeerd type of te groot bestand krijgt geen upload-URL", async () => {
