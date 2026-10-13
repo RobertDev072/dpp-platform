@@ -18,7 +18,7 @@ Domeinen (DNS bij Cloudflare):
 | https://app.veripasso.com | de SaaS-applicatie (inloggen, dashboards, beheer) |
 | https://qr.veripasso.com | QR-scans en publieke productpaspoorten (permanent: staat op elke gedrukte code) |
 
-Infrastructuur en beheer: **[docs/hosting-strato.md](docs/hosting-strato.md)** (live op een
+Infrastructuur en beheer: **[docs/hosting-strato.md](docs/hosting-strato.md)**, bij storingen **[docs/noodplan.md](docs/noodplan.md)** (live op een
 STRATO-server sinds 2026-10-13). Verder: [compliance-matrix](docs/compliance/requirements-matrix.md),
 [Cloudflare vóór qr.veripasso.com](docs/cloudflare.md) (paspoortcache en gebundelde scans).
 
@@ -265,8 +265,9 @@ docs/                     cloudflare, compliance-matrix, verificatie
 - [ ] AWS-account 707191185248 opruimen: back-up maken en de omgeving afbreken met de CDK-
       code uit de tag `aws-laatste-versie` (of het account sluiten).
 - [x] STRATO-server ingericht, R2 en back-ups actief, restore getest (2026-10-13).
-- [ ] Platform Owner: MFA koppelen; back-up-wachtzin in de wachtwoordmanager.
-- [ ] Externe uptime-check en aanvullende servermonitoring (docs/hosting-strato.md, "Nog open").
+- [x] Platform Owner: MFA gekoppeld; back-up-wachtzin in de wachtwoordmanager.
+- [x] Capaciteitsmonitoring (schijf, geheugen, back-up, certificaten, R2) en noodplan (docs/noodplan.md).
+- [ ] Externe monitor (UptimeRobot) op /api/health en /api/health/capacity.
 - [ ] Loadtest.
 
 ### Product / later

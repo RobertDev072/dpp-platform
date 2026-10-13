@@ -1,6 +1,6 @@
 # Infrastructuur VeriPasso (STRATO VPS)
 
-Stand: 2026-10-13 — **live**. Eén Linux-server met Docker; bestanden en back-ups in
+Stand: 2026-10-13 — **live**. Bij storingen: [noodplan.md](noodplan.md). Eén Linux-server met Docker; bestanden en back-ups in
 Cloudflare R2; DNS bij Cloudflare. Configuratie in [`deploy/`](../deploy/). Er staan
 geen geheimen in dit document.
 
@@ -21,7 +21,7 @@ back-up ─ elke nacht 03:15, versleuteld ──────> Cloudflare R2 (EU)
 | Database | PostgreSQL 17 in Docker | alleen bereikbaar op het interne Docker-netwerk; migraties draaien bij elke start |
 | Bestanden | Cloudflare R2, jurisdictie EU: `veripasso-images`, `veripasso-documents` | privé; CORS alleen `https://app.veripasso.com`; de server heeft een eigen sleutel die alleen bij de VeriPasso-buckets kan |
 | Back-ups | `deploy/backup.sh` via cron (03:15) | `pg_dump`, AES-256 versleuteld, 7 dagen op de server (`/var/backups/veripasso`) + kopie naar R2 `veripasso-backups/db`. Terugzetten getest op 2026-10-13. |
-| Monitoring | in de app: `/admin/systeemstatus` (Platform Owner) | database, opslag, fouten, snelheid, groei |
+| Monitoring | in de app: `/admin/systeemstatus` (Platform Owner) | database, opslag, fouten, snelheid, groei; **capaciteit**: schijf, geheugen, laatste back-up, certificaten, R2 t.o.v. gratis 10 GB. Extern te bewaken via `/api/health/capacity` (503 bij een waarschuwing). |
 
 ## Domeinen (Cloudflare DNS, alle "DNS only")
 
@@ -80,8 +80,7 @@ opslag, geen kosten voor dataverkeer).
 
 ## Nog open
 
-- Externe uptime-check (bijv. UptimeRobot op `https://app.veripasso.com/api/health`).
-- Monitoring aanvullen: schijf/geheugen van de server, leeftijd laatste back-up, geldigheid certificaten.
+- Externe monitor instellen (bijv. UptimeRobot) op `/api/health` en `/api/health/capacity`.
 - Cloudflare vóór `qr.veripasso.com` (paspoortcache + gebundelde scans): klaar in de code, nog niet actief — zie [cloudflare.md](cloudflare.md).
 - Eén server = geen automatische uitwijk bij een storing; herstel via de back-ups op R2.
 - Infrastructuurbewijs voor de compliance-matrix opnieuw vastleggen (TLS, back-up/restore).
