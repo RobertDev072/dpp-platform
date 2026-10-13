@@ -18,7 +18,8 @@ Domeinen (DNS bij Cloudflare):
 | https://app.veripasso.com | de SaaS-applicatie (inloggen, dashboards, beheer) |
 | https://qr.veripasso.com | QR-scans en publieke productpaspoorten (permanent: staat op elke gedrukte code) |
 
-Verder: [compliance-matrix](docs/compliance/requirements-matrix.md),
+Infrastructuur en beheer: **[docs/hosting-strato.md](docs/hosting-strato.md)** (live op een
+STRATO-server sinds 2026-10-13). Verder: [compliance-matrix](docs/compliance/requirements-matrix.md),
 [Cloudflare vóór qr.veripasso.com](docs/cloudflare.md) (paspoortcache en gebundelde scans).
 
 ---
@@ -180,9 +181,10 @@ root-CA-bestand (`scripts/export-zscaler-ca.ps1`).
 
 ## 7. Hosting: één Linux-server (STRATO VPS Linux M)
 
-De app draait in Docker op één Linux-server: app + PostgreSQL 17 + Caddy (HTTPS),
-zie [`deploy/`](deploy/) en het stappenplan **[docs/hosting-strato.md](docs/hosting-strato.md)**.
-Bestanden optioneel in Cloudflare R2, back-ups elke nacht versleuteld naar R2.
+**Live** sinds 2026-10-13. De app draait in Docker op één Linux-server: app +
+PostgreSQL 17 + Caddy (HTTPS, Let's Encrypt), zie [`deploy/`](deploy/). Bestanden in
+Cloudflare R2 (EU), back-ups elke nacht versleuteld naar R2, DNS bij Cloudflare. Alles over
+de server, geheimen, beheer en herstel: **[docs/hosting-strato.md](docs/hosting-strato.md)**.
 
 - **Uitrollen**: `deploy/update.sh` op de server (code ophalen, image bouwen, herstarten;
   migraties draaien automatisch bij het starten).
@@ -262,13 +264,13 @@ docs/                     cloudflare, compliance-matrix, verificatie
 ### Beheer
 - [ ] AWS-account 707191185248 opruimen: back-up maken en de omgeving afbreken met de CDK-
       code uit de tag `aws-laatste-versie` (of het account sluiten).
-- [ ] STRATO-server inrichten (docs/hosting-strato.md); daarna restore-test van de
-      database en een loadtest.
-- [ ] Platform Owner: MFA koppelen.
+- [x] STRATO-server ingericht, R2 en back-ups actief, restore getest (2026-10-13).
+- [ ] Platform Owner: MFA koppelen; back-up-wachtzin in de wachtwoordmanager.
+- [ ] Externe uptime-check en aanvullende servermonitoring (docs/hosting-strato.md, "Nog open").
+- [ ] Loadtest.
 
 ### Product / later
 - [ ] Item-niveau-paspoorten (serienummers) als de productgroep dat vereist.
-- [ ] Bestandsopslag kiezen (bijv. Cloudflare R2) zodat uploads weer aan kunnen.
 - [ ] Content-Security-Policy; aparte database-applicatierol met minimale rechten.
 - [ ] Scan-aggregatie per dag + bewaartermijn voor ruwe scans (na besluit over bewaren).
 - [ ] E-mailverzending voor uitnodigingen/wachtwoordherstel (eerst overleg).

@@ -1,9 +1,11 @@
 # Cloudflare vóór qr.veripasso.com
 
 Doel: Cloudflare handelt het grootste deel van de openbare QR-bezoeken af, zodat de
-hosting niet bij elke scan opnieuw werk doet. Alleen het QR-domein loopt via Cloudflare
-(gratis plan); de hosting zelf is nog niet gekozen. Zolang er geen hosting is, staat
-`qr` in Cloudflare-DNS op **DNS only** en is deze opzet niet actief.
+server niet bij elke scan opnieuw werk doet. **Stand 2026-10-13: nog niet actief.** De
+hosting draait op de STRATO-server ([hosting-strato.md](hosting-strato.md)); `qr` staat in
+Cloudflare-DNS op **DNS only**. Aanzetten volgens de stappen hieronder; op deze server is
+`SYNC_URL` `https://app.veripasso.com/api/edge/sync`, `EDGE_SYNC_TOKEN` komt in
+`deploy/.env`, en "Always Use HTTPS" moet voor qr **uit** (Caddy heeft poort 80 nodig).
 
 ```
 bezoeker ──> Cloudflare (cache, Worker) ──> hosting (Next.js + API) ──> PostgreSQL
