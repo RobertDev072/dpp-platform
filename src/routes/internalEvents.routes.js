@@ -81,10 +81,14 @@ router.post("/", async (req, res, next) => {
     logger.info("internal_task", { task, durationMs: Date.now() - started });
     res.json({ ok: true, task, result });
   } catch (error) {
-    if (!(error instanceof HttpError)) {
-      logger.error("internal_task_failed", { errorMessage: error.message });
+    if (error instanceof HttpError) {
+      next(error);
+      return;
     }
-    next(error);
+    // Alleen via een directe aanroep met IAM-rechten bereikbaar (zie boven), dus de
+    // foutmelding mag terug naar de aanroeper (de uitrol-workflow toont hem).
+    logger.error("internal_task_failed", { errorMessage: error.message });
+    res.status(500).json({ ok: false, task: req.body?.task || null, result: null, error: error.message });
   }
 });
 

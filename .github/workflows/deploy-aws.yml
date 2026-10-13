@@ -126,9 +126,17 @@ jobs:
           aws lambda invoke --function-name "$FN" --cli-binary-format raw-in-base64-out --cli-read-timeout 900 \
             --payload file://payload.json out.json --query 'FunctionError' --output text | grep -qv Unhandled
           rm -f payload.json
-          # Alleen de taaknaam en het resultaat tonen (nooit de payload: die kan een wachtwoord bevatten).
-          jq -c '{ok, task, result, error}' out.json 2>/dev/null || cat out.json
-          jq -e '.ok == true' out.json >/dev/null
+          # De functie antwoordt in streaming-modus: eerst een JSON-prelude (statuscode,
+          # headers), dan 8 nul-bytes, dan de body. Alleen de body (laatste JSON-waarde) telt.
+          tr -d '\000' < out.json > out.clean
+          if BODY=$(jq -cs '.[-1]' out.clean 2>/dev/null); then
+            # Alleen de taaknaam en het resultaat tonen (nooit de payload: die kan een wachtwoord bevatten).
+            echo "$BODY" | jq -c '{ok, task, result, error}'
+            echo "$BODY" | jq -e '.ok == true' >/dev/null
+          else
+            cat out.clean; echo
+            exit 1
+          fi
           EOF
           chmod +x run-task.sh
 
