@@ -64,7 +64,7 @@ async function deleteProductChildren(pool, productIds) {
 
 // Paspoortversies zijn append-only (database-trigger). Alleen in een testdatabase
 // op te ruimen: als superuser met session_replication_role=replica, wat triggers
-// voor deze ene transactie uitschakelt. Op RDS heeft de app die rechten niet.
+// voor deze ene transactie uitschakelt. In productie heeft de app die rechten niet.
 async function deletePassportVersions(pool, where) {
   const client = await pool.connect();
   try {

@@ -1,6 +1,5 @@
-// Gestructureerde logging: één JSON-regel per gebeurtenis op stdout/stderr. Op AWS
-// komen die via de awslogs-driver van ECS in CloudWatch Logs terecht, waar ze met
-// Logs Insights op velden doorzoekbaar zijn. Lokaal (development) leesbare tekst.
+// Gestructureerde logging: één JSON-regel per gebeurtenis op stdout/stderr. Een
+// hosting met logverzameling kan ze zo op velden doorzoeken. Lokaal (development) leesbare tekst.
 //
 // Nooit loggen: wachtwoorden, sessietokens, presigned URL's, cookies, request-bodies
 // of volledige documenten. Velden met zo'n naam worden hier altijd gemaskeerd, als

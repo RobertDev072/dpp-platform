@@ -35,7 +35,7 @@ import {
 const CHART_BLUE = "#2a78d6";
 const CHART_ORANGE = "#eb6834";
 
-// Geheugenbudget van de container (ECS-taakdefinitie, CONTAINER_MEMORY_MB); zonder
+// Geheugenbudget van de container (CONTAINER_MEMORY_MB); zonder
 // die waarde (lokaal) indicatief 2 GB.
 const DEFAULT_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -423,19 +423,18 @@ function ConfigStatusCards({ status }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">Database (PostgreSQL / RDS)</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Database (PostgreSQL)</h3>
             <ConfigSectionBadge ok={database.configured} okLabel="Geconfigureerd" notOkLabel="Niet geconfigureerd" />
           </div>
           <div className="divide-y divide-slate-100">
             <StatusRow label="Host" ok={database.configured} value={database.host || (database.configured ? "via DATABASE_URL" : null)} />
-            <StatusRow label="Wachtwoord uit Secrets Manager" ok={database.passwordFromSecretsManager} />
             <StatusRow label="TLS met certificaatcontrole (CA-bundel)" ok={database.tlsCaConfigured} />
           </div>
         </Card>
 
         <Card>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">Bestandsopslag (Amazon S3)</h3>
+            <h3 className="text-sm font-semibold text-slate-900">Bestandsopslag (S3-compatibel)</h3>
             <ConfigSectionBadge ok={storage.configured} okLabel="Geconfigureerd" notOkLabel="Niet geconfigureerd" />
           </div>
           <div className="divide-y divide-slate-100">
@@ -443,7 +442,7 @@ function ConfigStatusCards({ status }) {
             <StatusRow label="Bucket productfoto's" ok={Boolean(storage.imagesBucket)} value={storage.imagesBucket} />
             <StatusRow label="Bucket documenten" ok={Boolean(storage.documentsBucket)} value={storage.documentsBucket} />
           </div>
-          <p className="mt-3 text-xs text-slate-400">Toegang via de IAM-rol van de ECS-taak; er staan geen toegangssleutels in de configuratie.</p>
+          <p className="mt-3 text-xs text-slate-400">Zonder ingestelde opslag staan uploads van foto&apos;s en documenten uit.</p>
         </Card>
       </div>
 
@@ -1319,8 +1318,8 @@ export default function SysteemstatusPage() {
         </SectionBody>
       </Section>
 
-      {/* 8. Opslag (Amazon S3) */}
-      <Section title="Opslag (Amazon S3)">
+      {/* 8. Opslag (S3-compatibel) */}
+      <Section title="Opslag (bestanden)">
         <SectionBody state={storage} skeletonClass="h-48">
           {(data) => {
             const blob = data.blob;
@@ -1855,7 +1854,7 @@ export default function SysteemstatusPage() {
       {/* 15. Configuratie (bestaande config-status-kaarten) */}
       <Section title="Configuratie">
         <p className="-mt-1 text-sm text-slate-500">
-          Configuratie van deze omgeving: database (RDS), bestandsopslag (S3) en basis-URL&apos;s. Geheimen worden
+          Configuratie van deze omgeving: database, bestandsopslag en basis-URL&apos;s. Geheimen worden
           nooit getoond, alleen of ze aanwezig zijn.
         </p>
         <SectionBody state={config} skeletonClass="h-40">

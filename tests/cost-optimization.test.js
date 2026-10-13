@@ -1,14 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-// Kostenbesparing (hosting op Lambda, caching via CloudFront): miniatuurfoto's, het
-// cachebare bedrijfslogo, foto's via het CDN-pad, interne taken en de afscherming van
-// de Function URL. Alles zonder AWS: S3 via een nep-client.
-process.env.AWS_REGION = "eu-west-1";
+// Lichte publieke paspoorten: miniatuurfoto's, het cachebare bedrijfslogo en de
+// foto-URL. Zonder echte opslag: S3-compatibele opslag via een nep-client.
+process.env.S3_ENDPOINT = "https://s3.test.invalid";
+process.env.S3_REGION = "auto";
 process.env.S3_IMAGES_BUCKET = "test-images-bucket";
 process.env.S3_DOCUMENTS_BUCKET = "test-documents-bucket";
-process.env.AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE";
-process.env.AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+process.env.S3_ACCESS_KEY_ID = "test-access-key";
+process.env.S3_SECRET_ACCESS_KEY = "test-secret-key";
 
 const sharp = require("sharp");
 const { S3Client } = require("@aws-sdk/client-s3");
@@ -18,7 +18,11 @@ const { startTestServer, stopTestServer, request } = require("./helpers/testServ
 const { createTestCompany, createTestUser, createTestProduct, cleanupTestData } = require("./helpers/fixtures");
 
 function fakeClient() {
-  const client = new S3Client({ region: "eu-west-1" });
+  const client = new S3Client({
+    region: "auto",
+    endpoint: process.env.S3_ENDPOINT,
+    credentials: { accessKeyId: "test-access-key", secretAccessKey: "test-secret-key" }
+  });
   const calls = [];
   client.send = async (command) => {
     calls.push(command);
@@ -76,11 +80,8 @@ test("Publiek paspoort: logo als cachebare afbeelding, foto via CDN-pad, interne
   const product = await createTestProduct({ companyId: company, name: "Kosten Product" });
   const productBare = await createTestProduct({ companyId: bare, name: "Zonder Logo" });
   const pool = await getPool();
-  const savedEnv = { cdn: process.env.PUBLIC_MEDIA_FROM_CDN, internal: process.env.INTERNAL_EVENTS_ENABLED };
 
   t.after(async () => {
-    process.env.PUBLIC_MEDIA_FROM_CDN = savedEnv.cdn ?? "";
-    process.env.INTERNAL_EVENTS_ENABLED = savedEnv.internal ?? "";
     await cleanupTestData({ companyIds: [company, bare], userIds: [admin.id, adminBare.id], productIds: [product, productBare] });
     await stopTestServer(server);
     await sql.close();
@@ -112,78 +113,20 @@ test("Publiek paspoort: logo als cachebare afbeelding, foto via CDN-pad, interne
     assert.equal((await fetch(`${baseUrl}/api/public/products/0f8fad5b-d9cb-469f-a165-70867728950e/logo`)).status, 404);
   });
 
-  await t.test("foto: miniatuur via het CDN-pad als dat aan staat, anders via de API-route", async () => {
+  await t.test("foto: via de API-route (die doorverwijst naar een kortlevende link)", async () => {
     await pool.query("UPDATE dbo.products SET photo_blob_name = $1, photo_thumb_blob_name = $2 WHERE id = $3", [
       `products/${product}/foto.jpg`,
       `products/${product}/foto.jpg.w800.webp`,
       product
     ]);
-
-    process.env.PUBLIC_MEDIA_FROM_CDN = "";
     let view = await request(baseUrl, "GET", `/api/public/products/${publicId}`);
     assert.equal(view.data.photoUrl, `/api/public/products/${publicId}/photo`);
-
-    process.env.PUBLIC_MEDIA_FROM_CDN = "true";
-    view = await request(baseUrl, "GET", `/api/public/products/${publicId}`);
-    assert.equal(view.data.photoUrl, `/products/${product}/foto.jpg.w800.webp`);
-
-    // Zonder miniatuur (oude foto's): het origineel via hetzelfde CDN-pad.
-    await pool.query("UPDATE dbo.products SET photo_thumb_blob_name = NULL WHERE id = $1", [product]);
-    view = await request(baseUrl, "GET", `/api/public/products/${publicId}`);
-    assert.equal(view.data.photoUrl, `/products/${product}/foto.jpg`);
 
     view = await request(baseUrl, "GET", `/api/public/products/${publicIdBare}`);
     assert.equal(view.data.photoUrl, null, "geen foto, geen URL");
   });
 
-  await t.test("interne taken: uit buiten Lambda, en nooit via een HTTP-verzoek van buiten", async () => {
-    process.env.INTERNAL_EVENTS_ENABLED = "";
+  await t.test("geen interne takenroute meer", async () => {
     assert.equal((await request(baseUrl, "POST", "/api/internal/events", { body: { task: "migrate" } })).status, 404);
-
-    process.env.INTERNAL_EVENTS_ENABLED = "true";
-    const viaUrl = await fetch(`${baseUrl}/api/internal/events`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-amzn-request-context": "{}" },
-      body: JSON.stringify({ task: "migrate" })
-    });
-    assert.equal(viaUrl.status, 404, "verzoek via de Function URL wordt geweigerd");
-
-    // Directe aanroep (uitrol-workflow, EventBridge): de adapter zet de header op "null".
-    const direct = await fetch(`${baseUrl}/api/internal/events`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-amzn-request-context": "null" },
-      body: JSON.stringify({ task: "migrate" })
-    });
-    assert.equal(direct.status, 200, "directe Lambda-aanroep wordt doorgelaten");
-
-    assert.equal((await request(baseUrl, "POST", "/api/internal/events", { body: { task: "onbekend" } })).status, 400);
-
-    const migrate = await request(baseUrl, "POST", "/api/internal/events", { body: { task: "migrate" } });
-    assert.equal(migrate.status, 200);
-    assert.equal(migrate.data.task, "migrate");
-    assert.equal(migrate.data.result.applied.length, 0, "testdatabase is al bijgewerkt");
   });
-});
-
-test("Function URL: zonder juiste X-Origin-Verify geeft de proxy 403, via CloudFront mag het", async () => {
-  const { proxy } = await import("../proxy.js");
-  const saved = process.env.ORIGIN_VERIFY_SECRET;
-  try {
-    process.env.ORIGIN_VERIFY_SECRET = "geheim-van-test";
-    const lambda = (headers) => new Request("https://abc.lambda-url.eu-west-1.on.aws/p/1", { headers: { "x-amzn-request-context": "{}", ...headers } });
-
-    assert.equal(proxy(lambda({})).status, 403, "rechtstreeks naar de Function URL");
-    assert.equal(proxy(lambda({ "x-origin-verify": "fout" })).status, 403);
-    assert.notEqual(proxy(lambda({ "x-origin-verify": "geheim-van-test" })).status, 403, "via CloudFront");
-    assert.notEqual(proxy(new Request("http://localhost:3000/p/1")).status, 403, "lokaal (geen Lambda) ongemoeid");
-    const direct = new Request("http://127.0.0.1:3000/api/internal/events", { method: "POST", headers: { "x-amzn-request-context": "null" } });
-    assert.notEqual(proxy(direct).status, 403, "directe Lambda-aanroep (migraties) ongemoeid");
-    assert.equal(proxy(lambda({ "x-amzn-request-context": "kapot{" })).status, 403, "onbekende vorm: behandelen als van buiten");
-
-    delete process.env.ORIGIN_VERIFY_SECRET;
-    assert.notEqual(proxy(lambda({})).status, 403, "zonder geheim (lokaal/CI) geen controle");
-  } finally {
-    if (saved === undefined) delete process.env.ORIGIN_VERIFY_SECRET;
-    else process.env.ORIGIN_VERIFY_SECRET = saved;
-  }
 });

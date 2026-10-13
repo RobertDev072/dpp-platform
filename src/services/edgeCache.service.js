@@ -1,6 +1,6 @@
 // Cloudflare vóór het QR-domein: de publieke paspoortpagina's (/p/:publicId) worden aan
 // de Cloudflare-rand gecachet. Na een wijziging of intrekking moet die cache ververst
-// worden. De app (Lambda zonder internettoegang) kan Cloudflare niet zelf aanroepen;
+// worden. De app roept Cloudflare niet zelf aan (geen API-sleutel nodig op de server);
 // daarom zet de app de public_id in een wachtrij (dbo.edgecachepurges) en haalt de
 // Cloudflare Worker de wachtrij elke minuut op via POST /api/edge/sync (zie
 // src/routes/edgeSync.routes.js en edge/cloudflare/).

@@ -1,25 +1,31 @@
-// Bestandsopslag op Amazon S3: twee privé-buckets (productfoto's en productdocumenten),
-// aangemaakt door de infrastructuurcode in infra/ met Block Public Access, versioning
-// en encryptie. De app krijgt toegang via de IAM-rol van de ECS-taak; er staan nooit
-// toegangssleutels in de code of in env-vars op AWS. De browser krijgt alleen
-// kortlevende presigned URL's voor precies één object.
+// Bestandsopslag via het S3-protocol: twee privé-buckets (productfoto's en
+// productdocumenten). Werkt met elke S3-compatibele opslag, bijvoorbeeld lokaal MinIO
+// of later Cloudflare R2. De browser krijgt alleen kortlevende presigned URL's voor
+// precies één object.
 //
-// S3_ENDPOINT/S3_FORCE_PATH_STYLE zijn alleen bedoeld voor lokaal ontwikkelen tegen een
-// S3-compatibele opslag (bijv. MinIO) en voor het eenmalig kopiëren van bestaande
-// bestanden; op AWS leeg laten.
+// Niet ingesteld (lokaal ontwikkelen zonder opslag): uploads van foto's en documenten
+// geven een duidelijke melding (503); de rest van de app werkt gewoon.
+//
+//   S3_ENDPOINT            bijv. http://127.0.0.1:9000 (MinIO) of https://<account>.r2.cloudflarestorage.com
+//   S3_REGION              regio van de opslag; voor R2 "auto" (standaard)
+//   S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY
+//   S3_IMAGES_BUCKET / S3_DOCUMENTS_BUCKET
+//   S3_FORCE_PATH_STYLE    true voor MinIO
 function readConfig() {
   return {
-    region: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || null,
+    region: process.env.S3_REGION || "auto",
     imagesBucket: process.env.S3_IMAGES_BUCKET || null,
     documentsBucket: process.env.S3_DOCUMENTS_BUCKET || null,
     endpoint: process.env.S3_ENDPOINT || null,
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || null,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || null,
     forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true"
   };
 }
 
 function isStorageConfigured() {
   const config = readConfig();
-  return Boolean(config.region && config.imagesBucket && config.documentsBucket);
+  return Boolean(config.endpoint && config.imagesBucket && config.documentsBucket);
 }
 
 // Voor het config-diagnose-endpoint: alleen niet-geheime waarden.

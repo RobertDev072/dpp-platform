@@ -387,16 +387,14 @@ router.get("/errors", async (req, res, next) => {
 
 router.get("/infra", async (req, res, next) => {
   try {
-    // Deployment-info: GIT_SHA wordt bij het bouwen van het Docker-image ingebakken,
-    // APP_ENV/AWS_REGION zet de ECS-taakdefinitie (zie infra/).
-    const onEcs = Boolean(process.env.ECS_CONTAINER_METADATA_URI_V4);
+    // Deployment-info: GIT_SHA en APP_ENV zet de hosting bij het bouwen/uitrollen.
     const buildInfo = process.env.GIT_SHA
       ? {
           commit: process.env.GIT_SHA.slice(0, 7),
           commitMessage: null,
           deploymentUrl: process.env.APP_BASE_URL || null,
           environment: process.env.APP_ENV || null,
-          region: process.env.AWS_REGION || null
+          region: null
         }
       : null;
 
@@ -406,7 +404,7 @@ router.get("/infra", async (req, res, next) => {
     res.json({
       environment: process.env.NODE_ENV || "development",
       nodeVersion: process.version,
-      hosting: onEcs ? "AWS ECS Fargate" : "lokaal",
+      hosting: process.env.HOSTING_LABEL || "lokaal",
       appService: process.env.APP_BASE_URL || null,
       containerMemoryMb: Number(process.env.CONTAINER_MEMORY_MB) || null,
       processUptimeSeconds: Math.floor(process.uptime()),

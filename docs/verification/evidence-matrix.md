@@ -10,7 +10,7 @@ bevestigd. Dit document vervangt geen certificering; de compliance-eisen staan i
 | Bron | Inhoud | Resultaat |
 |---|---|---|
 | [`testrun-2026-10-12.txt`](testrun-2026-10-12.txt) | volledige automatische testsuite (`npm test`) tegen een echte PostgreSQL 17 | **163 tests: 160 geslaagd, 0 gefaald, 3 overgeslagen** (live-S3, alleen met opt-in) |
-| [`infra-tests-2026-10-12.txt`](infra-tests-2026-10-12.txt) | controles op de gegenereerde AWS-infrastructuur | 12 tests: 11 geslaagd, 0 gefaald, 1 overgeslagen (back-upplan staat bewust uit) |
+| `infra-tests-2026-10-12.txt` (verwijderd met de AWS-code; zie git-tag `aws-laatste-versie`) | controles op de gegenereerde AWS-infrastructuur | 12 tests: 11 geslaagd, 0 gefaald, 1 overgeslagen (back-upplan staat bewust uit) |
 | [`live-check-2026-10-12.txt`](live-check-2026-10-12.txt) | alleen-lezen controle van de productieomgeving (domeinen, TLS, headers, toegang) | alles zoals verwacht |
 | Importrun met de testbestanden van de eigenaar | `veripasso_testproducten_50.csv` en `…_importfix.csv` door de echte importflow | zie §2.6 |
 | GitHub Actions "CI" | dezelfde suite op PostgreSQL 17 + build + Docker-build bij elke push | groen op `main` |
@@ -42,7 +42,7 @@ bevestigd. Dit document vervangt geen certificering; de compliance-eisen staan i
 | Printinstellingen | ✅ | `ux-workflows`: profielen per bedrijf, alleen beheerder, leesbaarheidscontrole blokkeert, labels-PDF, tenant-isolatie | 👤 previews en printer in de browser bekijken |
 | Versie-archief en DPP-compliance | ✅ | R-ARCH-01..06, R-EXCH, R-PERS, R-REPL → `passport-compliance` | zie compliance-matrix (certificeerder) |
 | Beveiliging en platform | ✅ | `platform-ops` (logging, health, 4xx, rate limit), `system-monitoring`; live: TLS 1.1 geweigerd, headers aanwezig, beheer-API zonder login 401 | — |
-| Infrastructuur | ✅ | infra-tests (S3 privé + Intelligent-Tiering, RDS versleuteld/niet publiek, TLS, app op Lambda alleen via CloudFront, geheimen via Secrets Manager, caching, IAM, WAF, budget, domeinrouter); `cost-optimization` (WebP-miniatuur, cachebaar logo, foto via CDN-pad, interne taken afgeschermd, origin-controle); live-check (vorige ECS-opzet) | restore-test en loadtest (runbook) |
+| Infrastructuur (vroegere AWS-opzet, verwijderd op 2026-10-13) | ✅ | infra-tests (S3 privé + Intelligent-Tiering, RDS versleuteld/niet publiek, TLS, app op Lambda alleen via CloudFront, geheimen via Secrets Manager, caching, IAM, WAF, budget, domeinrouter); `cost-optimization` (WebP-miniatuur, cachebaar logo, foto via CDN-pad, interne taken afgeschermd, origin-controle); live-check (vorige ECS-opzet) | restore-test en loadtest (runbook) |
 
 ---
 

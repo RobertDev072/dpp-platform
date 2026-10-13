@@ -9,14 +9,6 @@ const { HttpError } = require("../middleware/errorHandler");
 
 const router = express.Router();
 
-// Op AWS serveert CloudFront het pad /products/* rechtstreeks uit de (privé) fotobucket,
-// lang gecachet (PUBLIC_MEDIA_FROM_CDN=true). Dan gebruikt de paspoortpagina de kleine
-// WebP-versie via dat pad: geen app-aanroep, geen S3-uitgaand verkeer per weergave.
-function publicPhotoUrl(product) {
-  if (process.env.PUBLIC_MEDIA_FROM_CDN !== "true" || !product.photo_blob_name) return null;
-  const key = product.photo_thumb_blob_name || product.photo_blob_name;
-  return key.startsWith("products/") ? `/${key}` : null;
-}
 router.use(publicApiLimiter);
 
 // Publiek endpoint, geen requireAuth/requireRole: iedereen met de public_id (via de
@@ -37,16 +29,15 @@ router.get("/:publicId", async (req, res, next) => {
     const data = await passport.loadPassportData(product);
     const snapshot = passport.snapshotFromData(product, data);
 
-    // Geen scanregistratie hier: deze data wordt (via de paspoortpagina) door
-    // CloudFront gecachet, dus niet elke scan bereikt deze route. De pagina meldt elke
-    // weergave zelf via POST /:publicId/scan (zie hieronder).
+    // Geen scanregistratie hier: de paspoortpagina kan aan de rand gecachet worden,
+    // dus niet elke scan bereikt deze route. De pagina meldt elke weergave zelf via
+    // POST /api/scan/:publicId (zie hieronder).
     res.set("Cache-Control", "no-store");
     res.json(
       passport.toPublicPageView(snapshot, {
         urlPublicId: req.params.publicId,
         // Logo als losse, lang cachebare afbeelding i.p.v. inline base64 in elke pagina.
-        issuerLogo: data.company?.logo ? `/api/public/products/${req.params.publicId}/logo` : null,
-        photoUrl: publicPhotoUrl(product)
+        issuerLogo: data.company?.logo ? `/api/public/products/${req.params.publicId}/logo` : null
       })
     );
   } catch (error) {
@@ -119,7 +110,7 @@ router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
 });
 
 // Bedrijfslogo van de uitgever (opgeslagen als data-URI) als echte afbeelding, zodat
-// browsers en CloudFront het kunnen cachen.
+// browsers en een CDN het kunnen cachen.
 router.get("/:publicId/logo", async (req, res, next) => {
   try {
     const product = await productsRepo.getProductByPublicId(req.params.publicId);

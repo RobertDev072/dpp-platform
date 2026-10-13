@@ -15,13 +15,13 @@ crons = ["* * * * *"]
 
 [vars]
 QR_HOST = "qr.veripasso.com"
-# Via het app-domein (DNS-only, rechtstreeks naar CloudFront).
-SYNC_URL = "https://app.veripasso.com/api/edge/sync"
+# Adres van de app (nog geen hosting gekozen), bijv. https://app.veripasso.com/api/edge/sync
+SYNC_URL = "VUL_IN"
 # CF_ZONE_ID: zone-ID van veripasso.com (Cloudflare-dashboard, rechterkolom van "Overview").
 CF_ZONE_ID = "VUL_IN"
 
 # Geheimen (niet in dit bestand), eenmalig instellen:
-#   npx wrangler secret put EDGE_SYNC_TOKEN   (waarde uit AWS Secrets Manager: veripasso-production-edge)
+#   npx wrangler secret put EDGE_SYNC_TOKEN   (zelfde waarde als EDGE_SYNC_TOKEN van de app)
 #   npx wrangler secret put CF_API_TOKEN      (Cloudflare API-token met alleen "Zone > Cache Purge")
 
 [[durable_objects.bindings]]

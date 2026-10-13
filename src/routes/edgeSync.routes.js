@@ -12,7 +12,7 @@ const logger = require("../utils/logger");
 // - de Worker levert de scans van de afgelopen minuut aan (gebundeld; de paspoortpagina
 //   meldt elke weergave via een beacon, en de Worker vangt die op);
 // - de app geeft terug welke paspoorten gewijzigd zijn, zodat de Worker die uit de
-//   Cloudflare-cache haalt (de app zelf heeft geen internettoegang). De Worker bevestigt
+//   Cloudflare-cache haalt (zo heeft de app geen Cloudflare-sleutel nodig). De Worker bevestigt
 //   bij de volgende synchronisatie met "ack" wat hij heeft ververst.
 //
 // Alleen actief met EDGE_SYNC_TOKEN; de Worker stuurt hetzelfde token als Bearer.

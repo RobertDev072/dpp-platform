@@ -1,9 +1,8 @@
 // Legt voor alle gepubliceerde/gearchiveerde paspoorten zonder versie een basisversie
 // vast (EN 18221 §4.2) en controleert daarna steekproefsgewijs de hash-keten.
-// Eenmalig na de migratie naar AWS; daarna doet het dagelijkse onderhoud dit zelf.
+// Normaal doet het dagelijkse onderhoud dit zelf.
 //
-//   npm run backfill:versions            (lokaal, tegen DATABASE_URL)
-//   als eenmalige ECS-taak: command ["node", "scripts/backfill-passport-versions.js"]
+//   npm run backfill:versions            (tegen DATABASE_URL)
 const { backfillInitialVersions } = require("../src/services/passportArchive.service");
 const { close } = require("../src/config/db");
 

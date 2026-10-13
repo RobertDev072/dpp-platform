@@ -4,9 +4,8 @@ const { getPool } = require("../config/db");
 
 // PostgreSQL-migraties (db/migrations, oplopend op bestandsnaam). Elke migratie draait
 // in een eigen transactie en wordt op bestandsnaam bijgehouden in dbo.schemamigrations.
-// Gebruikt door scripts/migrate.js (lokaal/CI) en door de interne taak "migrate" op
-// AWS Lambda (src/routes/internalEvents.routes.js). Het pad is relatief aan de
-// werkmap (repo-root lokaal, /app in het image), omdat de app-code gebundeld wordt.
+// Gebruikt door scripts/migrate.js (lokaal/CI). Het pad is relatief aan de werkmap
+// (repo-root), omdat de app-code gebundeld wordt.
 function migrationsDir() {
   return process.env.MIGRATIONS_DIR || path.resolve(process.cwd(), "db", "migrations");
 }

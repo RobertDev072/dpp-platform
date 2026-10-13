@@ -2,7 +2,7 @@
 // met gangbare authenticator-apps. Geen externe dependency: alleen node:crypto.
 //
 // - Het geheim staat AES-256-GCM-versleuteld in de database. Sleutel:
-//   MFA_ENCRYPTION_KEY (op AWS uit Secrets Manager). Lokaal valt die terug op een
+//   MFA_ENCRYPTION_KEY (geheime variabele van de hosting). Lokaal valt die terug op een
 //   van COOKIE_SECRET afgeleide sleutel (HKDF), zodat ontwikkelen zonder extra
 //   configuratie werkt. Let op: wie lokaal COOKIE_SECRET wijzigt zonder
 //   MFA_ENCRYPTION_KEY, maakt bestaande lokale MFA-koppelingen onbruikbaar.

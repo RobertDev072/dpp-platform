@@ -3,16 +3,14 @@ const fs = require("fs");
 const { Pool, types } = require("pg");
 const logger = require("../utils/logger");
 
-// PostgreSQL (op AWS: Amazon RDS for PostgreSQL). Twee manieren van configureren:
-// 1. DATABASE_URL - lokaal en voor scripts (postgres://gebruiker:wachtwoord@host/db).
-// 2. DB_HOST/DB_PORT/DB_NAME/DB_USER + DB_SECRET_ARN - op AWS. Het wachtwoord wordt
-//    dan bij elke nieuwe verbinding (met korte cache) uit AWS Secrets Manager gelezen.
-//    Zo blijft de app werken als RDS het wachtwoord automatisch roteert; er staat
-//    nooit een wachtwoord in een env-var of in de taakdefinitie.
+// PostgreSQL. Twee manieren van configureren:
+// 1. DATABASE_URL (postgres://gebruiker:wachtwoord@host/db) - lokaal en voor scripts;
+// 2. DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD - losse velden, handig bij een host
+//    die het wachtwoord als aparte geheime variabele aanlevert.
 //
-// TLS: naar RDS altijd versleuteld én met certificaatcontrole tegen de CA-bundel van
-// AWS (DATABASE_CA_CERT_FILE, in het Docker-image meegeleverd). Zonder CA-bestand
-// alleen lokaal (localhost) zonder TLS.
+// TLS: naar een externe database altijd versleuteld met certificaatcontrole, eventueel
+// tegen een eigen CA-bundel (DATABASE_CA_CERT_FILE of DATABASE_CA_CERT). Alleen lokaal
+// (localhost) zonder TLS.
 //
 // Typeparsers: Postgres levert COUNT/SUM (int8) en DECIMAL (numeric) als string
 // aan Node - de code en de frontend rekenen overal met getallen, dus die worden
@@ -48,31 +46,9 @@ function buildSslConfig(isLocal) {
   if (ca) return { ca, rejectUnauthorized: true };
   if (isLocal) return false;
   // Expliciete opt-out, alleen bedoeld voor een eenmalig script tegen een externe
-  // database zonder CA-bundel; nooit op AWS (de taakdefinitie zet het CA-bestand).
+  // database zonder CA-bundel; nooit in productie.
   if (process.env.DATABASE_SSL_INSECURE === "true") return { rejectUnauthorized: false };
   return { rejectUnauthorized: true };
-}
-
-// --- wachtwoord uit Secrets Manager -----------------------------------------------
-const SECRET_CACHE_MS = 60 * 1000;
-let secretCache = null;
-
-async function readDatabaseSecret() {
-  if (secretCache && Date.now() - secretCache.at < SECRET_CACHE_MS) {
-    return secretCache.value;
-  }
-  const { SecretsManagerClient, GetSecretValueCommand } = require("@aws-sdk/client-secrets-manager");
-  const client = new SecretsManagerClient({ region: process.env.AWS_REGION });
-  const response = await client.send(new GetSecretValueCommand({ SecretId: process.env.DB_SECRET_ARN }));
-  const value = JSON.parse(response.SecretString || "{}");
-  secretCache = { at: Date.now(), value };
-  return value;
-}
-
-// Na een mislukte login (bijv. net geroteerd wachtwoord) de cache legen, zodat de
-// volgende verbinding het nieuwe wachtwoord ophaalt.
-function invalidateSecretCache() {
-  secretCache = null;
 }
 
 function buildPoolConfig() {
@@ -93,17 +69,14 @@ function buildPoolConfig() {
       port: Number(process.env.DB_PORT) || 5432,
       database: process.env.DB_NAME || "veripasso",
       user: process.env.DB_USER || undefined,
-      // pg roept deze functie aan bij elke nieuwe verbinding.
-      password: process.env.DB_SECRET_ARN
-        ? async () => (await readDatabaseSecret()).password
-        : process.env.DB_PASSWORD,
+      password: process.env.DB_PASSWORD,
       ssl: buildSslConfig(/^(localhost|127\.0\.0\.1)$/.test(host))
     };
   }
 
   const raw = process.env.DATABASE_URL;
   if (!raw) {
-    throw new Error("Databaseconfiguratie ontbreekt: zet DATABASE_URL (lokaal) of DB_HOST + DB_SECRET_ARN (AWS).");
+    throw new Error("Databaseconfiguratie ontbreekt: zet DATABASE_URL (of DB_HOST + DB_PASSWORD).");
   }
   const connectionString = stripSslMode(raw);
   return { ...common, connectionString, ssl: buildSslConfig(isLocalDatabase(connectionString)) };
@@ -117,7 +90,6 @@ function getPgPool() {
     // Een verbroken idle-verbinding geeft een 'error'-event op de pool; zonder
     // listener crasht Node het hele proces. De pool vervangt de verbinding zelf.
     pgPool.on("error", (err) => {
-      if (err && err.code === "28P01") invalidateSecretCache();
       logger.error("db_pool_error", { errorMessage: err.message, code: err.code });
     });
   }
@@ -159,15 +131,7 @@ class Request {
 
   async query(text) {
     const { text: positional, values } = toPositional(text, this.inputs);
-    let result;
-    try {
-      result = await this.executor.query(positional, values);
-    } catch (error) {
-      // 28P01 = wachtwoord geweigerd (bijv. net geroteerd): de volgende verbinding
-      // haalt het nieuwe wachtwoord op.
-      if (error && error.code === "28P01") invalidateSecretCache();
-      throw error;
-    }
+    const result = await this.executor.query(positional, values);
     // Meerdere statements zonder parameters geven een array terug; de laatste telt.
     const last = Array.isArray(result) ? result[result.length - 1] : result;
     return { recordset: last.rows, rowsAffected: [last.rowCount ?? 0] };
@@ -249,7 +213,6 @@ function getDatabaseDiagnostics() {
     configured: Boolean(process.env.DATABASE_URL || process.env.DB_HOST),
     host: process.env.DB_HOST || null,
     database: process.env.DB_NAME || null,
-    passwordFromSecretsManager: Boolean(process.env.DB_SECRET_ARN),
     tlsCaConfigured: Boolean(process.env.DATABASE_CA_CERT_FILE || process.env.DATABASE_CA_CERT)
   };
 }

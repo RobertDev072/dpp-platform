@@ -17,8 +17,8 @@ const THRESHOLDS = {
   healthLatencyMs: { warn: 1500, crit: 5000 },
   // Waarschuwing wanneer de capaciteitsgrens naar verwachting binnen X dagen valt.
   capacityForecastWarnDays: 90,
-  // Geheugen: % van het geheugenbudget van de container (CONTAINER_MEMORY_MB,
-  // gezet door de ECS-taakdefinitie); indicatief.
+  // Geheugen: % van het geheugenbudget van de container (CONTAINER_MEMORY_MB);
+  // indicatief.
   memoryRssPct: { warn: 70, crit: 85 }
 };
 

@@ -18,8 +18,7 @@ const nextConfig = {
     "express-rate-limit",
     "@aws-sdk/client-s3",
     "@aws-sdk/s3-presigned-post",
-    "@aws-sdk/s3-request-presigner",
-    "@aws-sdk/client-secrets-manager"
+    "@aws-sdk/s3-request-presigner"
   ],
   // pdfkit leest zijn standaardfonts (Helvetica.afm) van schijf voor het QR-label;
   // de migraties zitten in het image voor de eenmalige migratietaak (npm run migrate).
@@ -43,7 +42,7 @@ const nextConfig = {
       ]
     };
   },
-  // Standaard beveiligingsheaders op elke response. HSTS ook hier (naast CloudFront),
+  // Standaard beveiligingsheaders op elke response. HSTS ook hier (naast een eventuele CDN),
   // zodat de policy niet afhangt van één laag.
   async headers() {
     return [

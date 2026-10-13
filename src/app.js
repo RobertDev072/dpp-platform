@@ -20,22 +20,7 @@ const app = express();
 app.set("trust proxy", Number(process.env.TRUST_PROXY_HOPS ?? 1));
 app.disable("x-powered-by");
 
-// Op AWS Lambda (achter CloudFront) is het betrouwbare bezoekers-IP de header
-// CloudFront-Viewer-Address ("ip:poort"), die CloudFront zelf zet en die een bezoeker
-// niet kan vervalsen. proxy.js laat alleen verzoeken met de geheime CloudFront-header
-// door, dus deze header is dan te vertrouwen.
-if (process.env.CLIENT_IP_FROM_CLOUDFRONT === "true") {
-  app.use((req, res, next) => {
-    const viewer = req.get("cloudfront-viewer-address");
-    if (viewer) {
-      const ip = viewer.includes("]") ? viewer.slice(1, viewer.lastIndexOf("]")) : viewer.slice(0, viewer.lastIndexOf(":"));
-      if (ip) Object.defineProperty(req, "ip", { value: ip, configurable: true });
-    }
-    next();
-  });
-}
-
-// Cloudflare vóór het QR-domein: voor CloudFront is Cloudflare dan de bezoeker, en
+// Cloudflare vóór het QR-domein: voor de hosting is Cloudflare dan de bezoeker, en
 // zouden alle scans van een paar Cloudflare-adressen lijken te komen (rate limiting per
 // IP zou echte bezoekers blokkeren). Cloudflare zet het echte IP in CF-Connecting-IP en
 // voegt via een Transform Rule de geheime header X-Edge-Verify toe. Alleen met die
@@ -56,8 +41,8 @@ if (process.env.EDGE_SYNC_TOKEN) {
   });
 }
 
-// Liveness (ALB-healthcheck, uptime-monitor): bewust alleen "OK" en geen
-// afhankelijkheden, zodat een korte databasestoring niet alle taken laat herstarten.
+// Liveness (healthcheck van de hosting, uptime-monitor): bewust alleen "OK" en geen
+// afhankelijkheden, zodat een korte databasestoring niet alle instanties laat herstarten.
 // Gedetailleerde health zit owner-only achter /api/admin/system/health.
 app.get("/api/health", (req, res) => res.status(200).send("OK"));
 
@@ -105,8 +90,6 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
 app.use(cookieParser(process.env.COOKIE_SECRET));
 
-// Interne taken (onderhoud, migraties) via een directe Lambda-aanroep; zie de route.
-app.use("/api/internal/events", require("./routes/internalEvents.routes"));
 // Synchronisatie met de Cloudflare Worker (gebundelde scans, cache verversen).
 app.use("/api/edge", require("./routes/edgeSync.routes"));
 

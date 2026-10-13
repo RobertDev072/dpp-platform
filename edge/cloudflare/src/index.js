@@ -2,10 +2,10 @@
 //
 // 1. Scans tellen aan de rand. De paspoortpagina meldt elke weergave met een beacon
 //    (POST /api/scan/:publicId). Deze Worker vangt die op, bewaart de
-//    scan in een Durable Object en antwoordt meteen; AWS wordt niet per scan aangeroepen.
+//    scan in een Durable Object en antwoordt meteen; de app wordt niet per scan aangeroepen.
 // 2. Elke minuut (cron) stuurt het Durable Object de verzamelde scans in één verzoek naar
 //    de app (POST /api/edge/sync). Het antwoord zegt welke paspoorten gewijzigd zijn; die
-//    haalt de Worker uit de Cloudflare-cache (purge). De app zelf heeft geen internet.
+//    haalt de Worker uit de Cloudflare-cache (purge). De app zelf heeft daarvoor geen Cloudflare-sleutel nodig.
 //
 // Faalt de Worker (of is de gratis limiet op), dan gaat de beacon gewoon door naar de app,
 // die de scan dan zelf registreert (route-instelling "fail open"). Er gaat dus niets
@@ -16,7 +16,7 @@ import { DurableObject } from "cloudflare:workers";
 const SCAN_PATH = /^\/api\/scan\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const BATCH_SIZE = 500; // maximum dat /api/edge/sync per verzoek aanneemt
 const MAX_ROUNDS = 10; // per cron-run: max. 5.000 scans versturen
-const MAX_BUFFERED = 100_000; // bovengrens bij een langere storing van AWS
+const MAX_BUFFERED = 100_000; // bovengrens bij een langere storing van de app
 const PURGE_CHUNK = 30; // URL's per purge-verzoek (veilig binnen de limiet van het gratis plan)
 
 export class ScanBuffer extends DurableObject {

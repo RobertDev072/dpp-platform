@@ -3,12 +3,13 @@ const assert = require("node:assert/strict");
 
 // S3-opslag zonder netwerk: presigned URL's worden lokaal berekend (met nep-
 // credentials), Head/Delete gaan via een nep-client. Zo zijn de veiligheidsregels
-// (sleutel, type, grootte, verloop, tenant) altijd getest, ook zonder AWS-account.
-process.env.AWS_REGION = "eu-west-1";
+// (sleutel, type, grootte, verloop, tenant) altijd getest, ook zonder echte opslag.
+process.env.S3_ENDPOINT = "https://s3.test.invalid";
+process.env.S3_REGION = "auto";
 process.env.S3_IMAGES_BUCKET = "test-images-bucket";
 process.env.S3_DOCUMENTS_BUCKET = "test-documents-bucket";
-process.env.AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE";
-process.env.AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+process.env.S3_ACCESS_KEY_ID = "test-access-key";
+process.env.S3_SECRET_ACCESS_KEY = "test-secret-key";
 
 const { S3Client } = require("@aws-sdk/client-s3");
 const storage = require("../src/services/blobStorage.service");
@@ -18,7 +19,11 @@ const { createTestCompany, createTestUser, createTestProduct, cleanupTestData } 
 
 // Echte S3Client (voor het presignen), maar send() onderschept: geen netwerk.
 function fakeClient({ head } = {}) {
-  const client = new S3Client({ region: "eu-west-1" });
+  const client = new S3Client({
+    region: "auto",
+    endpoint: process.env.S3_ENDPOINT,
+    credentials: { accessKeyId: "test-access-key", secretAccessKey: "test-secret-key" }
+  });
   const calls = [];
   client.send = async (command) => {
     calls.push(command);

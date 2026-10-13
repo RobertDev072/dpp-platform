@@ -169,7 +169,7 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
       Number((await pool.query("SELECT COUNT(*)::int AS n FROM dbo.scanevents WHERE product_id = $1", [p3])).rows[0].n);
 
     const before = await count();
-    // De pagina zelf is cachebaar (CloudFront); het ophalen van de gegevens telt dus niet,
+    // De pagina zelf is cachebaar (CDN); het ophalen van de gegevens telt dus niet,
     // de beacon die de browser per weergave stuurt wel.
     assert.equal((await request(baseUrl, "GET", `/api/public/products/${pub3.data.public_id}`)).status, 200);
     await new Promise((r) => setTimeout(r, 300));

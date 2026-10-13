@@ -1,4 +1,4 @@
-// Achtergrondonderhoud in het langlopende Node-proces (ECS Fargate-taak). Geen aparte
+// Achtergrondonderhoud in het langlopende Node-proces. Geen aparte
 // cron-dienst nodig:
 // 1. Telemetrie wegschrijven: na een request kijkt afterRequest() of de in-memory
 //    aggregaten van deze taak "rijp" zijn (elke paar minuten, of zodra er een nieuw
@@ -114,11 +114,11 @@ function startBackgroundJobs() {
   const maintenanceTimer = setInterval(maintenance, SCHEDULE.maintenanceCheckIntervalMs);
 
   timers = [flushTimer, firstRun, maintenanceTimer];
-  // Timers houden het proces niet in leven: een SIGTERM van ECS sluit netjes af.
+  // Timers houden het proces niet in leven: een SIGTERM sluit netjes af.
   for (const timer of timers) timer.unref?.();
 }
 
-// Bij afsluiten (SIGTERM van ECS): timers stoppen en de laatste telemetrie wegschrijven.
+// Bij afsluiten (SIGTERM): timers stoppen en de laatste telemetrie wegschrijven.
 async function stopBackgroundJobs() {
   for (const timer of timers) clearInterval(timer);
   timers = [];

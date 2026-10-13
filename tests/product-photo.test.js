@@ -10,7 +10,7 @@ const {
 } = require("./helpers/fixtures");
 
 // Een echte upload/download tegen S3 draait alleen met een expliciete opt-in
-// (TEST_S3_LIVE=true + AWS_REGION/S3_IMAGES_BUCKET/S3_DOCUMENTS_BUCKET van een
+// (TEST_S3_LIVE=true + S3_ENDPOINT/S3_IMAGES_BUCKET/S3_DOCUMENTS_BUCKET van een
 // TESTbucket, nooit productie). Zonder opt-in wordt dat deel overgeslagen; de rest
 // van dit bestand (schema/tenant-isolatie op de foto-routes) draait altijd. De
 // S3-logica zelf (presigned POST, controles) is los getest in s3-storage.test.js.

@@ -39,7 +39,7 @@ vragen.
   (Annex ZA); toepasselijkheid per productgroep is dus altijd een certificeerdersvraag.
 - **Status**: NOT STARTED · IMPLEMENTED (gebouwd, niet (volledig) geverifieerd) ·
   VERIFIED (check uitgevoerd, resultaat vastgelegd) · BLOCKED (besluit/document nodig).
-- Bewijs "test X" = `tests/<X>.test.js` (`npm test`), "infra" = `infra/test/stacks.test.js`.
+- Bewijs "test X" = `tests/<X>.test.js` (`npm test`). Infrastructuurbewijs (TLS, back-ups, versleuteling) hing aan de vroegere AWS-opzet (git-tag `aws-laatste-versie`) en moet bij de nieuwe hosting opnieuw worden aangetoond.
   Testrun 2026-10-10 tegen een tijdelijke PostgreSQL 17 (PGlite): 148 geslaagd, 2 gefaald
   (zie R-ARCH-04), 3 overgeslagen (live-S3, opt-in). Infra: 11/11 geslaagd.
 
@@ -47,9 +47,9 @@ vragen.
 
 | ID | Clausule | Eis (eigen parafrase) | Soort | Implementatie | Verificatie / bewijs | Status | Sign-off |
 |---|---|---|---|---|---|---|---|
-| R-EXCH-01 | §4 | Gestandaardiseerde DPP-toegang via HTTPS; TLS 1.2 minimaal, oudere TLS/SSL niet toegestaan | (b) | CloudFront `TLSv1.2_2021`; ook CloudFront → Lambda Function URL HTTPS met TLS 1.2+ (origin-protocol `https-only`), dus versleuteld over de hele route; RDS `ssl_min_protocol_version`, S3 `s3:TlsVersion ≥ 1.2` | infra (CloudFront, Lambda, S3, RDS) | VERIFIED (IaC); live-scan na uitrol open | ja |
-| R-EXCH-02 | §4 | TLS 1.3 sterk aanbevolen | (d) | CloudFront-policy `TLSv1.2_2021` ondersteunt TLS 1.3 voor bezoekers | infra (CloudFront) | VERIFIED (IaC); live-scan na uitrol | nee |
-| R-EXCH-03 | §4 | HTTP/2 minimaal, oudere versies niet gebruiken; HTTP/3 aanbevolen | (b) | CloudFront `http2and3` | infra (CloudFront) | **BLOCKED**: CloudFront accepteert HTTP/1.1 van oude clients en kan dat niet uitschakelen. Interpretatie nodig | ja |
+| R-EXCH-01 | §4 | Gestandaardiseerde DPP-toegang via HTTPS; TLS 1.2 minimaal, oudere TLS/SSL niet toegestaan | (b) | Hosting nog niet gekozen. Cloudflare (QR-domein) en de app (TLS naar externe database met certificaatcontrole) ondersteunen TLS 1.2+; de rest van de route hangt af van de hosting | — | OPEN (opnieuw aantonen bij nieuwe hosting) | ja |
+| R-EXCH-02 | §4 | TLS 1.3 sterk aanbevolen | (d) | Cloudflare ondersteunt TLS 1.3 voor bezoekers; overige domeinen hangen af van de hosting | — | OPEN (bij nieuwe hosting) | nee |
+| R-EXCH-03 | §4 | HTTP/2 minimaal, oudere versies niet gebruiken; HTTP/3 aanbevolen | (b) | Hosting nog niet gekozen; Cloudflare ondersteunt HTTP/2 en HTTP/3 | — | **BLOCKED**: CDN's accepteren doorgaans HTTP/1.1 van oude clients. Interpretatie nodig | ja |
 | R-EXCH-04 | §4 | API volgens REST-stijl (aanbevolen) | (d) | REST-API's (`/api/dpp`, `/api/products`) | test passport-compliance | VERIFIED | nee |
 | R-EXCH-05 | §5 | JSON verplicht als uitwisselformaat | (b) | `GET /api/dpp/:id` (JSON) | test passport-compliance (R-EXCH-01..04) | VERIFIED | ja |
 | R-EXCH-06 | §5 | XML optioneel via content negotiation | (b, optioneel) | `Accept: application/xml` of `?format=xml` | idem | VERIFIED | nee |
@@ -68,7 +68,7 @@ vragen.
 | R-STOR-03 | §4.1 | Online toegankelijk via EN 18216-protocollen gedurende de DPP-levensduur | (b) | publieke endpoints; persistentie-guards (R-PERS-*); Multi-AZ, ≥ 2 taken, back-ups | tests passport-compliance; infra | IMPLEMENTED; **levensduur onbekend** → BLOCKED | ja |
 | R-STOR-04 | §4.1 | DPP's mogen naar andere DPP's verwijzen; elk paspoort wordt zelfstandig opgeslagen | (b)/(d) | zelfstandige opslag per productmodel; verwijzingen naar andere DPP's (bijv. onderdelen) nog niet als veld | — | IMPLEMENTED (zelfstandig); verwijzingen NOT STARTED (optioneel) | nee |
 | R-STOR-05 | §4.1 | Opslag zo dat menselijk en machineleesbare formaten gegenereerd kunnen worden | (b) | één snapshotmodel (`passport.service.js`) → HTML-pagina, JSON, JSON-LD, XML | test passport-compliance | VERIFIED | nee |
-| R-STOR-06 | §4.1 | Beschikbaarheid, integriteit, authenticiteit; bescherming tegen verlies, kwaadwillige wijziging en ongeautoriseerde toegang (EN 18239/18246) | (b) | RDS versleuteld + Multi-AZ + PITR + maandarchief 10 jaar; S3-versioning + replicatie; IAM least privilege; tenant-isolatie; hash-keten; WAF; MFA | infra; tests tenant-isolation, s3-storage, mfa, passport-compliance | IMPLEMENTED; **EN 18239/18246 nog niet gepubliceerd** → BLOCKED voor volledige conformiteit | ja |
+| R-STOR-06 | §4.1 | Beschikbaarheid, integriteit, authenticiteit; bescherming tegen verlies, kwaadwillige wijziging en ongeautoriseerde toegang (EN 18239/18246) | (b) | In de app: tenant-isolatie; hash-keten; MFA; objecten nooit overschreven. Versleuteling, back-ups en versioning van database en opslag hangen af van de nog te kiezen hosting | tests tenant-isolation, s3-storage, mfa, passport-compliance | IMPLEMENTED; **EN 18239/18246 nog niet gepubliceerd** → BLOCKED voor volledige conformiteit | ja |
 | R-STOR-07 | §4.1 | Formaten en semantisch model volgens EN 18223 | (b) | eigen JSON-model + JSON-LD-context | — | **BLOCKED** (EN 18223 niet gelezen) | ja |
 | R-STOR-08 | §4.1 | Opslag ondersteunt EN 18220 en EN 18222 | (b) | — | — | **BLOCKED** (normen niet gelezen) | ja |
 | R-ARCH-01 | §4.2 | Archivering start bij de eerste wijziging van het initiële DPP | (b) | versie 1 bij publicatie, daarna een versie per wijziging; concepten niet | test passport-compliance R-ARCH-01 | VERIFIED | nee |
@@ -87,7 +87,7 @@ vragen.
 | R-DOC-02 | §4.4 | Downloadbaar en op te slaan; online toegankelijk gedurende de levensduur | (b) | presigned downloads; objecten nooit overschreven of door de app verwijderd; documenten van oude versies via versieroute | test s3-storage (ondertekening), live download niet getest | IMPLEMENTED | nee |
 | R-DOC-03 | §4.4 | Back-up-dienstverlener bewaart verplichte documentatie | (b) | S3-replicatie naar DR-regio is eigen DR, géén back-up-dienstverlener | — | BLOCKED | ja |
 | R-REPL-01 | §4.5 | Replicatie van het DPP en alle wijzigingen naar de back-up-dienstverlener | (b) | NDJSON-export (pull); geen automatische push | test passport-compliance R-REPL-01 | IMPLEMENTED (mechanisme); BLOCKED (partij, automatisering) | ja |
-| R-REPL-02 | §4.5 | Frequentie die dataverlies minimaliseert (RPO) | (b) | eigen RPO: RDS-PITR ~5 min, S3-replicatie minuten; RPO naar back-up-dienstverlener niet vastgesteld | — | BLOCKED | ja |
+| R-REPL-02 | §4.5 | Frequentie die dataverlies minimaliseert (RPO) | (b) | eigen RPO hangt af van de nog te kiezen hosting; RPO naar back-up-dienstverlener niet vastgesteld | — | BLOCKED | ja |
 | R-REPL-03 | §4.5 | Via EN 18222-lifecycle-API of een overeengekomen veilig mechanisme | (b) | geauthenticeerde HTTPS-export (eigen mechanisme) | — | BLOCKED (EN 18222 niet gelezen / afspraak nodig) | ja |
 | R-REPL-04 | §4.5 | Replicatie over een EN 18216-protocol | (b) | HTTPS, TLS ≥ 1.2 | infra | VERIFIED (IaC) | nee |
 
@@ -133,7 +133,7 @@ Rijen met een gemengde status zijn geteld naar hun zwaarste status.
 3. Wie is de **back-up-DPP-dienstverlener**, welk mechanisme en welke RPO
    (EN 18221 §4.3–4.5)?
 4. Wat is de **DPP-levensduur** per productgroep (bewaartermijnen)?
-5. Is HTTP/1.1-acceptatie door CloudFront voor oude clients aanvaardbaar onder EN 18216 §4?
+5. Is HTTP/1.1-acceptatie door een CDN voor oude clients aanvaardbaar onder EN 18216 §4?
 6. Moeten archiefversies **digitaal ondertekend** worden (in afwachting van EN 18246),
    of volstaat de SHA-256-hash-keten voorlopig?
 7. Mag de versiegeschiedenis (alleen openbare velden) **publiek** opvraagbaar zijn, of

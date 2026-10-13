@@ -112,7 +112,7 @@ async function recordVersionIfChanged(productId, { userId = null, reason = "upda
 
 // Best-effort variant voor na een geslaagde wijziging: de wijziging zelf is al
 // opgeslagen, dus een archieffout mag het verzoek niet laten mislukken. Wel luid
-// loggen (CloudWatch-alarm op "passport_archive_failed"); het dagelijkse onderhoud
+// loggen ("passport_archive_failed"); het dagelijkse onderhoud
 // vult ontbrekende versies aan zodra het weer lukt.
 //
 // Hier wordt ook de Cloudflare-cache van het publieke paspoort ververst: bij een nieuwe

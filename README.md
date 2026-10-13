@@ -6,7 +6,11 @@ geïsoleerde omgeving; consumenten scannen een QR-code en zien het publieke
 productpaspoort zonder account. Systemen kunnen hetzelfde paspoort op dezelfde URL
 machineleesbaar opvragen (JSON, JSON-LD, XML).
 
-Laatst bijgewerkt: 2026-10-12. **Live op AWS** (regio eu-west-1, Ierland):
+Laatst bijgewerkt: 2026-10-13. **Status: lokale ontwikkeling.** Er is (nog) geen
+hosting gekozen; AWS, Supabase, Azure en Vercel worden niet meer gebruikt. De laatste
+versie met AWS-infrastructuur staat onder de git-tag `aws-laatste-versie`.
+
+Domeinen (DNS bij Cloudflare):
 
 | Adres | Rol |
 |---|---|
@@ -14,13 +18,8 @@ Laatst bijgewerkt: 2026-10-12. **Live op AWS** (regio eu-west-1, Ierland):
 | https://app.veripasso.com | de SaaS-applicatie (inloggen, dashboards, beheer) |
 | https://qr.veripasso.com | QR-scans en publieke productpaspoorten (permanent: staat op elke gedrukte code) |
 
-Infrastructuur als code in [`infra/`](infra/) (AWS CDK). Volledige beschrijving:
-[**docs/infrastructuur.md**](docs/infrastructuur.md). Verder:
-[runbook](docs/aws-deployment-runbook.md), [assessment](docs/aws-migration-assessment.md),
-[kosten](docs/aws-cost-model.md), [beveiliging](docs/aws-security-checklist.md),
-[compliance-matrix](docs/compliance/requirements-matrix.md),
+Verder: [compliance-matrix](docs/compliance/requirements-matrix.md),
 [Cloudflare vóór qr.veripasso.com](docs/cloudflare.md) (paspoortcache en gebundelde scans).
-Vercel, Supabase en Azure worden niet meer gebruikt.
 
 ---
 
@@ -82,17 +81,19 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 - Producten per tenant met duurzaamheid, compliance, onderdelen, batches en documenten;
   compleetheid op 7 criteria; import (Excel/CSV, hervatbaar), bulkacties en labelprint.
 - **Uploads** (foto's JPEG/PNG/WEBP/GIF ≤ 5 MB; documenten PDF/JPEG/PNG/SVG/WEBP ≤ 10 MB)
-  gaan rechtstreeks van de browser naar **privé S3-buckets**:
+  gaan rechtstreeks van de browser naar **privé buckets in S3-compatibele opslag**
+  (lokaal bijv. MinIO, later bijv. Cloudflare R2; zonder ingestelde opslag staan uploads uit):
   1. `POST /api/products/:id/{photo|documents}/upload-url`: rol, tenant, type en grootte
      worden gecontroleerd; de server geeft een **presigned POST** voor precies één object
      (`products/{productId}/{uuid}.{ext}`), waarbij S3 zelf sleutel, type en max. grootte afdwingt;
   2. de browser stuurt het bestand naar S3;
   3. `POST .../complete`: de server controleert het object (HeadObject) en koppelt het.
 - **Downloads**: eigen stabiele API-route → toegangscontrole → presigned URL (5 minuten).
-  Objecten worden nooit overschreven of door de app verwijderd (S3-versioning als tweede slot).
+  Objecten worden nooit overschreven of door de app verwijderd (zet bij de opslag
+  versioning aan als tweede slot).
 - **QR**: formaat `{QR_BASE_URL}/p/{PUBLIC_ID}` met `QR_BASE_URL=https://qr.veripasso.com`.
   De GUID staat in **hoofdletters** (zo gedrukt in de Azure-tijd); opzoeken werkt
-  hoofdletterongevoelig. Elke QR identificeert een **productmodel** (zie assessment §4).
+  hoofdletterongevoelig. Elke QR identificeert een **productmodel**.
   `qr.veripasso.com` nooit weghalen of laten verlopen.
 - **Persistentie**: gepubliceerde paspoorten blijven publiek, ook na archiveren (met
   melding) en ongeacht licentie- of bedrijfsstatus. Een gepubliceerd paspoort kan niet
@@ -135,22 +136,19 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
 
 - **Owner-dashboard** `/admin/systeemstatus`: request-telemetrie in-process (alleen
   tellers en duur, routes genormaliseerd), elke ~5 minuten per serverproces weggeschreven naar
-  `SystemRequestMetricsHourly`; dagelijkse snapshot (DB-grootte, tabellen, S3-opslag per
+  `SystemRequestMetricsHourly`; dagelijkse snapshot (DB-grootte, tabellen, opslag per
   bucket/extensie) en opschonen van oude telemetrie.
-- **Achtergrondtaken**: lokaal timers in het serverproces (`instrumentation.js` →
-  `src/monitoring/scheduler.js`); op AWS Lambda roept EventBridge elk uur
-  `/api/internal/events` aan. Het dagelijkse onderhoud gebruikt een lease-lock in
+- **Achtergrondtaken**: timers in het serverproces (`instrumentation.js` →
+  `src/monitoring/scheduler.js`). Het dagelijkse onderhoud gebruikt een lease-lock in
   `dbo.joblocks`, zodat er altijd precies één proces het doet. Het onderhoud vult ook
   ontbrekende paspoortversies aan.
 - **Scans**: de publieke paspoortpagina meldt elke weergave met een lichte beacon
-  (`POST /api/public/products/:id/scan`), zodat scans ook kloppen als CloudFront de
-  pagina uit de cache serveert.
-- **Health**: `GET /api/health` (liveness, alleen `OK`, gebruikt door de Lambda Web Adapter) en
-  `GET /api/health/ready` (database bereikbaar). Gedetailleerd: owner-only
-  `/api/admin/system/health`.
-- **Logs**: JSON-regels op stdout (`src/utils/logger.js`) → CloudWatch Logs; gevoelige
-  velden worden altijd gemaskeerd. CloudWatch-alarmen op Lambda-fouten, throttling, duur,
-  database, archieffouten (`passport_archive_failed`) en onverwachte fouten.
+  (`POST /api/scan/:id`), zodat scans ook kloppen als een CDN de pagina uit de cache
+  serveert. Met Cloudflare vangt een Worker de beacon op (zie docs/cloudflare.md).
+- **Health**: `GET /api/health` (liveness, alleen `OK`) en `GET /api/health/ready`
+  (database bereikbaar). Gedetailleerd: owner-only `/api/admin/system/health`.
+- **Logs**: JSON-regels op stdout (`src/utils/logger.js`); gevoelige velden worden altijd
+  gemaskeerd.
 
 ---
 
@@ -158,8 +156,7 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
 
 1. Node.js 24, dan `npm ci`.
 2. Lokale database starten in een eigen terminal: `npm run db:local` (echte PostgreSQL 17,
-   zonder installatie; data in `.localdb/`, poort 5433). **Nooit de productiedatabase**;
-   die staat in een privé subnet op AWS en is van buitenaf niet bereikbaar.
+   zonder installatie; data in `.localdb/`, poort 5433). **Nooit een productiedatabase.**
 3. `.env` in de projectroot (wordt nooit gecommit; zie [`.env.example`](.env.example)):
    ```
    NODE_ENV=development
@@ -167,12 +164,9 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
    COOKIE_SECRET=<lange random string>
    APP_BASE_URL=http://localhost:3000
    QR_BASE_URL=http://localhost:3000
-   # Bestanden (optioneel lokaal): eigen test-buckets met een AWS-profiel, of
-   # S3-compatibel (MinIO) met S3_ENDPOINT + S3_FORCE_PATH_STYLE=true.
+   # Bestanden (optioneel): S3-compatibele opslag, bijv. MinIO met S3_ENDPOINT,
+   # S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY, de twee buckets en S3_FORCE_PATH_STYLE=true.
    # Zonder deze waarden werkt alles behalve foto-/documentuploads.
-   AWS_REGION=eu-west-1
-   S3_IMAGES_BUCKET=
-   S3_DOCUMENTS_BUCKET=
    ```
 4. `npm run test:db` → `npm run migrate` → `npm run seed:owner` (met `SYSTEM_OWNER_*`,
    daarna weer weghalen) → `npm run dev` (http://localhost:3000).
@@ -183,42 +177,27 @@ root-CA-bestand (`scripts/export-zscaler-ca.ps1`).
 
 ---
 
-## 7. Infrastructuur en deploy (AWS)
+## 7. Hosting (nog te kiezen)
 
-Kort overzicht; alle details (resources, netwerk, certificaten, DNS, beveiliging,
-back-ups, kosten, beheer) staan in [docs/infrastructuur.md](docs/infrastructuur.md).
+Er is bewust geen hosting ingericht. De app is een gewone Next.js-server
+(`npm run build` → `npm run start`, of de standalone-output) met PostgreSQL 17 en
+optioneel S3-compatibele opslag; daarmee past hij op vrijwel elke host.
 
-```
-bezoeker ─TLS≥1.2, HTTP/2+3─> CloudFront + WAF + domeinrouter + cache ─TLS─> Lambda (Next.js + API, Web Adapter)
-                                   │                                            ├─> RDS PostgreSQL 17
-                                   └─ /products/* (foto's, OAC) ─> S3           └─> S3 (privé)
-```
-
-Kosten in de kleinste opzet ≈ $19–21/maand (vooral de database); de app kost bij weinig
-verkeer niets (Lambda en CloudFront binnen de gratis tegoeden). Zie
-[docs/aws-cost-model.md](docs/aws-cost-model.md).
-
-- **Uitrollen**: GitHub → Actions → **"Deploy naar AWS"** → `production`. De workflow
-  bouwt het image, rolt de app uit (CloudFormation rolt terug bij een fout) en draait
-  daarna de databasemigraties via een directe aanroep van de functie. GitHub gebruikt een
-  tijdelijke OIDC-rol (geen AWS-sleutels).
-- **Pauzeren tijdens ontwikkelen** (bespaart kosten): GitHub → Actions → **"AWS pauzeren /
-  hervatten"** → `pauzeren` (app geblokkeerd, database gestopt; site offline, ~$5/maand) of `hervatten`. Hervat
-  vóór een uitrol. Let op: AWS start een gestopte database na 7 dagen vanzelf.
-- **Firewall (WAF)** staat tijdens ontwikkeling uit (kosten). Vóór livegang met klanten:
-  `node scripts/create-cloudfront-waf.js production`, ARN als `webAclArn` in de config en
-  `enableWaf: true`, dan uitrollen.
-- **Infrastructuur wijzigen**: `infra/config/production.json` of `infra/lib/*` aanpassen,
-  `cd infra && npm test`, pushen en dezelfde workflow draaien.
-- **Domeinverdeling**: een CloudFront Function stuurt elk domein naar zijn rol
-  (`infra/lib/domain-router.js`); de app zelf kent de domeinnamen niet.
-- **Geheimen**: alleen in AWS Secrets Manager (bij de uitrol als verwijzing in de
-  Lambda-omgeving gezet); S3 via de IAM-rol van de functie.
-- **Caching**: paspoorten 5 minuten in CloudFront, productfoto's (WebP-miniaturen) en
-  statische bestanden een jaar, bedrijfslogo's een dag.
+Bij het kiezen van een host regelen:
+- **Database**: PostgreSQL 17 met back-ups; `DATABASE_URL` (of `DB_*`) als geheime variabele.
+- **Migraties**: `npm run migrate` bij elke uitrol (vóór of direct na de nieuwe code;
+  migraties zijn altijd additief).
+- **Geheimen**: `COOKIE_SECRET`, `MFA_ENCRYPTION_KEY`, databasewachtwoord en eventueel
+  `EDGE_SYNC_TOKEN` en `S3_*` als geheime variabelen van de host, nooit in de repository.
+- **Domeinverdeling**: elk domein heeft één rol (zie de tabel bovenaan). Vroeger deed
+  een CloudFront Function dat; bij nieuwe hosting opnieuw regelen (bijv. Cloudflare
+  Redirect Rules of middleware in de app). `/api/*`, `/_next/*`, `/brand/*` op elk domein.
+- **Cloudflare vóór `qr.veripasso.com`**: zie [docs/cloudflare.md](docs/cloudflare.md).
 - **Valkuilen**: route-volgorde in Express (letterlijke routes vóór `/:id`); Postgres vouwt
   ongequote namen naar kleine letters (camelCase-aliassen quoten); `QR_BASE_URL` en de
   DNS van `qr.veripasso.com` nooit wijzigen of verwijderen.
+
+De oude AWS-opzet (CDK, workflows, Lambda) staat onder de git-tag `aws-laatste-versie`.
 
 ---
 
@@ -231,21 +210,22 @@ pages/api/[[...path]].js  Eén API-route die alle /api/*-verzoeken aan Express g
 instrumentation.js        Start achtergrondtaken; nette afsluiting bij SIGTERM
 src/
   app.js                  Express: health/readiness, telemetrie, routes
-  config/                 db (pg + Secrets Manager + RDS-TLS), storage (S3), monitoring, zod-NL
+  config/                 db (pg + TLS), storage (S3-compatibel), monitoring, zod-NL
   middleware/             auth, rateLimit, validate, errorHandler
   monitoring/             requestMetrics, collectors, health, scheduler
   repositories/           SQL per entiteit
   routes/                 o.a. products (incl. versies, export), dpp (machineleesbaar + versies),
                           publicProducts, auth (incl. MFA), users, partner, admin, systemMonitoring
   services/               passport (inhoud + JSON/JSON-LD/XML), passportArchive (versies, hash-keten),
-                          mfa (TOTP), blobStorage (S3), license, import, print, qrCode
+                          mfa (TOTP), blobStorage (S3-compatibel), edgeCache (Cloudflare),
+                          license, import, print, qrCode
   utils/                  logger, roles, tenant, auditLog, password, baseUrl
 db/migrations/            PostgreSQL-migraties (oplopend; bijgehouden in dbo.schemamigrations)
-infra/                    AWS CDK (bin/, lib/, config/, test/)
-scripts/                  migrate, seed-system-owner, backfill-passport-versions, verify-db-copy,
-                          copy-storage-to-s3, check-db-connection, cleanup-test-data
+edge/cloudflare/          Cloudflare Worker voor qr.veripasso.com (scans bundelen, cache verversen)
+scripts/                  migrate, seed-system-owner, backfill-passport-versions, local-db,
+                          check-db-connection, cleanup-test-data
 tests/                    node --test (zie §9)
-docs/                     infrastructuur, AWS-assessment, kosten, runbook, beveiliging, compliance-matrix
+docs/                     cloudflare, compliance-matrix, verificatie
 ```
 
 ---
@@ -259,7 +239,6 @@ docs/                     infrastructuur, AWS-assessment, kosten, runbook, bevei
 - Live S3-tests (echte upload/download) alleen met `TEST_S3_LIVE=true` en test-buckets;
   de S3-logica zelf is altijd getest met een nep-client (`tests/s3-storage.test.js`).
 - Compliance-tests: `tests/passport-compliance.test.js` (ID's verwijzen naar de matrix).
-- Infrastructuur: `cd infra && npm test`.
 - Regel: nooit uitrollen zonder groene suite; na elke uitrol live controleren
   (inloggen, een gedrukte QR-code scannen, foto/document op een publiek paspoort openen).
 
@@ -274,21 +253,14 @@ docs/                     infrastructuur, AWS-assessment, kosten, runbook, bevei
 - [ ] Toegankelijkheidsaudit van de publieke paspoortpagina (EN 301 549 / WCAG 2.1 AA).
 
 ### Beheer
-- [ ] Platform Owner: MFA koppelen; alarm-abonnementen in beide mailboxen bevestigen.
-- [ ] Restore-test van de database (runbook §8) en een loadtest op een testomgeving.
-- [ ] Eerste uitrol na de overstap naar Lambda (docs/infrastructuur.md §7).
-- [ ] Opschalen vóór echte klanten: Multi-AZ-database, DR-kopieën, WAF aan
-      (`infra/config/production.json`).
-- [ ] Opruimen van bestanden die niet meer gebruikt worden (verwijderen was in de
-      migratiesessie niet toegestaan): `vercel.json`, `.vercelignore`, `supabase/`,
-      `src/config/entra.js`, `src/services/nativeAuth.service.js`, `src/routes/cron.routes.js`,
-      `scripts/e2e-monitoring-live.js`, `scripts/e2e-partner-reset-live.js`,
-      `.github/workflows/database-backup.yml`; pakketten
-      `npm uninstall @supabase/supabase-js @vercel/functions`.
+- [ ] AWS-account 707191185248 opruimen: back-up maken en de omgeving afbreken met de CDK-
+      code uit de tag `aws-laatste-versie` (of het account sluiten).
+- [ ] Hosting kiezen (zie §7); daarna restore-test van de database en een loadtest.
+- [ ] Platform Owner: MFA koppelen.
 
 ### Product / later
 - [ ] Item-niveau-paspoorten (serienummers) als de productgroep dat vereist.
-- [ ] Publieke productfoto's via CloudFront (kosten bij veel scans).
+- [ ] Bestandsopslag kiezen (bijv. Cloudflare R2) zodat uploads weer aan kunnen.
 - [ ] Content-Security-Policy; aparte database-applicatierol met minimale rechten.
 - [ ] Scan-aggregatie per dag + bewaartermijn voor ruwe scans (na besluit over bewaren).
-- [ ] E-mailverzending (bijv. Amazon SES) voor uitnodigingen/wachtwoordherstel (eerst overleg).
+- [ ] E-mailverzending voor uitnodigingen/wachtwoordherstel (eerst overleg).

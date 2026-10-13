@@ -81,7 +81,7 @@ const heavyWorkLimiter = rateLimit({
 // Publieke paspoort-API (QR-scans, machineleesbare DPP): ruim per IP-adres, zodat
 // echte scans nooit geremd worden maar één scraper de dienst niet kan belasten.
 // Interne aanroepen van de paspoortpagina (server-side, via loopback) tellen niet
-// mee: die zijn al per bezoeker begrensd door de WAF-regel op CloudFront.
+// mee: die horen al bij een bezoekersverzoek dat hier geteld is.
 const PUBLIC_WINDOW_MS = 60 * 1000;
 function isLoopback(ip) {
   return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";

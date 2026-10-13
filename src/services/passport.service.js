@@ -6,8 +6,7 @@
 //   onveranderlijke snapshot vastlegt.
 //
 // Datamodel: één paspoort per productmodel (dbo.products, permanente sleutel
-// public_id). Individuele exemplaren (serienummers) hebben (nog) geen eigen paspoort;
-// zie docs/aws-migration-assessment.md (model- vs. item-QR).
+// public_id). Individuele exemplaren (serienummers) hebben (nog) geen eigen paspoort.
 
 const crypto = require("crypto");
 const { getPool } = require("../config/db");
@@ -181,8 +180,8 @@ function documentUrl(publicId, doc, versionNumber) {
 // De bestaande JSON voor de paspoortpagina (vorm ongewijzigd t.o.v. vóór de
 // migratie). urlPublicId = de id zoals in de URL (hoofdletters uit de Azure-tijd
 // blijven zo werken).
-// photoUrl/issuerLogo: door de route bepaald (CDN-pad of API-route), zodat de pagina
-// lichte, cachebare afbeeldingen laadt i.p.v. inline data of zware originelen.
+// photoUrl/issuerLogo: door de route bepaald (standaard de API-route), zodat de pagina
+// lichte, cachebare afbeeldingen laadt i.p.v. inline data.
 function toPublicPageView(snapshot, { urlPublicId, issuerLogo = null, photoUrl = null, versionNumber = null } = {}) {
   const id = urlPublicId || snapshot.publicId;
   const p = snapshot.product;

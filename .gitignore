@@ -5,9 +5,6 @@ node_modules/
 .env*.local
 .env.*
 !.env.example
-# AWS CDK: gegenereerde templates en lokale context (bevat account-lookups).
-infra/cdk.out/
-infra/cdk.context.json
 # Uitvoer van beheerscripts (kan tijdelijke wachtwoorden of objectlijsten bevatten).
 temp-passwords-*.csv
 manifest*.csv

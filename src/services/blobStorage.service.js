@@ -40,7 +40,7 @@ const SIGNED_DOWNLOAD_SECONDS = 300;
 const SIGNED_UPLOAD_SECONDS = 300;
 
 const NOT_CONFIGURED_MESSAGE =
-  "Bestandsopslag is niet geconfigureerd. Zet AWS_REGION, S3_IMAGES_BUCKET en S3_DOCUMENTS_BUCKET (zie README.md).";
+  "Bestandsopslag is niet ingesteld, dus uploads van foto's en documenten staan uit. Zie S3_* in .env.example.";
 
 let client;
 
@@ -50,12 +50,13 @@ function getClient() {
   }
   if (!client) {
     const config = readConfig();
-    // Geen credentials meegeven: de SDK gebruikt de standaardketen (op AWS de
-    // IAM-rol van de ECS-taak, lokaal een AWS-profiel of env-vars).
     client = new S3Client({
       region: config.region,
-      ...(config.endpoint ? { endpoint: config.endpoint } : {}),
-      forcePathStyle: config.forcePathStyle
+      endpoint: config.endpoint,
+      forcePathStyle: config.forcePathStyle,
+      ...(config.accessKeyId && config.secretAccessKey
+        ? { credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey } }
+        : {})
     });
   }
   return client;

@@ -3,7 +3,7 @@
 // gereserveerde domein - echte data kan nooit matchen) en bedrijven met slug
 // test-<hex>.
 // Alleen voor TESTdatabases: paspoortversies zijn append-only en worden hier als
-// superuser (session_replication_role=replica) verwijderd; op RDS heeft de app die
+// superuser (session_replication_role=replica) verwijderd; in productie heeft de app die
 // rechten niet, en productiedata hoort dit script nooit te raken.
 // Gebruik: node scripts/cleanup-test-data.js
 require("dotenv").config();

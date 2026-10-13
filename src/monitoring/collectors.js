@@ -24,9 +24,8 @@ const START_OF_TODAY_UTC = "(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME
 
 // --- database ---------------------------------------------------------------
 
-// Actuele databasegrootte + maximum. Het maximum is de toegewezen RDS-opslag; die is
-// via SQL niet op te vragen en staat daarom in DATABASE_MAX_BYTES (gezet door de
-// infrastructuurcode). 60s cache.
+// Actuele databasegrootte + maximum. Het maximum is de toegewezen opslag van de
+// database; die is via SQL niet op te vragen en staat daarom in DATABASE_MAX_BYTES. 60s cache.
 async function getDatabaseSize() {
   return cached("dbSize", 60000, async () => {
     const pool = await getPool();
@@ -58,7 +57,7 @@ async function getTableStats() {
   }));
 }
 
-// pg_stat_statements: op RDS via de parametergroep (shared_preload_libraries) en
+// pg_stat_statements: via shared_preload_libraries en
 // CREATE EXTENSION; ontbreekt de extensie, dan blijft dit onderdeel leeg.
 async function querySlowestStatements(pool) {
   const statement = (relation) => `
@@ -230,12 +229,12 @@ async function getDocumentStorageBreakdown() {
   });
 }
 
-// --- bestandsopslag (Amazon S3) ---------------------------------------------------
+// --- bestandsopslag (S3-compatibel) ----------------------------------------------
 // Telt de huidige objectversies per bucket en per extensie via ListObjectsV2 (1.000
-// objecten per aanroep, ~$0,005 per 1.000 aanroepen). Draait alleen in de dagelijkse
+// objecten per aanroep). Draait alleen in de dagelijkse
 // snapshot of bij "Nu meten". Boven S3_STATS_MAX_PAGES pagina's per bucket stopt de
 // telling en wordt het resultaat als onvolledig gemarkeerd; voor exacte cijfers op
-// grote schaal zijn de (gratis) CloudWatch-opslagmetrics van S3 de bron.
+// grote schaal zijn de opslagmetrics van de opslagdienst de bron.
 async function getBlobStats() {
   const { isStorageConfigured, readConfig } = require("../config/storage");
   if (!isStorageConfigured()) {
@@ -366,8 +365,8 @@ async function getLastSnapshotAgeHours() {
 
 // --- uurmetrics lezen/schrijven ---------------------------------------------------
 
-// Op AWS draaien meerdere ECS-taken naast elkaar die elk hun eigen deel van een
-// uur wegschrijven. Er kunnen dus meerdere rijen per (uur, route) bestaan; alle
+// Er kunnen meerdere instanties van de app naast elkaar draaien die elk hun eigen
+// deel van een uur wegschrijven. Er kunnen dus meerdere rijen per (uur, route) bestaan; alle
 // leesqueries hieronder tellen die bij elkaar op (SUM), P95 gewogen, P99/max als MAX.
 async function persistHourlyMetrics(rows, bucketStart) {
   if (!rows.length) return;

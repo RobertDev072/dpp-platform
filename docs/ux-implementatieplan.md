@@ -8,8 +8,8 @@ Uitgangspunt: voortbouwen op de huidige architectuur, niets herschrijven wat wer
 | Laag | Wat er is | Gevolg voor dit plan |
 |---|---|---|
 | Frontend | Next.js 16 app router, client pages, Tailwind, eigen componenten in `components/ui` | Nieuwe componenten in dezelfde stijl (slate/emerald, rounded-xl kaarten), geen UI-library |
-| API | Express in één Vercel-functie (`pages/api/[[...path]].js` → `src/app.js`), max. 30 s, request/response max. ~4,5 MB | Grote batches **client-gestuurd in stukken** (import, PDF, ZIP) met voortgang; geen achtergrondworkers nodig |
-| Data | Supabase Postgres, schema `dbo`, repositories met `@param`-queries | Alleen **additieve** migratie (nieuwe tabellen + nullable kolommen) |
+| API | Express via één Next.js-API-route (`pages/api/[[...path]].js` → `src/app.js`); limieten hangen af van de (nog te kiezen) hosting | Grote batches **client-gestuurd in stukken** (import, PDF, ZIP) met voortgang; geen achtergrondworkers nodig |
+| Data | PostgreSQL, schema `dbo`, repositories met `@param`-queries | Alleen **additieve** migratie (nieuwe tabellen + nullable kolommen) |
 | Tenant | `companyId` altijd uit de sessie; `assertCompanyAccess` geeft 404 bij andere tenant | Elke nieuwe query krijgt `company_id = @companyId` uit `req.user` |
 | QR | `{QR_BASE_URL}/p/{PUBLIC_ID}`; `public_id` wordt nooit gewijzigd | Ongewijzigd. Nieuw: QR kan vóór publicatie worden **gereserveerd** (public_id toekennen, pagina blijft 404 tot publicatie) |
 
@@ -55,7 +55,7 @@ Alle vijf fases zijn gebouwd. Overzicht van wat waar zit:
 
 ### Uitrol
 
-1. **Eerst de migratie** `supabase/migrations/20261008000000_ux_workflows.sql` toepassen op Supabase (`npm run migrate`). De code gebruikt de nieuwe tabellen/kolommen; zonder migratie falen import, printprofielen en documentlijsten.
+1. **Eerst de migratie** `db/migrations/20261008000000_ux_workflows.sql` toepassen (`npm run migrate`). De code gebruikt de nieuwe tabellen/kolommen; zonder migratie falen import, printprofielen en documentlijsten.
 2. Daarna deployen. Bestaande QR-URL's en data blijven ongewijzigd.
 
 ### Testen zonder productiedata
@@ -67,7 +67,7 @@ met `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:<poort>/postgres`.
 ## 5. Bewust niet (of anders) gedaan
 
 - **QR deactiveren** van gepubliceerde producten: niet aangeboden. Gedrukte codes moeten blijven werken (ook na archiveren). "Inactief" betekent hier: gereserveerd maar nog niet gepubliceerd.
-- **Geen achtergrondqueue**: Vercel Hobby heeft geen workers; de client stuurt de batches aan en kan na een onderbreking hervatten (de job onthoudt de voortgang).
+- **Geen achtergrondqueue**: de client stuurt de batches aan en kan na een onderbreking hervatten (de job onthoudt de voortgang).
 - Facturatie en omzet/commissie voor partners: er is geen facturatiedata in het systeem; alleen gebruik/limieten worden getoond.
 - **Bulk verwijderen** van producten = archiveren (bestaande semantiek van `DELETE /api/products/:id`): productdata en QR-codes blijven bestaan.
 - **Bulkacties op gebruikers** (rol/status voor meerdere accounts tegelijk): niet gebouwd. Rol- en statuswijzigingen hebben per account eigen veiligheidsregels (laatste beheerder, Platform Owner, impersonatie); die horen niet in een bulkpad zonder eigen review. Exporteren bestond al.

@@ -4,8 +4,7 @@ const { hashPassword } = require("../utils/password");
 const MIN_PASSWORD_LENGTH = 12;
 
 // Maakt of actualiseert het Platform Owner-account. Gebruikt door
-// scripts/seed-system-owner.js (lokaal, uit .env) en door de interne taak "seed-owner"
-// op AWS Lambda (gegevens uit de aanroep, nooit uit de repository).
+// scripts/seed-system-owner.js (uit .env, nooit uit de repository).
 async function seedSystemOwner({ email, password, firstName = null, lastName = null }) {
   if (!email || !password) {
     throw new Error("E-mail en wachtwoord van de Platform Owner zijn verplicht.");

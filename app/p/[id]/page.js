@@ -9,9 +9,9 @@ import ScanBeacon from "@/components/passport/ScanBeacon";
 // bezoekers scannen met hun telefoon. Server-gerenderd, zonder login en zonder
 // interne gegevens (de API levert een whitelist).
 
-// Op AWS haalt de server de data via loopback op (INTERNAL_API_ORIGIN, bijv.
-// http://127.0.0.1:3000) i.p.v. via het publieke adres: geen omweg langs CloudFront
-// en de WAF. Scans telt de pagina zelf in de browser (ScanBeacon), omdat CloudFront
+// Met INTERNAL_API_ORIGIN (bijv. http://127.0.0.1:3000) haalt de server de data via
+// loopback op i.p.v. via het publieke adres: geen omweg langs CDN of firewall. Scans
+// telt de pagina zelf in de browser (ScanBeacon), omdat een CDN (Cloudflare)
 // de pagina cachet. cache(): generateMetadata en de pagina delen per request één aanroep.
 const getProduct = cache(async function getProduct(id) {
   const headersList = await headers();
