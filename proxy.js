@@ -5,13 +5,24 @@ import { NextResponse } from "next/server.js";
 // naar de Function URL gaat, heeft die niet en krijgt 403. Zo blijven de firewall,
 // de domeinrouter en de caching van CloudFront altijd in het pad.
 //
-// Alleen verzoeken die via de Function URL binnenkomen worden gecontroleerd: de Lambda
-// Web Adapter voegt daar altijd x-amzn-request-context aan toe. Interne aanroepen
-// (de paspoortpagina die via loopback de API leest, en directe Lambda-taken) en lokaal
-// ontwikkelen hebben die header niet en worden niet gehinderd.
+// Alleen verzoeken die via de Function URL binnenkomen worden gecontroleerd. De Lambda
+// Web Adapter zet x-amzn-request-context op élke aanroep: bij de Function URL de
+// request-context als JSON-object, bij een directe aanroep (migraties, onderhoud via
+// AWS_LWA_PASS_THROUGH_PATH) de waarde "null". Loopback-aanroepen (de paspoortpagina die
+// de API leest) en lokaal ontwikkelen hebben de header niet en worden niet gehinderd.
+function isFunctionUrlRequest(requestContext) {
+  if (!requestContext) return false;
+  try {
+    const parsed = JSON.parse(requestContext);
+    return parsed !== null && typeof parsed === "object";
+  } catch {
+    return true; // onbekende vorm: veilig kant, behandelen als verzoek van buiten
+  }
+}
+
 export function proxy(request) {
   const secret = process.env.ORIGIN_VERIFY_SECRET;
-  if (!secret || !request.headers.get("x-amzn-request-context")) {
+  if (!secret || !isFunctionUrlRequest(request.headers.get("x-amzn-request-context"))) {
     return NextResponse.next();
   }
   if (request.headers.get("x-origin-verify") === secret) {

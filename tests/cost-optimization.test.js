@@ -148,6 +148,14 @@ test("Publiek paspoort: logo als cachebare afbeelding, foto via CDN-pad, interne
     });
     assert.equal(viaUrl.status, 404, "verzoek via de Function URL wordt geweigerd");
 
+    // Directe aanroep (uitrol-workflow, EventBridge): de adapter zet de header op "null".
+    const direct = await fetch(`${baseUrl}/api/internal/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-amzn-request-context": "null" },
+      body: JSON.stringify({ task: "migrate" })
+    });
+    assert.equal(direct.status, 200, "directe Lambda-aanroep wordt doorgelaten");
+
     assert.equal((await request(baseUrl, "POST", "/api/internal/events", { body: { task: "onbekend" } })).status, 400);
 
     const migrate = await request(baseUrl, "POST", "/api/internal/events", { body: { task: "migrate" } });
@@ -168,6 +176,9 @@ test("Function URL: zonder juiste X-Origin-Verify geeft de proxy 403, via CloudF
     assert.equal(proxy(lambda({ "x-origin-verify": "fout" })).status, 403);
     assert.notEqual(proxy(lambda({ "x-origin-verify": "geheim-van-test" })).status, 403, "via CloudFront");
     assert.notEqual(proxy(new Request("http://localhost:3000/p/1")).status, 403, "lokaal (geen Lambda) ongemoeid");
+    const direct = new Request("http://127.0.0.1:3000/api/internal/events", { method: "POST", headers: { "x-amzn-request-context": "null" } });
+    assert.notEqual(proxy(direct).status, 403, "directe Lambda-aanroep (migraties) ongemoeid");
+    assert.equal(proxy(lambda({ "x-amzn-request-context": "kapot{" })).status, 403, "onbekende vorm: behandelen als van buiten");
 
     delete process.env.ORIGIN_VERIFY_SECRET;
     assert.notEqual(proxy(lambda({})).status, 403, "zonder geheim (lokaal/CI) geen controle");

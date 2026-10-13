@@ -8,9 +8,9 @@ const logger = require("../utils/logger");
 //
 // Afscherming, dubbel:
 // 1. Alleen actief met INTERNAL_EVENTS_ENABLED=true (alleen op Lambda gezet).
-// 2. HTTP-verzoeken via de Function URL dragen altijd de door de adapter toegevoegde
-//    header x-amzn-request-context; zo'n verzoek wordt hier geweigerd. Een directe
-//    aanroep (waarvoor IAM-rechten op de functie nodig zijn) heeft die header niet.
+// 2. De adapter zet x-amzn-request-context op elke aanroep: bij een HTTP-verzoek via de
+//    Function URL een JSON-object (wordt hier geweigerd), bij een directe aanroep
+//    (waarvoor IAM-rechten op de functie nodig zijn) de waarde "null".
 // Daarnaast blokkeert de CloudFront-domeinrouter /api/internal/* voor bezoekers.
 //
 // Taken (body):
@@ -19,11 +19,22 @@ const logger = require("../utils/logger");
 //   { "task": "backfill" }
 //   { "task": "seed-owner", "email", "password", "firstName", "lastName" }
 
+// Zelfde regel als in proxy.js (ESM, daar niet te importeren).
+function isFunctionUrlRequest(requestContext) {
+  if (!requestContext) return false;
+  try {
+    const parsed = JSON.parse(requestContext);
+    return parsed !== null && typeof parsed === "object";
+  } catch {
+    return true;
+  }
+}
+
 const router = express.Router();
 
 router.post("/", async (req, res, next) => {
   try {
-    if (process.env.INTERNAL_EVENTS_ENABLED !== "true" || req.get("x-amzn-request-context")) {
+    if (process.env.INTERNAL_EVENTS_ENABLED !== "true" || isFunctionUrlRequest(req.get("x-amzn-request-context"))) {
       throw new HttpError(404, "Niet gevonden");
     }
     const body = req.body || {};
