@@ -29,11 +29,24 @@ docker compose exec -T db pg_dump -U veripasso -d veripasso -Fc \
 [ "$(stat -c %s "$FILE")" -gt 1024 ] || { echo "Back-up te klein: $FILE"; exit 1; }
 echo "$(date -u +%FT%TZ) back-up gemaakt: $FILE ($(du -h "$FILE" | cut -f1))"
 
+OFFSITE=false
+OFFSITE_BYTES=0
 if command -v rclone >/dev/null && rclone listremotes | grep -q "^${RCLONE_TARGET%%:*}:"; then
   rclone copy "$FILE" "$RCLONE_TARGET"
   echo "$(date -u +%FT%TZ) gekopieerd naar $RCLONE_TARGET"
+  OFFSITE=true
+  OFFSITE_BYTES=$(rclone size --json "$RCLONE_TARGET" 2>/dev/null | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')
 else
   echo "LET OP: geen rclone-remote ingesteld; back-up staat alleen op deze server."
 fi
 
 find "$TARGET_DIR" -name 'veripasso-*.dump.gpg' -mtime +7 -delete
+
+# Status voor de monitoring in de app (deploy/compose.yaml koppelt deze map alleen-lezen).
+STATUS_DIR=/var/lib/veripasso-status
+mkdir -p "$STATUS_DIR"
+printf '{"at":"%s","file":"%s","bytes":%s,"offsite":%s,"offsiteTarget":"%s","offsiteTotalBytes":%s}\n' \
+  "$(date -u +%FT%TZ)" "$(basename "$FILE")" "$(stat -c %s "$FILE")" "$OFFSITE" "$RCLONE_TARGET" "${OFFSITE_BYTES:-0}" \
+  > "$STATUS_DIR/last-backup.json.tmp"
+mv "$STATUS_DIR/last-backup.json.tmp" "$STATUS_DIR/last-backup.json"
+chmod 644 "$STATUS_DIR/last-backup.json"

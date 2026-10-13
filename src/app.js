@@ -58,6 +58,25 @@ app.get("/api/health/ready", async (req, res) => {
   }
 });
 
+// Capaciteit voor een externe monitor (bijv. UptimeRobot): 200 "OK" of 503 met alleen
+// de namen van de onderdelen die aandacht nodig hebben (schijf, back-up, ...); geen
+// cijfers of details. Een minuut gecachet, dus goedkoop bij veel aanvragen.
+app.get("/api/health/capacity", async (req, res) => {
+  const labels = { disk: "schijf", memory: "geheugen", backup: "back-up", certificates: "certificaat", objectStorage: "opslag" };
+  try {
+    const { getCapacity } = require("./monitoring/capacity");
+    const { problems } = await getCapacity();
+    res.set("Cache-Control", "no-store");
+    if (!problems.length) {
+      res.status(200).send("OK");
+      return;
+    }
+    res.status(503).send(`WAARSCHUWING: ${problems.map((p) => labels[p.key] || p.key).join(", ")}`);
+  } catch {
+    res.set("Cache-Control", "no-store").status(503).send("WAARSCHUWING: controle mislukt");
+  }
+});
+
 // Request-telemetrie (monitoring): alleen tellers en duur, nooit bodies/headers/
 // query strings. Route wordt tot een patroon genormaliseerd (id's/tokens eruit).
 const requestMetrics = require("./monitoring/requestMetrics");

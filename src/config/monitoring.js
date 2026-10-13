@@ -19,7 +19,16 @@ const THRESHOLDS = {
   capacityForecastWarnDays: 90,
   // Geheugen: % van het geheugenbudget van de container (CONTAINER_MEMORY_MB);
   // indicatief.
-  memoryRssPct: { warn: 70, crit: 85 }
+  memoryRssPct: { warn: 70, crit: 85 },
+  // Server (src/monitoring/capacity.js): loopt er iets vol of dreigt er iets te verlopen?
+  diskUsedPct: { warn: 80, crit: 90 },
+  serverMemoryPct: { warn: 85, crit: 95 },
+  // Back-up draait elke nacht; na 30 uur is er één gemist, na 48 uur twee.
+  backupAgeHours: { warn: 30, crit: 48 },
+  // Caddy verlengt 30 dagen voor het verlopen; lager betekent dat verlengen mislukt.
+  certDaysLeft: { warn: 21, crit: 10 },
+  // Cloudflare R2: gratis tot 10 GB (OBJECT_STORAGE_FREE_BYTES), daarboven betaald.
+  objectStorageFreeTierPct: { warn: 70, crit: 90 }
 };
 
 // Verzamelcadans. Telemetrie wordt elke paar minuten weggeschreven; het dagelijkse

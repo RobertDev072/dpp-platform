@@ -165,6 +165,42 @@ function Kpi({ label, value, sub, note, tone = "default" }) {
   );
 }
 
+// Capaciteit (src/monitoring/capacity.js): niveau → meterkleur en KPI-toon.
+const CAPACITY_METER = { ok: "ok", warn: "degraded", crit: "down", unknown: "ok" };
+const CAPACITY_TONE = { ok: "default", warn: "warn", crit: "crit", unknown: "default" };
+const CAPACITY_LABEL = { ok: "In orde", warn: "Let op", crit: "Actie nodig", unknown: "Onbekend" };
+
+function CapacityTile({ title, check, value, pct, sub }) {
+  const level = check?.level || "unknown";
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className={`text-2xl font-bold tabular-nums ${KPI_TONES[CAPACITY_TONE[level]]}`}>{value ?? "—"}</div>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+            level === "crit"
+              ? "bg-red-50 text-red-700"
+              : level === "warn"
+                ? "bg-amber-50 text-amber-700"
+                : level === "ok"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-100 text-slate-500"
+          }`}
+        >
+          {CAPACITY_LABEL[level]}
+        </span>
+      </div>
+      <div className="text-sm text-slate-500">{title}</div>
+      {pct != null && (
+        <div className="mt-2">
+          <MeterBar pct={pct} level={CAPACITY_METER[level]} label={title} />
+        </div>
+      )}
+      <div className="mt-1 text-[11px] leading-snug text-slate-400">{sub || check?.reason || ""}</div>
+    </div>
+  );
+}
+
 // Voortgangsbalk (meter): vulling draagt de ernst, spoor blijft neutraal.
 const METER_COLORS = {
   ok: "bg-blue-500",
@@ -515,6 +551,7 @@ export default function SysteemstatusPage() {
   const [usage, setUsage] = useState({ data: null, error: null });
   const [errorsState, setErrorsState] = useState({ data: null, error: null });
   const [infra, setInfra] = useState({ data: null, error: null });
+  const [capacity, setCapacity] = useState({ data: null, error: null });
   const [config, setConfig] = useState({ data: null, error: null });
 
   const [expandedError, setExpandedError] = useState(null);
@@ -538,6 +575,7 @@ export default function SysteemstatusPage() {
       fetchInto("/api/admin/system/storage", setStorage),
       fetchInto("/api/admin/system/usage", setUsage),
       fetchInto("/api/admin/system/infra", setInfra),
+      fetchInto("/api/admin/system/capacity", setCapacity),
       fetchInto("/api/admin/config-status", setConfig)
     ]);
   }, [fetchInto]);
@@ -1742,6 +1780,71 @@ export default function SysteemstatusPage() {
                   )}
                   {data.note && <p className="mt-3 text-xs text-slate-400">{data.note}</p>}
                 </Card>
+              </div>
+            );
+          }}
+        </SectionBody>
+      </Section>
+
+      {/* 12b. Capaciteit en back-ups (server) */}
+      <Section title="Capaciteit en back-ups">
+        <p className="-mt-1 text-sm text-slate-500">
+          Loopt er iets vol of dreigt er iets te verlopen? Een externe monitor kan
+          <code className="mx-1">/api/health/capacity</code>bewaken (geeft 503 bij een waarschuwing).
+        </p>
+        <SectionBody state={capacity} skeletonClass="h-32">
+          {(data) => {
+            const c = data.checks || {};
+            const backup = c.backup || {};
+            const certs = c.certificates || {};
+            const r2 = c.objectStorage || {};
+            return (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <CapacityTile
+                  title="Schijf (server)"
+                  check={c.disk}
+                  value={c.disk?.usedPct != null ? `${formatNumber(c.disk.usedPct)}%` : null}
+                  pct={c.disk?.usedPct}
+                  sub={c.disk?.freeBytes != null ? `${formatBytes(c.disk.freeBytes)} vrij van ${formatBytes(c.disk.totalBytes)}` : null}
+                />
+                <CapacityTile
+                  title="Geheugen (server)"
+                  check={c.memory}
+                  value={c.memory?.usedPct != null ? `${formatNumber(c.memory.usedPct)}%` : null}
+                  pct={c.memory?.usedPct}
+                  sub={c.memory?.availableBytes != null ? `${formatBytes(c.memory.availableBytes)} beschikbaar van ${formatBytes(c.memory.totalBytes)}` : null}
+                />
+                <CapacityTile
+                  title="Laatste back-up"
+                  check={backup}
+                  value={backup.ageHours != null ? `${formatNumber(backup.ageHours)} u` : null}
+                  sub={
+                    backup.at
+                      ? `${formatDateTime(backup.at)} · ${formatBytes(backup.sizeBytes)} · ${backup.offsite ? "kopie in R2" : "ALLEEN op de server"}`
+                      : null
+                  }
+                />
+                <CapacityTile
+                  title="HTTPS-certificaten"
+                  check={certs}
+                  value={certs.minDaysLeft != null ? `${certs.minDaysLeft} d` : null}
+                  sub={
+                    certs.domains?.length
+                      ? `kortst geldig: ${certs.domains.reduce((a, d) => (d.daysLeft != null && (a == null || d.daysLeft < a.daysLeft) ? d : a), null)?.domain || "?"} · verlengt automatisch`
+                      : null
+                  }
+                />
+                <CapacityTile
+                  title="R2-opslag (gratis 10 GB)"
+                  check={r2}
+                  value={r2.usedPct != null ? `${formatNumber(r2.usedPct)}%` : null}
+                  pct={r2.usedPct}
+                  sub={
+                    r2.usedBytes != null
+                      ? `bestanden ${formatBytes(r2.filesBytes)} + back-ups ${formatBytes(r2.backupsBytes)} van ${formatBytes(r2.freeTierBytes)}`
+                      : null
+                  }
+                />
               </div>
             );
           }}

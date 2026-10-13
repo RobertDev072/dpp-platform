@@ -421,6 +421,16 @@ router.get("/infra", async (req, res, next) => {
   }
 });
 
+// Capaciteit en continuïteit: schijf, geheugen, back-up, certificaten, R2-opslag.
+router.get("/capacity", async (req, res, next) => {
+  try {
+    const { getCapacity } = require("../monitoring/capacity");
+    res.json(await getCapacity({ fresh: req.query.fresh === "1" }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Handmatige snapshot ("Nu meten") - handig direct na ingebruikname, zodat de
 // eerste meetpunten niet op de dagelijkse cyclus hoeven te wachten.
 router.post("/snapshot", async (req, res, next) => {

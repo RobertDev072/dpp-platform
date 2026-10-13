@@ -52,6 +52,12 @@ services:
       # De paspoortpagina leest de API via loopback, niet via het internet.
       INTERNAL_API_ORIGIN: http://127.0.0.1:3000
       HOSTING_LABEL: Linux-server (Docker)
+      # Capaciteitsmonitoring (src/monitoring/capacity.js).
+      BACKUP_STATUS_FILE: /status/last-backup.json
+      CERT_CHECK_HOST: caddy
+    volumes:
+      # Alleen-lezen: het statusbestand van deploy/backup.sh (geen back-ups zelf).
+      - /var/lib/veripasso-status:/status:ro
     depends_on:
       db:
         condition: service_healthy
