@@ -91,7 +91,9 @@ async function runDailyMaintenance() {
     // krijgen hun basisversie.
     const { backfillInitialVersions } = require("../services/passportArchive.service");
     const backfilled = await backfillInitialVersions({ limit: SCHEDULE.versionBackfillBatch });
-    return { snapshotTaken, backfilledVersions: backfilled };
+    // Scans per dag samenvatten en losse scanregels ouder dan 90 dagen opruimen.
+    const scans = await require("../services/scanRollup.service").rollupScans();
+    return { snapshotTaken, backfilledVersions: backfilled, scans };
   });
   return result ?? { skipped: true };
 }
@@ -113,7 +115,15 @@ function startBackgroundJobs() {
   const firstRun = setTimeout(maintenance, SCHEDULE.maintenanceInitialDelayMs);
   const maintenanceTimer = setInterval(maintenance, SCHEDULE.maintenanceCheckIntervalMs);
 
-  timers = [flushTimer, firstRun, maintenanceTimer];
+  // Noodkopieën van paspoorten (passportSnapshot.service) bijwerken: elke 2 minuten,
+  // onder een lease zodat bij meerdere processen er één het doet.
+  const snapshots = () =>
+    withLease("passport-snapshots", 10, () => require("../services/passportSnapshot.service").processSnapshots({ limit: 200 }))
+      .then((outcome) => outcome && (outcome.written || outcome.removed || outcome.failed) && logger.info("passport_snapshots", outcome))
+      .catch((error) => logger.error("passport_snapshots_failed", { errorMessage: error.message }));
+  const snapshotTimer = setInterval(snapshots, 2 * 60 * 1000);
+
+  timers = [flushTimer, firstRun, maintenanceTimer, snapshotTimer];
   // Timers houden het proces niet in leven: een SIGTERM sluit netjes af.
   for (const timer of timers) timer.unref?.();
 }

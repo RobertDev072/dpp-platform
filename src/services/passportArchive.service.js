@@ -134,7 +134,7 @@ async function archiveSafely(productIds, options) {
       failed = true;
       logger.error("passport_archive_failed", { productId: id, reason: options?.reason, errorMessage: error.message });
     }
-    if (!version && edgeCache.enabled()) {
+    if (!version && edgeCache.active()) {
       // Geen nieuwe versie: alleen verversen als het paspoort ooit openbaar was en dat
       // nu niet meer is, of als het archiveren mislukte (de wijziging is wel opgeslagen).
       const product = await passport.loadProduct(id).catch(() => null);

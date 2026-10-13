@@ -12,8 +12,16 @@
 
 name: veripasso
 
+# Logbestanden per container begrenzen (3 × 20 MB), anders groeien ze onbeperkt.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   db:
+    logging: *logging
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
@@ -37,6 +45,7 @@ services:
       retries: 20
 
   app:
+    logging: *logging
     build:
       context: ..
       args:
@@ -69,6 +78,7 @@ services:
       start_period: 60s
 
   caddy:
+    logging: *logging
     image: caddy:2-alpine
     restart: unless-stopped
     profiles: ["web"]

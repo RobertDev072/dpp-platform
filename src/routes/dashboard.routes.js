@@ -89,10 +89,10 @@ router.get("/stats", requireAuth, async (req, res, next) => {
           .request()
           .input("partnerId", sql.Int, req.user.companyId)
           .query(`
-            SELECT COUNT(*) AS n FROM dbo.ScanEvents s
+            SELECT COALESCE(SUM(s.scans), 0)::bigint AS n FROM dbo.scandays s
             JOIN dbo.Products p ON p.id = s.product_id
             JOIN dbo.Companies c ON c.id = p.company_id
-            WHERE c.partner_id = @partnerId AND s.scanned_at >= now() - interval '30 days'
+            WHERE c.partner_id = @partnerId AND s.day > (now() AT TIME ZONE 'UTC')::date - 30
           `)
       ).recordset[0];
 
@@ -102,7 +102,7 @@ router.get("/stats", requireAuth, async (req, res, next) => {
         customers,
         totals: {
           products: customers.reduce((sum, c) => sum + (c.products?.used || 0), 0),
-          scans30Days: scanRow.n,
+          scans30Days: Number(scanRow.n),
           customers: customers.length,
           active: customers.filter((c) => c.status === STATUS.ACTIVE).length,
           nearLimit: customers.filter((c) => c.status === STATUS.NEAR_LIMIT || c.status === STATUS.LIMIT_REACHED).length,

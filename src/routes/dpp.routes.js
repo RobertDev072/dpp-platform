@@ -1,6 +1,7 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
 const scanEventsRepo = require("../repositories/scanEvents.repository");
+const { shouldCount } = require("../services/scanDedup.service");
 const passport = require("../services/passport.service");
 const archive = require("../services/passportArchive.service");
 const { getProductDocumentUrl } = require("../services/blobStorage.service");
@@ -130,7 +131,9 @@ router.get("/:publicId", async (req, res, next) => {
 
     Promise.resolve()
       .then(() =>
-        scanEventsRepo.recordScanEvent({ productId: product.id, userAgent: req.get("user-agent"), referrer: req.get("referer") })
+        shouldCount({ publicId: req.params.publicId, ip: req.ip, userAgent: req.get("user-agent") })
+          ? scanEventsRepo.recordScanEvent({ productId: product.id, userAgent: req.get("user-agent"), referrer: req.get("referer") })
+          : null
       )
       .catch(() => {});
 

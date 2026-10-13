@@ -15,6 +15,16 @@ function enabled() {
   return Boolean(process.env.EDGE_SYNC_TOKEN);
 }
 
+// Ook zonder Cloudflare-cache moet bij een wijziging de noodkopie van het paspoort
+// (passportSnapshot.service) ververst worden.
+function snapshotsEnabled() {
+  return require("./passportSnapshot.service").enabled();
+}
+
+function active() {
+  return enabled() || snapshotsEnabled();
+}
+
 // Gedrukte QR-codes gebruiken de public_id in hoofdletters (zie utils/baseUrl.js), links
 // binnen de app soms in kleine letters. Cloudflare cachet die als aparte URL's.
 function passportPaths(publicId) {
@@ -23,9 +33,11 @@ function passportPaths(publicId) {
 }
 
 async function queuePurge(publicIds) {
-  if (!enabled()) return 0;
   const ids = [...new Set(publicIds.filter(Boolean).map((id) => String(id).toLowerCase()))];
   if (!ids.length) return 0;
+  require("../routes/publicProducts.routes").invalidateViews(ids);
+  if (snapshotsEnabled()) await require("./passportSnapshot.service").queueSnapshots(ids);
+  if (!enabled()) return 0;
   const pool = await getPool();
   await pool.query(
     `INSERT INTO dbo.edgecachepurges (public_id)
@@ -49,7 +61,7 @@ async function queuePurgeSafely(publicIds) {
 // Alle paspoorten die via de QR-code openbaar zijn (of waren) van één bedrijf, bijv. na
 // een nieuwe bedrijfsnaam of een nieuw logo.
 async function queuePurgeForCompany(companyId) {
-  if (!enabled()) return 0;
+  if (!active()) return 0;
   try {
     const pool = await getPool();
     const { rows } = await pool.query(
@@ -64,7 +76,7 @@ async function queuePurgeForCompany(companyId) {
 }
 
 async function queuePurgeForDocuments(documentIds) {
-  if (!enabled() || !documentIds.length) return 0;
+  if (!active() || !documentIds.length) return 0;
   try {
     const pool = await getPool();
     const { rows } = await pool.query(
@@ -95,6 +107,7 @@ async function takePurges({ ack = 0, limit = 100 } = {}) {
 
 module.exports = {
   enabled,
+  active,
   passportPaths,
   queuePurge,
   queuePurgeSafely,

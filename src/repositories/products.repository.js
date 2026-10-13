@@ -165,8 +165,8 @@ async function listProducts({
   const scansSelect = withScans ? ", scans.scan_count, scans.last_scan_at" : "";
   const scansJoin = withScans
     ? `LEFT JOIN LATERAL (
-         SELECT COUNT(*) AS scan_count, MAX(s.scanned_at) AS last_scan_at
-         FROM dbo.ScanEvents s WHERE s.product_id = paged.id
+         SELECT COALESCE(SUM(s.scans), 0)::bigint AS scan_count, MAX(s.last_scan_at) AS last_scan_at
+         FROM dbo.scandays s WHERE s.product_id = paged.id
        ) scans ON true`
     : "";
 

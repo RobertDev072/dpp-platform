@@ -60,7 +60,11 @@ async function getUserForToken(token) {
       SELECT u.id, u.company_id, u.email, u.role, u.status, u.first_name, u.last_name,
              CASE WHEN u.password_hash IS NULL THEN 0 ELSE 1 END AS has_local_password,
              (u.mfa_enabled_at IS NOT NULL) AS mfa_enabled,
-             c.name AS company_name, c.logo AS company_logo, c.status AS company_status,
+             c.name AS company_name, c.status AS company_status,
+             CASE WHEN c.logo_blob_name IS NOT NULL OR c.logo IS NOT NULL
+                  THEN '/api/media/logos/' || c.id || '?v=' || left(md5(COALESCE(c.logo_blob_name, c.logo)), 10) END AS company_logo,
+             CASE WHEN u.avatar_blob_name IS NOT NULL
+                  THEN '/api/media/avatars/' || u.id || '?v=' || left(md5(u.avatar_blob_name), 10) END AS avatar_url,
              s.expires_at, s.impersonator_user_id,
              imp.email AS impersonator_email
       FROM dbo.Sessions s
@@ -91,6 +95,7 @@ async function getUserForToken(token) {
     lastName: row.last_name,
     companyName: row.company_name,
     companyLogo: row.company_logo || null,
+    avatarUrl: row.avatar_url || null,
     authProvider: row.has_local_password ? "local" : "none",
     mfaEnabled: Boolean(row.mfa_enabled),
     impersonator: row.impersonator_user_id

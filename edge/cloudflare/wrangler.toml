@@ -1,12 +1,13 @@
-# Cloudflare Worker voor qr.veripasso.com: scans bundelen en de paspoortcache verversen.
-# Uitrollen en geheimen instellen: zie docs/cloudflare.md.
+# Cloudflare Worker voor qr.veripasso.com: paspoortpagina's bewaren, noodkopie bij een
+# storing, scans ontdubbelen en bundelen. Uitrollen en geheimen: zie docs/cloudflare.md.
 name = "veripasso-qr-edge"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
-# Alleen het scan-beacon loopt via de Worker; al het andere verkeer niet (scheelt
-# Worker-aanvragen op het gratis plan: 100.000 per dag).
+# Alleen paspoortpagina's en scan-beacons lopen via de Worker; al het andere (API,
+# foto's, statische bestanden) niet. Gratis plan: 100.000 Worker-aanvragen per dag.
 routes = [
+  { pattern = "qr.veripasso.com/p/*", zone_name = "veripasso.com" },
   { pattern = "qr.veripasso.com/api/scan/*", zone_name = "veripasso.com" }
 ]
 
@@ -15,14 +16,18 @@ crons = ["* * * * *"]
 
 [vars]
 QR_HOST = "qr.veripasso.com"
-# Adres van de app (nog geen hosting gekozen), bijv. https://app.veripasso.com/api/edge/sync
-SYNC_URL = "VUL_IN"
-# CF_ZONE_ID: zone-ID van veripasso.com (Cloudflare-dashboard, rechterkolom van "Overview").
-CF_ZONE_ID = "VUL_IN"
+SYNC_URL = "https://app.veripasso.com/api/edge/sync"
+CF_ZONE_ID = "11c92cfca6d159264303f4395e177cf7"
 
 # Geheimen (niet in dit bestand), eenmalig instellen:
 #   npx wrangler secret put EDGE_SYNC_TOKEN   (zelfde waarde als EDGE_SYNC_TOKEN van de app)
 #   npx wrangler secret put CF_API_TOKEN      (Cloudflare API-token met alleen "Zone > Cache Purge")
+
+# Noodkopieën van paspoorten (alleen-lezen gebruikt; geschreven door de app).
+[[r2_buckets]]
+binding = "PASSPORTS"
+bucket_name = "veripasso-images"
+jurisdiction = "eu"
 
 [[durable_objects.bindings]]
 name = "SCAN_BUFFER"

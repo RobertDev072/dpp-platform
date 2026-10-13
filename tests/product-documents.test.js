@@ -66,7 +66,8 @@ test("productdocumenten: upload, validatie, download en publieke zichtbaarheid",
   const adminBCookie = await login(baseUrl, adminB);
 
   await t.test("te groot bestand geeft een duidelijke melding", async () => {
-    const big = Buffer.alloc(10 * 1024 * 1024 + 1024, 1);
+    // Limiet 25 MB (handleiding van 50 pagina's, ook gescand).
+    const big = Buffer.alloc(25 * 1024 * 1024 + 1024, 1);
     const res = await uploadDocument(baseUrl, {
       productId: productA,
       cookie: adminACookie,

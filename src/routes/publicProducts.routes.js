@@ -1,13 +1,28 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
-const { getProductPhotoUrl, getProductDocumentUrl } = require("../services/blobStorage.service");
+const { getProductDocumentUrl } = require("../services/blobStorage.service");
 const documentsRepo = require("../repositories/documents.repository");
 const scanEventsRepo = require("../repositories/scanEvents.repository");
 const passport = require("../services/passport.service");
 const { publicApiLimiter } = require("../middleware/rateLimit");
 const { HttpError } = require("../middleware/errorHandler");
 
+const { shouldCount } = require("../services/scanDedup.service");
+const { readImage } = require("../services/blobStorage.service");
+const { mediaVersion } = require("./media.routes");
+
 const router = express.Router();
+
+// Kort geheugen voor paspoortdata (60 s): mist de Cloudflare-cache, dan hoeft de
+// database niet bij elke opvraging opnieuw. Een wijziging leegt de regel direct
+// (invalidateViews, aangeroepen vanuit edgeCache.queuePurge).
+const VIEW_TTL_MS = 60 * 1000;
+const VIEW_MAX = 5000;
+const viewCache = new Map();
+
+function invalidateViews(publicIds) {
+  for (const id of publicIds) viewCache.delete(String(id).toLowerCase());
+}
 
 router.use(publicApiLimiter);
 
@@ -20,6 +35,12 @@ router.use(publicApiLimiter);
 // actief is.
 router.get("/:publicId", async (req, res, next) => {
   try {
+    const cacheKey = String(req.params.publicId).toLowerCase();
+    const hit = viewCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < VIEW_TTL_MS && hit.urlId === req.params.publicId) {
+      res.set("Cache-Control", "no-store").json(hit.view);
+      return;
+    }
     const product = await productsRepo.getProductByPublicId(req.params.publicId);
     if (!product) {
       next(new HttpError(404, "Niet gevonden"));
@@ -33,13 +54,20 @@ router.get("/:publicId", async (req, res, next) => {
     // dus niet elke scan bereikt deze route. De pagina meldt elke weergave zelf via
     // POST /api/scan/:publicId (zie hieronder).
     res.set("Cache-Control", "no-store");
-    res.json(
-      passport.toPublicPageView(snapshot, {
+    const view = passport.toPublicPageView(snapshot, {
         urlPublicId: req.params.publicId,
-        // Logo als losse, lang cachebare afbeelding i.p.v. inline base64 in elke pagina.
-        issuerLogo: data.company?.logo ? `/api/public/products/${req.params.publicId}/logo` : null
-      })
-    );
+        // Logo en foto als losse afbeeldingen met een versie in de URL: browser en
+        // Cloudflare mogen ze een jaar bewaren; een nieuw logo/nieuwe foto = nieuwe URL.
+        issuerLogo: data.company?.has_logo
+          ? `/api/public/products/${req.params.publicId}/logo?v=${data.company.logo_version}`
+          : null,
+        photoUrl: product.photo_blob_name
+          ? `/api/public/products/${req.params.publicId}/photo?v=${mediaVersion(product.photo_thumb_blob_name || product.photo_blob_name)}`
+          : null
+      });
+    if (viewCache.size >= VIEW_MAX) viewCache.delete(viewCache.keys().next().value);
+    viewCache.set(cacheKey, { view, at: Date.now(), urlId: req.params.publicId });
+    res.json(view);
   } catch (error) {
     next(error);
   }
@@ -58,11 +86,14 @@ async function recordScan(req, res, next) {
       next(new HttpError(404, "Niet gevonden"));
       return;
     }
-    await scanEventsRepo.recordScanEvent({
-      productId: product.id,
-      userAgent: req.get("user-agent"),
-      referrer: req.get("referer")
-    });
+    // Eén scan per apparaat per paspoort per 30 minuten (refresh telt niet).
+    if (shouldCount({ publicId: req.params.publicId, ip: req.ip, userAgent: req.get("user-agent") })) {
+      await scanEventsRepo.recordScanEvent({
+        productId: product.id,
+        userAgent: req.get("user-agent"),
+        referrer: req.get("referer")
+      });
+    }
     res.set("Cache-Control", "no-store").status(204).end();
   } catch (error) {
     next(error);
@@ -109,32 +140,45 @@ router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
   }
 });
 
-// Bedrijfslogo van de uitgever (opgeslagen als data-URI) als echte afbeelding, zodat
-// browsers en een CDN het kunnen cachen.
+// Afbeelding met versie: klopt ?v= met de huidige versie, dan mag hij een jaar bewaard
+// worden (immutable); anders 5 minuten (oude link of zonder versie).
+function cacheFor(req, version) {
+  return req.query.v === version ? "public, max-age=31536000, immutable" : "public, max-age=300";
+}
+
+// Bedrijfslogo van de uitgever (kleine WebP in de opslag, of oud: data-URI in de database).
 router.get("/:publicId/logo", async (req, res, next) => {
   try {
     const product = await productsRepo.getProductByPublicId(req.params.publicId);
-    const company = product ? await require("../repositories/companies.repository").getCompanyById(product.company_id) : null;
-    const match = company?.logo ? /^data:(image\/(?:png|jpeg|webp|gif|svg\+xml));base64,(.+)$/i.exec(company.logo) : null;
+    const pool = await require("../config/db").getPool();
+    const company = product
+      ? (await pool.query("SELECT logo, logo_blob_name FROM dbo.companies WHERE id = $1", [product.company_id])).rows[0]
+      : null;
+    if (!company || (!company.logo_blob_name && !company.logo)) {
+      next(new HttpError(404, "Niet gevonden"));
+      return;
+    }
+    res.set("Cache-Control", cacheFor(req, mediaVersion(company.logo_blob_name || company.logo)));
+    res.set("X-Content-Type-Options", "nosniff");
+    if (company.logo_blob_name) {
+      const { buffer, contentType } = await readImage(company.logo_blob_name);
+      res.type(contentType).send(buffer);
+      return;
+    }
+    const match = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/i.exec(company.logo);
     if (!match) {
       next(new HttpError(404, "Niet gevonden"));
       return;
     }
-    const buffer = Buffer.from(match[2], "base64");
-    const etag = `"${require("crypto").createHash("sha1").update(buffer).digest("hex")}"`;
-    res.set("Cache-Control", "public, max-age=86400");
-    res.set("ETag", etag);
-    if (req.get("if-none-match") === etag) {
-      res.status(304).end();
-      return;
-    }
-    if (match[1].toLowerCase() === "image/svg+xml") res.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
-    res.type(match[1]).send(buffer);
+    res.type(match[1]).send(Buffer.from(match[2], "base64"));
   } catch (error) {
     next(error);
   }
 });
 
+// Productfoto voor het publieke paspoort: de miniatuur (800 px), of met ?size=large de
+// grote versie (2000 px). Rechtstreeks uit de opslag; met Cloudflare ervoor komt dit
+// verzoek per foto maar zelden bij de server.
 router.get("/:publicId/photo", async (req, res, next) => {
   try {
     const product = await productsRepo.getProductByPublicId(req.params.publicId);
@@ -144,8 +188,11 @@ router.get("/:publicId/photo", async (req, res, next) => {
     }
 
     if (product.photo_blob_name) {
-      res.set("Cache-Control", "public, max-age=60");
-      res.redirect(302, await getProductPhotoUrl(product.photo_blob_name));
+      const key = req.query.size === "large" ? product.photo_blob_name : product.photo_thumb_blob_name || product.photo_blob_name;
+      res.set("Cache-Control", cacheFor(req, mediaVersion(product.photo_thumb_blob_name || product.photo_blob_name)));
+      res.set("X-Content-Type-Options", "nosniff");
+      const { buffer, contentType } = await readImage(key);
+      res.type(contentType).send(buffer);
       return;
     }
 
@@ -162,3 +209,4 @@ router.get("/:publicId/photo", async (req, res, next) => {
 
 module.exports = router;
 module.exports.scanRouter = scanRouter;
+module.exports.invalidateViews = invalidateViews;

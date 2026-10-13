@@ -30,6 +30,17 @@ de server (`/root/.veripasso-backup-pass`) en in het gegevensdocument.
   - `https://app.veripasso.com/api/health/capacity` → `503` = schijf, geheugen, back-up,
     certificaat of opslag vraagt aandacht (de tekst noemt welke).
 
+## Gedrukte QR-codes blijven altijd werken
+
+- Elke QR-code bevat alleen `https://qr.veripasso.com/p/<ID>`. Het ID is een willekeurige
+  UUID die bij het aanmaken wordt toegekend, uniek is in de database (unieke index) en
+  **nooit** verandert of opnieuw wordt uitgegeven. Ook een gearchiveerd product blijft
+  bereikbaar (met de melding dat het niet meer actief wordt aangeboden).
+- Bij een storing van de server toont Cloudflare de **noodkopie** van het paspoort (alle
+  productgegevens, foto en logo; documenten zijn dan pas weer te openen als de server
+  terug is). Zie [cloudflare.md](cloudflare.md).
+- Nooit wijzigen: het DNS-record `qr`, `QR_BASE_URL` en de public_id's in de database.
+
 ## Scenario's
 
 Inloggen op de server: `ssh root@87.106.4.92`. Werkt SSH niet: VNC-console in het

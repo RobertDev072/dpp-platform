@@ -20,7 +20,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import ProductStats from "@/components/products/ProductStats";
 import IncompleteDocsBanner from "@/components/products/IncompleteDocsBanner";
 import CompletenessBar from "@/components/products/CompletenessBar";
-import PrintExportDialog from "@/components/print/PrintExportDialog";
+import QrExportDialog from "@/components/qr/QrExportDialog";
 import { COMPLETENESS_ITEMS } from "@/lib/completeness";
 import {
   ArchiveIcon,
@@ -29,7 +29,6 @@ import {
   DownloadIcon,
   EditIcon,
   LayersIcon,
-  PrinterIcon,
   QrIcon,
   SearchIcon
 } from "@/components/ui/icons";
@@ -697,9 +696,6 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, showS
               >
                 QR genereren
               </BulkButton>
-              <BulkButton icon={PrinterIcon} disabled={Boolean(bulkBusy)} onClick={() => setExportFormat("pdf")}>
-                Labels
-              </BulkButton>
               <BulkButton icon={DownloadIcon} disabled={Boolean(bulkBusy)} onClick={() => setExportFormat("png")}>
                 QR downloaden
               </BulkButton>
@@ -774,7 +770,7 @@ function ProductsTableInner({ readOnly = false, showCompanyFilter = false, showS
       </Modal>
 
       {exportFormat && (
-        <PrintExportDialog
+        <QrExportDialog
           open
           initialFormat={exportFormat}
           onClose={() => setExportFormat(null)}

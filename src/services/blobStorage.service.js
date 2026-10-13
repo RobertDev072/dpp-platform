@@ -28,8 +28,14 @@ const ALLOWED_DOCUMENT_MIME_TYPES = {
   "image/webp": "webp"
 };
 
-const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
-const DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
+// Uploadlimieten. Foto's mogen groot binnenkomen (telefoon), maar worden direct
+// verkleind (processProductPhoto); alleen de verkleinde versie wordt bewaard.
+// Documenten worden ongewijzigd bewaard (een handleiding van 50 pagina's is als
+// gewone PDF 2-5 MB, gescand 15-25 MB).
+const PHOTO_MAX_BYTES = 15 * 1024 * 1024;
+const DOCUMENT_MAX_BYTES = 25 * 1024 * 1024;
+const PHOTO_MAX_MB = PHOTO_MAX_BYTES / (1024 * 1024);
+const DOCUMENT_MAX_MB = DOCUMENT_MAX_BYTES / (1024 * 1024);
 
 // Downloadlinks zijn per aanvraag vers en kortlevend: de stabiele link blijft onze
 // eigen API-route (die eerst de toegang controleert en dan doorverwijst).
@@ -181,7 +187,7 @@ function createPhotoUpload({ productId, mimeType, size }) {
     size,
     allowed: ALLOWED_IMAGE_MIME_TYPES,
     maxBytes: PHOTO_MAX_BYTES,
-    tooLargeMessage: "De afbeelding is te groot (max 5 MB).",
+    tooLargeMessage: `De afbeelding is te groot (max ${PHOTO_MAX_MB} MB).`,
     typeMessage: "Alleen JPEG, PNG, WEBP of GIF-afbeeldingen zijn toegestaan."
   });
 }
@@ -194,7 +200,7 @@ function createDocumentUpload({ productId, mimeType, size }) {
     size,
     allowed: ALLOWED_DOCUMENT_MIME_TYPES,
     maxBytes: DOCUMENT_MAX_BYTES,
-    tooLargeMessage: "Het bestand is te groot (max 10 MB). Verklein de PDF (bijv. comprimeren of splitsen) en probeer opnieuw.",
+    tooLargeMessage: `Het bestand is te groot (max ${DOCUMENT_MAX_MB} MB). Exporteer de PDF opnieuw (niet scannen) of splits het document en probeer opnieuw.`,
     typeMessage: "Alleen PDF, JPEG, PNG, SVG of WEBP-bestanden zijn toegestaan."
   });
 }
@@ -277,10 +283,12 @@ function getProductDocumentUrl(objectName) {
   return getSignedDownloadUrl(bucketFor("document"), objectName);
 }
 
-// --- thumbnails ---------------------------------------------------------------------
-// Kleine WebP-versie (max. 800 px breed) van een productfoto voor het publieke
-// paspoort: ~50-100 kB i.p.v. tot 5 MB. Het origineel blijft ongewijzigd. Sleutel:
-// <origineel>.w800.webp, dus ook altijd onder products/<id>/ en nooit overschreven.
+// --- afbeeldingen verwerken ----------------------------------------------------------
+// Productfoto: één WebP van max. 2000 × 2000 px (±300-600 kB; ruim genoeg voor scherm
+// en drukwerk) plus een miniatuur van 800 px breed (±40-80 kB) voor het publieke
+// paspoort. Het origineel (vaak 3-8 MB van een telefoon) wordt niet bewaard. Sleutels:
+// products/<id>/<uuid>.webp en <die sleutel>.w800.webp, nooit overschreven.
+const PHOTO_MAX_PX = 2000;
 const THUMB_WIDTH = 800;
 
 async function streamToBuffer(body) {
@@ -292,26 +300,78 @@ async function streamToBuffer(body) {
   return Buffer.concat(chunks);
 }
 
-async function createPhotoThumbnail(objectName, { sourceBuffer } = {}) {
+async function readObject(bucket, objectName, action = "het bestand lezen") {
+  try {
+    const object = await getClient().send(new GetObjectCommand({ Bucket: bucket, Key: objectName }));
+    return await streamToBuffer(object.Body);
+  } catch (error) {
+    throw storageError(action, bucket, error);
+  }
+}
+
+async function deleteObjectQuietly(bucket, objectName) {
+  await getClient()
+    .send(new DeleteObjectCommand({ Bucket: bucket, Key: objectName }))
+    .catch((error) => logger.warn("s3_delete_failed", { bucket, errorName: error?.name }));
+}
+
+const UNREADABLE_IMAGE = "Deze afbeelding kan niet worden verwerkt. Probeer een JPG, PNG of WEBP.";
+
+// Productfoto verwerken: uit een buffer (multipart) of een al geüpload object (directe
+// upload; dat origineel wordt daarna verwijderd).
+async function processProductPhoto({ productId, objectName = null, sourceBuffer = null }) {
   const sharp = require("sharp");
   const bucket = bucketFor("image");
-  let input = sourceBuffer;
-  if (!input) {
-    try {
-      const object = await getClient().send(new GetObjectCommand({ Bucket: bucket, Key: objectName }));
-      input = await streamToBuffer(object.Body);
-    } catch (error) {
-      throw storageError("de foto lezen", bucket, error);
-    }
+  const input = sourceBuffer || (await readObject(bucket, objectName, "de foto lezen"));
+  let main;
+  let thumb;
+  try {
+    main = await sharp(input, { failOn: "error" })
+      .rotate()
+      .resize({ width: PHOTO_MAX_PX, height: PHOTO_MAX_PX, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer();
+    thumb = await sharp(main).resize({ width: THUMB_WIDTH, withoutEnlargement: true }).webp({ quality: 78 }).toBuffer();
+  } catch {
+    if (objectName) await deleteObjectQuietly(bucket, objectName);
+    throw new HttpError(400, UNREADABLE_IMAGE);
   }
-  const output = await sharp(input, { failOn: "error" })
-    .rotate()
-    .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
-    .webp({ quality: 78 })
-    .toBuffer();
-  const thumbName = `${objectName}.w${THUMB_WIDTH}.webp`;
-  await uploadObject({ bucket, objectName: thumbName, buffer: output, mimeType: "image/webp" });
-  return thumbName;
+  const photoBlobName = newObjectName(productId, "webp");
+  const photoThumbBlobName = `${photoBlobName}.w${THUMB_WIDTH}.webp`;
+  await uploadObject({ bucket, objectName: photoBlobName, buffer: main, mimeType: "image/webp" });
+  await uploadObject({ bucket, objectName: photoThumbBlobName, buffer: thumb, mimeType: "image/webp" });
+  if (objectName) await deleteObjectQuietly(bucket, objectName);
+  return { photoBlobName, photoThumbBlobName, bytes: main.length + thumb.length };
+}
+
+// Logo of profielfoto: vierkant passend in size × size px, WebP (±5-30 kB).
+// prefix: "companies/<id>" of "users/<id>". Geeft de objectnaam terug.
+async function storeSmallImage({ prefix, buffer, size = 256 }) {
+  const sharp = require("sharp");
+  let output;
+  try {
+    output = await sharp(buffer, { failOn: "error" })
+      .rotate()
+      .resize({ width: size, height: size, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 85 })
+      .toBuffer();
+  } catch {
+    throw new HttpError(400, UNREADABLE_IMAGE);
+  }
+  const objectName = `${prefix}/${crypto.randomUUID()}.webp`;
+  await uploadObject({ bucket: bucketFor("image"), objectName, buffer: output, mimeType: "image/webp" });
+  return objectName;
+}
+
+// Afbeelding uit de (privé) fotobucket ophalen om via de app te serveren.
+async function readImage(objectName) {
+  const bucket = bucketFor("image");
+  try {
+    const object = await getClient().send(new GetObjectCommand({ Bucket: bucket, Key: objectName }));
+    return { buffer: await streamToBuffer(object.Body), contentType: object.ContentType || "image/webp" };
+  } catch (error) {
+    throw storageError("de afbeelding lezen", bucket, error);
+  }
 }
 
 // Lichte bereikbaarheidscheck voor de healthcheck.
@@ -321,7 +381,10 @@ async function pingStorage() {
 
 module.exports = {
   uploadProductPhoto,
-  createPhotoThumbnail,
+  processProductPhoto,
+  storeSmallImage,
+  readImage,
+  deleteObjectQuietly,
   uploadProductDocument,
   createPhotoUpload,
   createDocumentUpload,
@@ -332,10 +395,13 @@ module.exports = {
   pingStorage,
   getClient,
   bucketFor,
+  streamToBuffer,
   setS3ClientForTests,
   belongsToProduct,
   ALLOWED_IMAGE_MIME_TYPES,
   ALLOWED_DOCUMENT_MIME_TYPES,
   PHOTO_MAX_BYTES,
-  DOCUMENT_MAX_BYTES
+  DOCUMENT_MAX_BYTES,
+  PHOTO_MAX_MB,
+  DOCUMENT_MAX_MB
 };

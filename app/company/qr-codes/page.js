@@ -17,8 +17,8 @@ import { QrStatusBadge } from "@/components/ui/StatusBadge";
 import BulkActionBar, { BulkButton } from "@/components/ui/BulkActionBar";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import PrintExportDialog from "@/components/print/PrintExportDialog";
-import { CheckCircleIcon, CopyIcon, DownloadIcon, EyeIcon, PrinterIcon, QrIcon, ScanIcon, SearchIcon } from "@/components/ui/icons";
+import QrExportDialog from "@/components/qr/QrExportDialog";
+import { CheckCircleIcon, CopyIcon, DownloadIcon, EyeIcon, QrIcon, ScanIcon, SearchIcon } from "@/components/ui/icons";
 
 const PAGE_SIZE = 24;
 
@@ -140,7 +140,7 @@ function QrCodesInner() {
   async function generateQr(selectionOverride, count) {
     const ok = await confirm({
       title: `QR-codes aanmaken voor ${nl(count)} producten?`,
-      message: "Producten zonder QR-code krijgen een permanente QR-code. Die is direct te printen en wordt actief zodra het product gepubliceerd is.",
+      message: "Producten zonder QR-code krijgen een permanente QR-code. Die is direct te downloaden en wordt actief zodra het product gepubliceerd is.",
       confirmLabel: "QR-codes aanmaken"
     });
     if (!ok) return;
@@ -164,7 +164,7 @@ function QrCodesInner() {
     <div className="space-y-6">
       <PageHeader
         title="QR-codes"
-        description="Beheer, genereer, download en print QR-codes voor je producten. Een QR-code wordt actief zodra het product gepubliceerd is en blijft daarna altijd werken."
+        description="Beheer, genereer en download QR-codes voor je producten. Een QR-code wordt actief zodra het product gepubliceerd is en blijft daarna altijd werken."
         actions={
           <>
             <Button
@@ -176,11 +176,11 @@ function QrCodesInner() {
             >
               Bulk genereren{stats?.withoutQr ? ` (${nl(stats.withoutQr)})` : ""}
             </Button>
-            <Button variant="accent" icon={PrinterIcon} disabled={!stats?.total} onClick={() => {
+            <Button variant="accent" icon={DownloadIcon} disabled={!stats?.total} onClick={() => {
               setAllMatching(true);
-              setExportFormat("pdf");
+              setExportFormat("png");
             }}>
-              Labels printen
+              Alle QR-codes downloaden
             </Button>
           </>
         }
@@ -246,7 +246,7 @@ function QrCodesInner() {
                 <EmptyState
                   icon={QrIcon}
                   title="Nog geen QR-codes"
-                  description="Maak QR-codes aan voor je producten (ook vóór publicatie, om alvast labels te printen) of publiceer een product."
+                  description="Maak QR-codes aan voor je producten (ook vóór publicatie, om alvast verpakkingen te laten drukken) of publiceer een product."
                   action={
                     <Link href="/company/products" className="text-sm font-medium text-emerald-700 hover:underline">
                       Naar producten
@@ -374,15 +374,12 @@ function QrCodesInner() {
             <BulkButton icon={DownloadIcon} onClick={() => setExportFormat("png")}>
               Downloaden (ZIP)
             </BulkButton>
-            <BulkButton icon={PrinterIcon} tone="accent" onClick={() => setExportFormat("pdf")}>
-              PDF-labels
-            </BulkButton>
           </>
         }
       />
 
       {exportFormat && (
-        <PrintExportDialog
+        <QrExportDialog
           open
           initialFormat={exportFormat}
           selection={selection()}

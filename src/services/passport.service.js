@@ -35,7 +35,7 @@ async function loadPassportData(product, db) {
   const documents = await one(`SELECT id, type, title, language, storage_url, blob_name, file_size, mime_type,
       is_public, category, valid_until, version
     FROM dbo.documents WHERE product_id = $1 ORDER BY id`);
-  const company = (await executor.query("SELECT name, logo FROM dbo.companies WHERE id = $1", [product.company_id]))
+  const company = (await executor.query("SELECT name, (logo IS NOT NULL OR logo_blob_name IS NOT NULL) AS has_logo, left(md5(COALESCE(logo_blob_name, logo, '')), 10) AS logo_version FROM dbo.companies WHERE id = $1", [product.company_id]))
     .rows[0] || null;
   return { sustainability, compliance, parts, documents, company };
 }

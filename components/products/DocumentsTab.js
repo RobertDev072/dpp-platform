@@ -17,7 +17,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { DOCUMENT_CATEGORY_OPTIONS, documentCategoryLabel, documentValidity, formatFileSize } from "./documentUtils";
 
 // Zelfde whitelist als de backend (products.routes.js): controle vóór de upload
-// voorkomt een zinloze POST van 10 MB die toch een 400 oplevert.
+// voorkomt een zinloze upload van een te groot bestand die toch een 400 oplevert.
 const ALLOWED_MIME_TYPES = [
   "application/pdf",
   "image/jpeg",
@@ -26,7 +26,7 @@ const ALLOWED_MIME_TYPES = [
   "image/webp"
 ];
 const ACCEPT = ".pdf,image/jpeg,image/png,image/svg+xml,image/webp";
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 export default function DocumentsTab({ productId, onChanged }) {
   const toast = useToast();
@@ -151,7 +151,7 @@ function UploadCard({ productId, onUploaded }) {
       const sizeMb = (candidate.size / (1024 * 1024)).toFixed(1).replace(".", ",");
       setFile(null);
       setFileError(
-        `Het bestand is te groot (${sizeMb} MB, max 10 MB). Verklein de PDF of splits het document.`
+        `Het bestand is te groot (${sizeMb} MB, max 25 MB). Exporteer de PDF opnieuw (niet scannen) of splits het document.`
       );
       return;
     }
@@ -260,7 +260,7 @@ function UploadCard({ productId, onUploaded }) {
                 <span className="text-sm font-medium text-slate-700">
                   Klik om een bestand te kiezen of sleep het hierheen
                 </span>
-                <span className="text-xs text-slate-500">PDF, JPG, PNG, SVG of WEBP — max 10 MB</span>
+                <span className="text-xs text-slate-500">PDF, JPG, PNG, SVG of WEBP — max 25 MB</span>
               </>
             )}
           </label>

@@ -23,8 +23,9 @@ async function countScanEvents({ companyId } = {}) {
     join = "JOIN dbo.Products p ON p.id = s.product_id";
     where = "WHERE p.company_id = @companyId";
   }
-  const result = await request.query(`SELECT COUNT(*) AS n FROM dbo.ScanEvents s ${join} ${where}`);
-  return result.recordset[0].n;
+  // dbo.scandays: samengevatte dagen + losse scanregels (zie migratie 20261014000000).
+  const result = await request.query(`SELECT COALESCE(SUM(s.scans), 0)::bigint AS n FROM dbo.scandays s ${join} ${where}`);
+  return Number(result.recordset[0].n);
 }
 
 module.exports = { recordScanEvent, countScanEvents };
@@ -37,22 +38,22 @@ async function getScanSummary(companyId) {
     .input("companyId", sql.Int, companyId)
     .query(`
       SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN s.scanned_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' THEN 1 ELSE 0 END) AS today,
-        SUM(CASE WHEN s.scanned_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' THEN 1 ELSE 0 END) AS this_month,
-        SUM(CASE WHEN s.scanned_at >= now() - interval '30 days' THEN 1 ELSE 0 END) AS last_30_days,
-        SUM(CASE WHEN s.scanned_at >= now() - interval '60 days' AND s.scanned_at < now() - interval '30 days' THEN 1 ELSE 0 END) AS previous_30_days
-      FROM dbo.ScanEvents s
+        COALESCE(SUM(s.scans), 0)::bigint AS total,
+        COALESCE(SUM(s.scans) FILTER (WHERE s.day = (now() AT TIME ZONE 'UTC')::date), 0)::bigint AS today,
+        COALESCE(SUM(s.scans) FILTER (WHERE s.day >= date_trunc('month', (now() AT TIME ZONE 'UTC')::date)::date), 0)::bigint AS this_month,
+        COALESCE(SUM(s.scans) FILTER (WHERE s.day > (now() AT TIME ZONE 'UTC')::date - 30), 0)::bigint AS last_30_days,
+        COALESCE(SUM(s.scans) FILTER (WHERE s.day > (now() AT TIME ZONE 'UTC')::date - 60 AND s.day <= (now() AT TIME ZONE 'UTC')::date - 30), 0)::bigint AS previous_30_days
+      FROM dbo.scandays s
       JOIN dbo.Products p ON p.id = s.product_id
       WHERE p.company_id = @companyId
     `);
   const row = result.recordset[0];
   return {
-    total: row.total || 0,
-    today: row.today || 0,
-    thisMonth: row.this_month || 0,
-    last30Days: row.last_30_days || 0,
-    previous30Days: row.previous_30_days || 0
+    total: Number(row.total || 0),
+    today: Number(row.today || 0),
+    thisMonth: Number(row.this_month || 0),
+    last30Days: Number(row.last_30_days || 0),
+    previous30Days: Number(row.previous_30_days || 0)
   };
 }
 
@@ -64,10 +65,10 @@ async function countScansPerDay(companyId, days) {
     .input("companyId", sql.Int, companyId)
     .input("days", sql.Int, days)
     .query(`
-      SELECT to_char(date_trunc('day', s.scanned_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day, COUNT(*) AS total
-      FROM dbo.ScanEvents s
+      SELECT to_char(s.day, 'YYYY-MM-DD') AS day, SUM(s.scans)::bigint AS total
+      FROM dbo.scandays s
       JOIN dbo.Products p ON p.id = s.product_id
-      WHERE p.company_id = @companyId AND s.scanned_at >= now() - make_interval(days => @days)
+      WHERE p.company_id = @companyId AND s.day > (now() AT TIME ZONE 'UTC')::date - @days::int
       GROUP BY 1
     `);
   return result.recordset;
@@ -81,10 +82,10 @@ async function listTopScannedProducts(companyId, { limit = 5, days = 30 } = {}) 
     .input("limit", sql.Int, limit)
     .input("days", sql.Int, days)
     .query(`
-      SELECT p.id, p.name, p.sku, COUNT(*) AS scans, MAX(s.scanned_at) AS last_scan_at
-      FROM dbo.ScanEvents s
+      SELECT p.id, p.name, p.sku, SUM(s.scans)::bigint AS scans, MAX(s.last_scan_at) AS last_scan_at
+      FROM dbo.scandays s
       JOIN dbo.Products p ON p.id = s.product_id
-      WHERE p.company_id = @companyId AND s.scanned_at >= now() - make_interval(days => @days)
+      WHERE p.company_id = @companyId AND s.day > (now() AT TIME ZONE 'UTC')::date - @days::int
       GROUP BY p.id, p.name, p.sku
       ORDER BY scans DESC, p.name
       LIMIT @limit

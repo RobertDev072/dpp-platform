@@ -267,6 +267,7 @@ docs/                     cloudflare, compliance-matrix, verificatie
 - [x] STRATO-server ingericht, R2 en back-ups actief, restore getest (2026-10-13).
 - [x] Platform Owner: MFA gekoppeld; back-up-wachtzin in de wachtwoordmanager.
 - [x] Capaciteitsmonitoring (schijf, geheugen, back-up, certificaten, R2) en noodplan (docs/noodplan.md).
+- [x] Zuinig op schaal: foto's verkleind (origineel niet bewaard), logo/profielfoto in R2, scans 1× per apparaat per 30 min en na 90 dagen alleen dagtotalen, noodkopie van elk paspoort in R2, Cloudflare Worker voor qr (docs/cloudflare.md). Labels printen verwijderd (QR-codes blijven downloadbaar als PNG/SVG/ZIP).
 - [ ] Externe monitor (UptimeRobot) op /api/health en /api/health/capacity.
 - [ ] Loadtest.
 

@@ -141,23 +141,23 @@ async function getEntityCounts() {
         (SELECT COUNT(*) FROM dbo.Products) AS product_count,
         (SELECT COUNT(*) FROM dbo.Documents) AS document_count,
         (SELECT COUNT(*) FROM dbo.AuditLogs) AS audit_log_count,
-        (SELECT COUNT(*) FROM dbo.ScanEvents) AS scan_event_count,
+        (SELECT COALESCE(SUM(scans), 0)::bigint FROM dbo.scandays) AS scan_event_count,
         (SELECT COUNT(*) FROM dbo.CompanyAdminInvites) AS invite_count
     `);
     return result.recordset[0];
   });
 }
 
-// QR-scans per periode (echte data uit ScanEvents.scanned_at).
+// QR-scans per periode (dbo.scandays: samengevatte dagen + losse scanregels).
 async function getScanStats() {
   return cached("scanStats", 60000, async () => {
     const pool = await getPool();
     const result = await pool.request().query(`
       SELECT
-        (SELECT COUNT(*) FROM dbo.ScanEvents WHERE scanned_at >= ${START_OF_TODAY_UTC}) AS today,
-        (SELECT COUNT(*) FROM dbo.ScanEvents WHERE scanned_at >= now() - interval '7 days') AS last7,
-        (SELECT COUNT(*) FROM dbo.ScanEvents WHERE scanned_at >= now() - interval '30 days') AS last30,
-        (SELECT COUNT(*) FROM dbo.ScanEvents) AS total
+        (SELECT COALESCE(SUM(scans), 0)::bigint FROM dbo.scandays WHERE day = (now() AT TIME ZONE 'UTC')::date) AS today,
+        (SELECT COALESCE(SUM(scans), 0)::bigint FROM dbo.scandays WHERE day > (now() AT TIME ZONE 'UTC')::date - 7) AS last7,
+        (SELECT COALESCE(SUM(scans), 0)::bigint FROM dbo.scandays WHERE day > (now() AT TIME ZONE 'UTC')::date - 30) AS last30,
+        (SELECT COALESCE(SUM(scans), 0)::bigint FROM dbo.scandays) AS total
     `);
     return result.recordset[0];
   });
@@ -168,13 +168,13 @@ async function getTopScannedProducts() {
   return cached("topScanned", 5 * 60000, async () => {
     const pool = await getPool();
     const result = await pool.request().query(`
-      SELECT p.name, c.name AS company_name, COUNT(*) AS scans
-      FROM dbo.ScanEvents s
+      SELECT p.name, c.name AS company_name, SUM(s.scans)::bigint AS scans
+      FROM dbo.scandays s
       JOIN dbo.Products p ON p.id = s.product_id
       JOIN dbo.Companies c ON c.id = p.company_id
-      WHERE s.scanned_at >= now() - interval '30 days'
+      WHERE s.day > (now() AT TIME ZONE 'UTC')::date - 30
       GROUP BY p.name, c.name
-      ORDER BY COUNT(*) DESC
+      ORDER BY SUM(s.scans) DESC
       LIMIT 5
     `);
     return result.recordset;

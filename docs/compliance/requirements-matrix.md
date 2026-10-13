@@ -96,7 +96,7 @@ vragen.
 | ID | Norm | Huidige situatie | Status |
 |---|---|---|---|
 | R-ID-01 | EN 18219 | Permanente, globaal unieke id per productmodel (UUID v4, uniek in de database, nooit hergebruikt of gewijzigd), resolveerbaar via `https://qr.veripasso.com/p/{ID}`; ook `urn:uuid` en GTIN in de DPP-JSON. Onbekend of ISO/IEC 15459 of GS1 Digital Link vereist is | BLOCKED |
-| R-CAR-01 | EN 18220 | QR-codes (PNG/SVG/PDF), leesbaarheidscontrole in printprofielen, URL met de hoofdletter-GUID zoals gedrukt | BLOCKED |
+| R-CAR-01 | EN 18220 | QR-codes (PNG/SVG, foutcorrectie Q), URL met de hoofdletter-GUID zoals gedrukt; printprofielen/labels zijn verwijderd (2026-10-14), drukwerk via eigen ontwerp/drukker | BLOCKED |
 | R-API-01 | EN 18222 | Eigen REST-API voor aanmaken/lezen/wijzigen/archiveren, versies en export; zoeken alleen voor ingelogde gebruikers | BLOCKED |
 | R-INT-01 | EN 18223 | JSON-LD met schema.org + eigen vocabulaire (`/vocab/dpp#`, nog niet gepubliceerd) | BLOCKED |
 

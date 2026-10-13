@@ -10,16 +10,26 @@ async function listCompanies() {
   return result.recordset;
 }
 
+// Het logo komt als URL terug (/api/media/logos/<id>?v=<versie>), nooit als afbeelding:
+// zo blijven lijsten en sessiecontroles licht. Versie = md5 van de objectnaam (zelfde
+// als mediaVersion in media.routes.js), dus een nieuw logo = nieuwe URL.
+function logoUrlSql(alias) {
+  return `CASE
+      WHEN ${alias}.logo_blob_name IS NOT NULL THEN '/api/media/logos/' || ${alias}.id || '?v=' || left(md5(${alias}.logo_blob_name), 10)
+      WHEN ${alias}.logo IS NOT NULL THEN '/api/media/logos/' || ${alias}.id || '?v=' || left(md5(${alias}.logo), 10)
+    END`;
+}
+
 async function getCompanyById(id) {
   const pool = await getPool();
   const result = await pool
     .request()
     .input("id", sql.Int, id)
     .query(`
-      SELECT id, name, slug, status, plan_id, logo, kind, partner_id,
-             license_start, license_end, created_at, updated_at
-      FROM dbo.Companies
-      WHERE id = @id
+      SELECT c.id, c.name, c.slug, c.status, c.plan_id, ${logoUrlSql("c")} AS logo, c.kind, c.partner_id,
+             c.license_start, c.license_end, c.created_at, c.updated_at
+      FROM dbo.Companies c
+      WHERE c.id = @id
     `);
   return result.recordset[0] || null;
 }
@@ -45,13 +55,14 @@ async function createCompany({ name, slug, planId, status, kind, partnerId, lice
   return result.recordset[0];
 }
 
-const UPDATABLE_FIELDS = ["name", "slug", "status", "planId", "logo", "licenseStart", "licenseEnd", "partnerId"];
+const UPDATABLE_FIELDS = ["name", "slug", "status", "planId", "logo", "logoBlobName", "licenseStart", "licenseEnd", "partnerId"];
 const FIELD_TO_COLUMN = {
   name: "name",
   slug: "slug",
   status: "status",
   planId: "plan_id",
   logo: "logo",
+  logoBlobName: "logo_blob_name",
   licenseStart: "license_start",
   licenseEnd: "license_end",
   partnerId: "partner_id"
@@ -74,7 +85,7 @@ async function listCompaniesWithStats({ partnerId, kind } = {}) {
   }
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const result = await request.query(`
-    SELECT c.id, c.name, c.slug, c.status, c.plan_id, c.logo, c.kind, c.partner_id,
+    SELECT c.id, c.name, c.slug, c.status, c.plan_id, ${logoUrlSql("c")} AS logo, c.kind, c.partner_id,
            partner.name AS partner_name,
            c.license_start, c.license_end, c.created_at, c.updated_at,
            pl.name AS plan_name, pl.max_users, pl.max_products,
@@ -109,6 +120,8 @@ async function updateCompany(id, fields) {
       request.input(field, sql.NVarChar(20), fields[field]);
     } else if (field === "logo") {
       request.input(field, sql.NVarChar(sql.MAX), fields[field] ?? null);
+    } else if (field === "logoBlobName") {
+      request.input(field, sql.NVarChar(300), fields[field] ?? null);
     } else if (field === "licenseStart" || field === "licenseEnd") {
       request.input(field, sql.Date, fields[field] ?? null);
     } else {

@@ -371,7 +371,12 @@ export default function AppShell({ menu, children }) {
             className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-800"
           >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
-              {initials}
+              {user.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+              ) : (
+                initials
+              )}
             </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium text-slate-100">{displayName}</span>
@@ -465,7 +470,12 @@ export default function AppShell({ menu, children }) {
                 className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-100"
               >
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
-                  {initials}
+                  {user.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={user.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                  ) : (
+                    initials
+                  )}
                 </span>
                 <span className="hidden min-w-0 text-left sm:block">
                   <span className="block max-w-40 truncate text-sm font-medium text-slate-900">

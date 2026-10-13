@@ -19,14 +19,14 @@ const { assertCompanyAccess } = require("../utils/tenant");
 const { logAudit, logAuditFromReq } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const { getPassportUrl } = require("../utils/baseUrl");
+const { generateQrPngBuffer, generateQrSvgString } = require("../services/qrCode.service");
 const {
-  generateQrPngBuffer,
-  generateQrSvgString,
-  generateLabelPdfBuffer
-} = require("../services/qrCode.service");
-const {
-  uploadProductPhoto,
+  processProductPhoto,
   getProductPhotoUrl,
+  PHOTO_MAX_BYTES,
+  PHOTO_MAX_MB,
+  DOCUMENT_MAX_BYTES,
+  DOCUMENT_MAX_MB,
   ALLOWED_IMAGE_MIME_TYPES,
   ALLOWED_DOCUMENT_MIME_TYPES,
   uploadProductDocument,
@@ -41,7 +41,7 @@ const router = express.Router();
 
 const photoUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: PHOTO_MAX_BYTES },
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_IMAGE_MIME_TYPES[file.mimetype]) {
       cb(new HttpError(400, "Alleen JPEG, PNG, WEBP of GIF-afbeeldingen zijn toegestaan."));
@@ -51,10 +51,9 @@ const photoUpload = multer({
   }
 });
 
-const DOCUMENT_MAX_MB = 10;
 const documentUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: DOCUMENT_MAX_MB * 1024 * 1024 },
+  limits: { fileSize: DOCUMENT_MAX_BYTES },
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_DOCUMENT_MIME_TYPES[file.mimetype]) {
       cb(new HttpError(400, "Alleen PDF, JPEG, PNG, SVG of WEBP-bestanden zijn toegestaan."));
@@ -263,7 +262,7 @@ router.post(
         return;
       }
       if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
-        next(new HttpError(400, "De afbeelding is te groot (max 5 MB)."));
+        next(new HttpError(400, `De afbeelding is te groot (max ${PHOTO_MAX_MB} MB).`));
         return;
       }
       next(err);
@@ -284,13 +283,8 @@ router.post(
         return;
       }
 
-      const photoBlobName = await uploadProductPhoto({
-        productId: id,
-        buffer: req.file.buffer,
-        mimeType: req.file.mimetype
-      });
-
-      res.json(await savePhoto(req, existing, photoBlobName, { sourceBuffer: req.file.buffer }));
+      const photo = await processProductPhoto({ productId: id, sourceBuffer: req.file.buffer });
+      res.json(await savePhoto(req, existing, photo));
     } catch (error) {
       next(error);
     }
@@ -299,15 +293,9 @@ router.post(
 
 // Een upload vervangt een eventueel eerder geplakte externe URL - er kan maar één
 // actieve foto-bron tegelijk zijn.
-async function savePhoto(req, product, photoBlobName, { sourceBuffer } = {}) {
-  // Kleine WebP-versie voor het publieke paspoort (minder dataverkeer). Mislukt dat,
-  // dan toont het paspoort gewoon het origineel; de upload zelf is geslaagd.
-  let photoThumbBlobName = null;
-  try {
-    photoThumbBlobName = await require("../services/blobStorage.service").createPhotoThumbnail(photoBlobName, { sourceBuffer });
-  } catch (error) {
-    require("../utils/logger").warn("photo_thumbnail_failed", { productId: product.id, errorMessage: error.message });
-  }
+// photo: { photoBlobName, photoThumbBlobName } uit processProductPhoto (verkleinde WebP +
+// miniatuur; het origineel wordt niet bewaard).
+async function savePhoto(req, product, { photoBlobName, photoThumbBlobName }) {
   const updated = await productsRepo.updateProduct(product.id, {
     photoBlobName,
     photoThumbBlobName,
@@ -362,7 +350,8 @@ router.post("/:id/photo/complete", requireRole(...EDITOR_ROLES), async (req, res
     if (!product) return;
     const objectName = req.body?.objectName;
     await verifyUploadedPhoto({ objectName, productId: product.id });
-    res.json(await savePhoto(req, product, objectName));
+    const photo = await processProductPhoto({ productId: product.id, objectName });
+    res.json(await savePhoto(req, product, photo));
   } catch (error) {
     next(error);
   }
@@ -449,7 +438,7 @@ router.post("/:id/publish", requireRole(...EDITOR_ROLES), async (req, res, next)
 });
 
 // QR-code reserveren zonder te publiceren: de permanente public_id wordt toegekend,
-// zodat labels al gedrukt kunnen worden. Het paspoort blijft niet-openbaar tot
+// zodat de code al op verpakkingen gedrukt kan worden. Het paspoort blijft niet-openbaar tot
 // "Publiceren". Idempotent: een bestaande public_id wordt nooit vervangen.
 router.post("/:id/qr", requireRole(...EDITOR_ROLES), async (req, res, next) => {
   try {
@@ -783,7 +772,7 @@ router.post(
   }
 );
 
-// Documentupload (PDF/JPEG/PNG/SVG/WEBP, max 10 MB) naar de private
+// Documentupload (PDF/JPEG/PNG/SVG/WEBP, max DOCUMENT_MAX_MB) naar de private
 // documenten-container; zelfde patroon als de foto-upload.
 router.post(
   "/:id/documents/upload",
@@ -798,7 +787,7 @@ router.post(
         next(
           new HttpError(
             400,
-            `Het bestand is te groot (max ${DOCUMENT_MAX_MB} MB). Verklein de PDF (bijv. comprimeren of splitsen) en probeer opnieuw.`
+            `Het bestand is te groot (max ${DOCUMENT_MAX_MB} MB). Exporteer de PDF opnieuw (niet scannen) of splits het document en probeer opnieuw.`
           )
         );
         return;
@@ -1068,34 +1057,6 @@ router.get("/:id/qr.svg", requireRole(...ALL_ROLES), async (req, res, next) => {
       res.attachment(`qr-${qrFileStem(product)}.svg`);
     }
     res.send(svg);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get("/:id/qr-label.pdf", requireRole(...ALL_ROLES), async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    const product = await productsRepo.getProductById(id);
-    if (!product) {
-      next(new HttpError(404, "Niet gevonden"));
-      return;
-    }
-    assertCompanyAccess(req.user, product.company_id);
-    if (!product.public_id) {
-      next(new HttpError(404, "Product is nog niet gepubliceerd"));
-      return;
-    }
-
-    const url = getPassportUrl(req, product.public_id);
-    const qrPngBuffer = await generateQrPngBuffer(url);
-    const pdfBuffer = await generateLabelPdfBuffer({ product, qrPngBuffer });
-
-    res.set("Content-Type", "application/pdf");
-    if (req.query.download) {
-      res.attachment(`label-${qrFileStem(product)}.pdf`);
-    }
-    res.send(pdfBuffer);
   } catch (error) {
     next(error);
   }

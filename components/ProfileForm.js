@@ -12,6 +12,7 @@ import FormError from "@/components/ui/FormError";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import MfaSettings from "@/components/MfaSettings";
+import AvatarUpload from "@/components/AvatarUpload";
 
 export default function ProfileForm() {
   const toast = useToast();
@@ -150,6 +151,8 @@ export default function ProfileForm() {
           <SubmitButton loading={saving}>Opslaan</SubmitButton>
         </form>
       </Card>
+
+      <AvatarUpload me={me} onChange={(avatarUrl) => setMe((prev) => ({ ...prev, avatarUrl }))} />
 
       <Card>
         <h2 className="mb-2 text-sm font-semibold text-slate-900">Wachtwoord</h2>

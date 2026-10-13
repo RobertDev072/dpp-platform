@@ -77,9 +77,8 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     assert.equal(svg.status, 200);
     assert.equal(decodeSvg(svg.buffer.toString("utf8")), qrUrl, "SVG is scanbaar met dezelfde URL");
 
-    const pdf = await getBinary(baseUrl, `/api/products/${product}/qr-label.pdf`, cookieA);
-    assert.equal(pdf.status, 200);
-    assert.equal(pdf.buffer.subarray(0, 5).toString(), "%PDF-", "label is een geldige PDF");
+    // Labels printen is verwijderd: de route bestaat niet meer.
+    assert.equal((await getBinary(baseUrl, `/api/products/${product}/qr-label.pdf`, cookieA)).status, 404);
   });
 
   await t.test("QR-02: de URL in de QR-code opent het publieke paspoort (hoofdletter-GUID)", async () => {
@@ -161,33 +160,34 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     assert.equal((await request(baseUrl, "GET", `/api/products/${p2}/documents`, { cookie: cookieB })).status, 404);
   });
 
-  await t.test("SCAN-01: elke paspoortweergave (scan-beacon) telt precies één scan, per bedrijf gescheiden; concepten tellen niet", async () => {
+  await t.test("SCAN-01: één scan per apparaat per paspoort per 30 minuten (refresh telt niet), per bedrijf gescheiden; concepten tellen niet", async () => {
     const p3 = await createTestProduct({ companyId: companyA, name: "Scan Product" });
     const pub3 = await request(baseUrl, "POST", `/api/products/${p3}/publish`, { cookie: cookieA });
     const pool = await getPool();
     const count = async () =>
       Number((await pool.query("SELECT COUNT(*)::int AS n FROM dbo.scanevents WHERE product_id = $1", [p3])).rows[0].n);
+    const beacon = (ua) => fetch(`${baseUrl}/api/scan/${pub3.data.public_id}`, { method: "POST", headers: { "User-Agent": ua } });
 
     const before = await count();
     // De pagina zelf is cachebaar (CDN); het ophalen van de gegevens telt dus niet,
-    // de beacon die de browser per weergave stuurt wel.
+    // de beacon die de browser stuurt wel.
     assert.equal((await request(baseUrl, "GET", `/api/public/products/${pub3.data.public_id}`)).status, 200);
     await new Promise((r) => setTimeout(r, 300));
     assert.equal(await count(), before, "ophalen van gegevens telt niet als scan");
-    for (let i = 0; i < 5; i++) {
-      assert.equal((await request(baseUrl, "POST", `/api/public/products/${pub3.data.public_id}/scan`)).status, 204);
-    }
-    await new Promise((r) => setTimeout(r, 300)); // registratie gebeurt asynchroon
-    assert.equal(await count(), before + 5, "5 weergaven = 5 scans");
 
-    // Machineleesbare opvraging (/api/dpp) telt ook als scan.
-    await fetch(`${baseUrl}/api/dpp/${pub3.data.public_id}`, { headers: { Accept: "application/json" } });
+    for (let i = 0; i < 5; i++) assert.equal((await beacon("Telefoon-A")).status, 204);
+    assert.equal(await count(), before + 1, "5× refresh op hetzelfde apparaat = 1 scan");
+    for (let i = 0; i < 2; i++) assert.equal((await beacon("Telefoon-B")).status, 204);
+    assert.equal(await count(), before + 2, "ander apparaat telt wel");
+
+    // Machineleesbare opvraging (/api/dpp) telt ook als scan, met dezelfde regel.
+    for (let i = 0; i < 2; i++) await fetch(`${baseUrl}/api/dpp/${pub3.data.public_id}`, { headers: { Accept: "application/json", "User-Agent": "Systeem-C" } });
     await new Promise((r) => setTimeout(r, 300));
-    assert.equal(await count(), before + 6);
+    assert.equal(await count(), before + 3);
 
     const statsA = await request(baseUrl, "GET", "/api/products/qr-stats", { cookie: cookieA });
     assert.equal(statsA.status, 200);
-    assert.ok(statsA.data.scans.total >= 6, "statistiek van A bevat de scans");
+    assert.ok(statsA.data.scans.total >= 3, "statistiek van A bevat de scans");
     const statsB = await request(baseUrl, "GET", "/api/products/qr-stats", { cookie: cookieB });
     assert.equal(statsB.data.scans.total, 0, "bedrijf B ziet geen scans van A");
 
@@ -198,11 +198,10 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     assert.equal(draftScans, 0);
   });
 
-  await t.test("ISO-01: een ander bedrijf kan QR-codes, labels, versies en bulkacties van A niet benaderen", async () => {
+  await t.test("ISO-01: een ander bedrijf kan QR-codes, versies en bulkacties van A niet benaderen", async () => {
     for (const path of [
       `/api/products/${product}/qr.png`,
       `/api/products/${product}/qr.svg`,
-      `/api/products/${product}/qr-label.pdf`,
       `/api/products/${product}/versions`,
       `/api/products/${product}/documents`,
       `/api/products/${product}`
@@ -216,7 +215,7 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     });
     assert.equal(bulk.status, 200);
     assert.equal(bulk.data.affected, 0, "bulkactie van B raakt product van A niet");
-    const zip = await postBinary(baseUrl, "/api/print/qr.zip", cookieB, { ids: [product], format: "png" });
+    const zip = await postBinary(baseUrl, "/api/qr/codes.zip", cookieB, { ids: [product], format: "png" });
     assert.equal(zip.status, 400, "B kan geen QR-ZIP van A's product maken");
     const exportB = await fetch(`${baseUrl}/api/products/passports/export`, { headers: { Cookie: cookieB } });
     assert.ok(!(await exportB.text()).includes(publicId.toLowerCase()), "export van B bevat A niet");
@@ -243,7 +242,7 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     );
     assert.equal(unique.rows[0].n, 1000, "1.000 unieke QR-identiteiten");
 
-    const zip = await postBinary(baseUrl, "/api/print/qr.zip", cookieB, { ids, format: "svg" });
+    const zip = await postBinary(baseUrl, "/api/qr/codes.zip", cookieB, { ids, format: "svg" });
     assert.equal(zip.status, 200);
     assert.equal(zip.headers.get("x-files-count"), "1000");
     const files = unzipSync(new Uint8Array(zip.buffer));
@@ -258,7 +257,7 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
       assert.ok(url, `${name} is scanbaar`);
       assert.ok(known.has(url.split("/p/")[1]), `${name} verwijst naar een eigen product`);
     }
-    const pngTooMany = await postBinary(baseUrl, "/api/print/qr.zip", cookieB, { ids: ids.slice(0, 501), format: "png" });
+    const pngTooMany = await postBinary(baseUrl, "/api/qr/codes.zip", cookieB, { ids: ids.slice(0, 501), format: "png" });
     assert.equal(pngTooMany.status, 400, "PNG-ZIP is begrensd op 500 per bestand");
     t.diagnostic(`1.000 QR's genereren + SVG-ZIP: ${Date.now() - started} ms`);
   });

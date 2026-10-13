@@ -69,7 +69,11 @@ test("S3: grootte moet een geheel aantal bytes zijn", async () => {
 test("S3: verkeerd type of te groot bestand krijgt geen upload-URL", async () => {
   storage.setS3ClientForTests(fakeClient().client);
   await assert.rejects(storage.createPhotoUpload({ productId: 1, mimeType: "application/x-msdownload", size: 10 }), /Alleen JPEG/);
-  await assert.rejects(storage.createPhotoUpload({ productId: 1, mimeType: "image/png", size: 6 * 1024 * 1024 }), /te groot/);
+  await assert.rejects(storage.createPhotoUpload({ productId: 1, mimeType: "image/png", size: 15 * 1024 * 1024 + 1 }), /te groot \(max 15 MB\)/);
+  await assert.rejects(storage.createDocumentUpload({ productId: 1, mimeType: "application/pdf", size: 25 * 1024 * 1024 + 1 }), /te groot \(max 25 MB\)/);
+  // Net onder de grens: wel een upload-URL (telefoonfoto 14 MB, gescande PDF 24 MB).
+  assert.ok((await storage.createPhotoUpload({ productId: 1, mimeType: "image/jpeg", size: 14 * 1024 * 1024 })).uploadUrl);
+  assert.ok((await storage.createDocumentUpload({ productId: 1, mimeType: "application/pdf", size: 24 * 1024 * 1024 })).uploadUrl);
   await assert.rejects(storage.createDocumentUpload({ productId: 1, mimeType: "application/pdf", size: 0 }), /te groot/);
 });
 

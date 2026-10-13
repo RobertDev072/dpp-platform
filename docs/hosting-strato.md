@@ -20,6 +20,10 @@ back-up ─ elke nacht 03:15, versleuteld ──────> Cloudflare R2 (EU)
 | HTTPS | Caddy, Let's Encrypt, automatisch verlengd | TLS 1.2+ (1.1 geweigerd), HTTP/2 en HTTP/3, HSTS; HTTP → HTTPS |
 | Database | PostgreSQL 17 in Docker | alleen bereikbaar op het interne Docker-netwerk; migraties draaien bij elke start |
 | Bestanden | Cloudflare R2, jurisdictie EU: `veripasso-images`, `veripasso-documents` | privé; CORS alleen `https://app.veripasso.com`; de server heeft een eigen sleutel die alleen bij de VeriPasso-buckets kan |
+| Uploadlimieten | productfoto 15 MB, document/PDF 25 MB, logo en profielfoto 5 MB | foto's worden direct verkleind (WebP 2000 px + miniatuur 800 px, origineel niet bewaard); logo en profielfoto 256 px WebP |
+| Noodkopie paspoorten | R2 `veripasso-images/passport-snapshots/` | zelfstandige HTML + JSON van elk openbaar paspoort, ±2 min na elke wijziging bijgewerkt; de Cloudflare Worker toont die als de server niet antwoordt ([cloudflare.md](cloudflare.md)) |
+| Scans | PostgreSQL | 1 scan per apparaat per paspoort per 30 min; losse regels 90 dagen, daarna alleen dagtotalen (`dbo.scandaily`) |
+| Logs | Docker | max. 3 × 20 MB per container |
 | Back-ups | `deploy/backup.sh` via cron (03:15) | `pg_dump`, AES-256 versleuteld, 7 dagen op de server (`/var/backups/veripasso`) + kopie naar R2 `veripasso-backups/db`. Terugzetten getest op 2026-10-13. |
 | Monitoring | in de app: `/admin/systeemstatus` (Platform Owner) | database, opslag, fouten, snelheid, groei; **capaciteit**: schijf, geheugen, laatste back-up, certificaten, R2 t.o.v. gratis 10 GB. Extern te bewaken via `/api/health/capacity` (503 bij een waarschuwing). |
 
@@ -81,7 +85,6 @@ opslag, geen kosten voor dataverkeer).
 ## Nog open
 
 - Externe monitor instellen (bijv. UptimeRobot) op `/api/health` en `/api/health/capacity`.
-- Cloudflare vóór `qr.veripasso.com` (paspoortcache + gebundelde scans): klaar in de code, nog niet actief — zie [cloudflare.md](cloudflare.md).
 - Eén server = geen automatische uitwijk bij een storing; herstel via de back-ups op R2.
 - Infrastructuurbewijs voor de compliance-matrix opnieuw vastleggen (TLS, back-up/restore).
 

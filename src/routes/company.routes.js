@@ -52,10 +52,31 @@ router.get("/", requireRole("company_admin", "company_user"), requireOwnCompany,
 
 router.patch("/", requireRole("company_admin"), requireOwnCompany, validateBody(updateOwnCompanySchema), async (req, res, next) => {
   try {
-    const updated = await companiesRepo.updateCompany(req.user.companyId, {
-      ...(req.body.name !== undefined ? { name: req.body.name } : {}),
-      ...(req.body.logo !== undefined ? { logo: req.body.logo } : {})
-    });
+    const fields = req.body.name !== undefined ? { name: req.body.name } : {};
+    let previousLogoBlob = null;
+    if (req.body.logo !== undefined) {
+      const { isStorageConfigured } = require("../config/storage");
+      const pool = await require("../config/db").getPool();
+      previousLogoBlob = (await pool.query("SELECT logo_blob_name FROM dbo.companies WHERE id = $1", [req.user.companyId])).rows[0]?.logo_blob_name || null;
+      if (req.body.logo === null) {
+        Object.assign(fields, { logo: null, logoBlobName: null });
+      } else if (isStorageConfigured()) {
+        // Logo in de objectopslag (256 px WebP), niet in de database.
+        const { storeSmallImage } = require("../services/blobStorage.service");
+        const buffer = Buffer.from(req.body.logo.slice(req.body.logo.indexOf(",") + 1), "base64");
+        const logoBlobName = await storeSmallImage({ prefix: `companies/${req.user.companyId}`, buffer, size: 256 });
+        Object.assign(fields, { logo: null, logoBlobName });
+      } else {
+        // Zonder opslag (lokaal zonder S3): zoals vroeger in de database.
+        Object.assign(fields, { logo: req.body.logo, logoBlobName: null });
+      }
+    }
+    const updated = await companiesRepo.updateCompany(req.user.companyId, fields);
+    // Het oude logo is niet meer in gebruik (paspoortkopieën worden opnieuw gemaakt).
+    if (previousLogoBlob && previousLogoBlob !== fields.logoBlobName) {
+      const { deleteObjectQuietly, bucketFor } = require("../services/blobStorage.service");
+      await deleteObjectQuietly(bucketFor("image"), previousLogoBlob);
+    }
 
     await logAuditFromReq(req, {
       companyId: req.user.companyId,

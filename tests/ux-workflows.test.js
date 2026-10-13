@@ -352,71 +352,24 @@ test("UX-workflows: tenant-gebonden nieuwe functies", async (t) => {
     assert.deepEqual(tpl.SheetNames, ["Producten", "Instructies"]);
   });
 
-  await t.test("print: profielen tenant-gebonden, alleen beheerder beheert, leesbaarheid blokkeert", async () => {
-    const options = await request(baseUrl, "GET", "/api/print/options", { cookie: u });
-    assert.equal(options.status, 200);
-    const settings = options.data.presets[0].settings;
-    assert.equal((await request(baseUrl, "POST", "/api/print/profiles", { cookie: u, body: { name: "x", settings } })).status, 403);
-    const created = await request(baseUrl, "POST", "/api/print/profiles", { cookie: a, body: { name: "A4 3x8", isDefault: true, settings } });
-    assert.equal(created.status, 201);
-    const second = await request(baseUrl, "POST", "/api/print/profiles", { cookie: a, body: { name: "Tweede", isDefault: true, settings } });
-    const list = await request(baseUrl, "GET", "/api/print/profiles", { cookie: u });
-    assert.equal(list.data.filter((p) => p.is_default).length, 1, "maar één standaardprofiel");
-    assert.equal(list.data.find((p) => p.is_default).id, second.data.id);
-    assert.equal((await request(baseUrl, "GET", "/api/print/profiles", { cookie: b })).data.length, 0);
-    assert.equal((await request(baseUrl, "PUT", `/api/print/profiles/${created.data.id}`, { cookie: b, body: { name: "hack", settings } })).status, 404);
-    assert.equal((await request(baseUrl, "DELETE", `/api/print/profiles/${created.data.id}`, { cookie: b })).status, 404);
-    assert.equal((await request(baseUrl, "POST", "/api/print/summary", { cookie: b, body: { profileId: created.data.id } })).status, 404);
-
-    const summary = await request(baseUrl, "POST", "/api/print/summary", { cookie: a, body: { profileId: created.data.id, productCount: 1000 } });
-    assert.equal(summary.data.perPage, 24);
-    assert.equal(summary.data.pages, 42);
-    assert.deepEqual(summary.data.errors, []);
-
-    const tiny = await request(baseUrl, "POST", "/api/print/summary", { cookie: a, body: { settings: { ...settings, qr: { ...settings.qr, sizeMm: 8, quietZoneModules: 0, color: "#EEEEEE" } } } });
-    assert.ok(tiny.data.errors.length >= 3, JSON.stringify(tiny.data.errors));
-    const invalid = await request(baseUrl, "POST", "/api/print/profiles", { cookie: a, body: { name: "x", settings: { paper: "custom" } } });
-    assert.equal(invalid.status, 400);
-  });
-
-  await t.test("print: labels-PDF 1, 10 en 500 producten; 501 geweigerd; vector-QR; ZIP png/svg; tenant-isolatie", async () => {
+  await t.test("QR-ZIP: 1000 SVG / 500 PNG per bestand, 501 PNG geweigerd, tenant-isolatie; printen bestaat niet meer", async () => {
     const ids = (await request(baseUrl, "POST", "/api/products/bulk/resolve", { cookie: a, body: { selection: { filter: { q: "BIG-" } } } })).data.ids;
     assert.ok(ids.length >= 1001);
-    for (const n of [1, 10, 500]) {
-      const pdf = await binary(baseUrl, "POST", "/api/print/labels.pdf", a, { presetKey: "a4-3x8", ids: ids.slice(0, n), generateMissing: true });
-      assert.equal(pdf.status, 200, n === 1 ? pdf.buffer.toString() : "");
-      assert.equal(pdf.buffer.subarray(0, 4).toString(), "%PDF");
-      assert.equal(pdf.headers.get("x-labels-count"), String(n));
-      assert.ok(pdf.buffer.length < 4.5 * 1024 * 1024, `PDF van ${n} labels < 4,5 MB (${pdf.buffer.length})`);
-      const pages = (pdf.buffer.toString("latin1").match(/\/Type \/Page\b/g) || []).length;
-      assert.equal(pages, Math.ceil(n / 24));
-      if (n === 1) assert.ok(!pdf.buffer.toString("latin1").includes("/Subtype /Image"), "QR als vector, geen afbeelding");
-    }
-    assert.equal((await binary(baseUrl, "POST", "/api/print/labels.pdf", a, { presetKey: "a4-3x8", ids: ids.slice(0, 501) })).status, 400);
-    for (const preset of ["a5-1x1", "label-62x29", "qr-only-4x6", "a4-2x7"]) {
-      const pdf = await binary(baseUrl, "POST", "/api/print/labels.pdf", a, { presetKey: preset, ids: ids.slice(0, 3) });
-      assert.equal(pdf.status, 200, preset);
-    }
-    // Onleesbare instellingen: geblokkeerd.
-    const blocked = await binary(baseUrl, "POST", "/api/print/labels.pdf", a, { settings: { paper: "A4", layout: "3x8", qr: { sizeMm: 6 } }, ids: ids.slice(0, 1) });
-    assert.equal(blocked.status, 400);
-    assert.equal(blocked.json().error.code, "PRINT_UNREADABLE");
     // Producten van tenant A via tenant B: niets.
-    const other = await binary(baseUrl, "POST", "/api/print/labels.pdf", b, { presetKey: "a4-3x8", ids: ids.slice(0, 5), generateMissing: true });
-    assert.equal(other.status, 400);
-    const otherZip = await binary(baseUrl, "POST", "/api/print/qr.zip", b, { ids: ids.slice(0, 5), format: "svg" });
+    const otherZip = await binary(baseUrl, "POST", "/api/qr/codes.zip", b, { ids: ids.slice(0, 5), format: "svg", generateMissing: true });
     assert.equal(otherZip.status, 400);
 
-    const zip = await binary(baseUrl, "POST", "/api/print/qr.zip", a, { ids: ids.slice(0, 20), format: "png", sizePx: 600 });
+    const zip = await binary(baseUrl, "POST", "/api/qr/codes.zip", a, { ids: ids.slice(0, 20), format: "png", sizePx: 600, generateMissing: true });
     assert.equal(zip.status, 200);
     assert.equal(zip.buffer.subarray(0, 2).toString(), "PK");
     assert.equal(zip.headers.get("x-files-count"), "20");
-    const svgZip = await binary(baseUrl, "POST", "/api/print/qr.zip", a, { ids: ids.slice(0, 1000), format: "svg" });
+    const svgZip = await binary(baseUrl, "POST", "/api/qr/codes.zip", a, { ids: ids.slice(0, 1000), format: "svg", generateMissing: true });
     assert.equal(svgZip.status, 200);
     assert.ok(svgZip.buffer.length < 4.5 * 1024 * 1024);
-    assert.equal((await binary(baseUrl, "POST", "/api/print/qr.zip", a, { ids: ids.slice(0, 501), format: "png" })).status, 400);
-    const preview = await binary(baseUrl, "POST", "/api/print/preview.pdf", u, { presetKey: "a4-3x8" });
-    assert.equal(preview.status, 200);
+    assert.equal((await binary(baseUrl, "POST", "/api/qr/codes.zip", a, { ids: ids.slice(0, 501), format: "png" })).status, 400);
+    for (const gone of ["/api/print/options", "/api/print/profiles"]) {
+      assert.equal((await request(baseUrl, "GET", gone, { cookie: a })).status, 404, gone);
+    }
   });
 
   await t.test("zoeken, meldingen, dashboard en QR-statistieken zijn tenant-gebonden", async () => {

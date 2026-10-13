@@ -119,7 +119,7 @@ app.use("/api/users", usersRoutes);
 app.use("/api/products/import", require("./routes/productImport.routes"));
 app.use("/api/products/bulk", require("./routes/productBulk.routes"));
 app.use("/api/products", productsRoutes);
-app.use("/api/print", require("./routes/print.routes"));
+app.use("/api/qr", require("./routes/qrExport.routes"));
 app.use("/api/search", require("./routes/search.routes"));
 app.use("/api/admin/plans", plansRoutes);
 app.use("/api/invites", inviteActivationRoutes);
@@ -134,6 +134,7 @@ app.use("/api/admin/system", require("./routes/systemMonitoring.routes"));
 app.use("/api/partner", require("./routes/partner.routes"));
 app.use("/api/audit", require("./routes/audit.routes"));
 app.use("/api/company", require("./routes/company.routes"));
+app.use("/api/media", require("./routes/media.routes"));
 
 app.use(notFoundHandler);
 app.use(errorHandler);

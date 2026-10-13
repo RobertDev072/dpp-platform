@@ -20,7 +20,6 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import NumberField from "@/components/products/NumberField";
 import DocumentsTab from "@/components/products/DocumentsTab";
 import ProductCompleteness from "@/components/products/ProductCompleteness";
-import PrintExportDialog from "@/components/print/PrintExportDialog";
 import { missingItems } from "@/lib/completeness";
 import {
   ArchiveIcon,
@@ -30,7 +29,6 @@ import {
   DownloadIcon,
   ExternalIcon,
   LinkIcon,
-  PrinterIcon,
   QrIcon,
   XIcon
 } from "@/components/ui/icons";
@@ -40,7 +38,7 @@ const TABS = [
   { key: "sustainability", label: "Duurzaamheid" },
   { key: "compliance", label: "Compliance" },
   { key: "documents", label: "Documenten" },
-  { key: "qr", label: "QR & print" }
+  { key: "qr", label: "QR-code" }
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
 // Oude links (?tab=overview) blijven werken.
@@ -77,7 +75,6 @@ function ProductEditor() {
   const [product, setProduct] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [printOpen, setPrintOpen] = useState(false);
   const requestedTab = TAB_ALIASES[searchParams.get("tab")] || searchParams.get("tab");
   const tab = TAB_KEYS.includes(requestedTab) ? requestedTab : "basis";
 
@@ -260,7 +257,7 @@ function ProductEditor() {
           {tab === "sustainability" && <SustainabilityTab productId={id} onSaved={loadProduct} />}
           {tab === "compliance" && <ComplianceTab productId={id} onSaved={loadProduct} onOpenDocuments={() => goTo("documents")} />}
           {tab === "documents" && <DocumentsTab productId={id} onChanged={loadProduct} />}
-          {tab === "qr" && <QrTab product={product} onChanged={loadProduct} onPrint={() => setPrintOpen(true)} />}
+          {tab === "qr" && <QrTab product={product} onChanged={loadProduct} />}
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-4">
@@ -273,8 +270,6 @@ function ProductEditor() {
           </Card>
         </aside>
       </div>
-
-      <PrintExportDialog open={printOpen} onClose={() => setPrintOpen(false)} selection={{ ids: [product.id] }} count={1} onDone={loadProduct} />
     </div>
   );
 }
@@ -491,12 +486,12 @@ function ProductPhotoField({ productId, hasPhoto, version, urlValue, onChangeUrl
               compact
               accept="image/jpeg,image/png,image/webp,image/gif"
               extensions={["jpg", "jpeg", "png", "webp", "gif"]}
-              maxSizeMb={5}
+              maxSizeMb={15}
               onFile={upload}
               disabled={uploading}
               error={uploadError}
               label={uploading ? "Uploaden…" : "Sleep een foto hierheen"}
-              hint="JPG, PNG, WEBP of GIF — max 5 MB"
+              hint="JPG, PNG, WEBP of GIF — max 15 MB, wordt automatisch verkleind"
             />
           ) : (
             <div>
@@ -814,7 +809,7 @@ function ComplianceForm({ productId, initial, onSaved }) {
   );
 }
 
-function QrTab({ product, onChanged, onPrint }) {
+function QrTab({ product, onChanged }) {
   const toast = useToast();
   const [reserving, setReserving] = useState(false);
   const [origin, setOrigin] = useState("");
@@ -841,7 +836,7 @@ function QrTab({ product, onChanged, onPrint }) {
         <QrIcon size={36} className="mx-auto text-slate-300" />
         <h2 className="mt-3 text-sm font-semibold text-slate-900">Nog geen QR-code</h2>
         <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-          Maak de QR-code nu al aan om labels te printen. De code wordt pas actief (het paspoort openbaar) zodra je het product publiceert.
+          Maak de QR-code nu al aan, zodat je hem op de verpakking kunt laten drukken. De code wordt pas actief (het paspoort openbaar) zodra je het product publiceert.
         </p>
         <Button variant="accent" icon={QrIcon} className="mt-4" onClick={reserve} loading={reserving}>
           QR-code aanmaken
@@ -866,7 +861,7 @@ function QrTab({ product, onChanged, onPrint }) {
                 <QrStatusBadge status={product.qr_status} />
               </div>
               <p className="mt-1 text-sm text-slate-500">{QR_STATUS_HELP[product.qr_status]}</p>
-              <p className="mt-1 text-xs text-slate-500">Deze link verandert nooit: een geprinte code blijft altijd naar dit paspoort wijzen.</p>
+              <p className="mt-1 text-xs text-slate-500">Deze link verandert nooit: een gedrukte code blijft altijd naar dit paspoort wijzen, ook als het product later wijzigt of wordt gearchiveerd.</p>
             </div>
             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
               <LinkIcon size={14} className="text-slate-400" />
@@ -894,12 +889,6 @@ function QrTab({ product, onChanged, onPrint }) {
               <ButtonLink href={`/api/products/${product.id}/qr.svg?download=1`} size="sm" icon={DownloadIcon}>
                 SVG
               </ButtonLink>
-              <ButtonLink href={`/api/products/${product.id}/qr-label.pdf?download=1`} size="sm" icon={DownloadIcon}>
-                Los label (PDF)
-              </ButtonLink>
-              <Button variant="accent" size="sm" icon={PrinterIcon} onClick={onPrint}>
-                Printen met profiel
-              </Button>
             </div>
           </div>
         </div>
@@ -907,9 +896,10 @@ function QrTab({ product, onChanged, onPrint }) {
       <Card className="text-sm text-slate-600">
         <h3 className="mb-1 text-sm font-semibold text-slate-900">Welk formaat kies ik?</h3>
         <ul className="list-disc space-y-0.5 pl-5">
-          <li>Gewoon printen op stickervellen of labelprinter → PDF met printprofiel</li>
-          <li>Professionele drukker → SVG of PDF (vector, altijd scherp)</li>
-          <li>Website, e-mail of digitaal → PNG</li>
+          <li>Verpakking of professionele drukker → SVG (vector, altijd scherp)</li>
+          <li>Zelf printen of stickers → PNG 1200 px (≈ 10 cm op 300 DPI)</li>
+          <li>Website, e-mail of digitaal → PNG 512 px</li>
+          <li>Minimaal 2 × 2 cm drukken, met witte rand rondom; altijd een testscan doen vóór de oplage</li>
         </ul>
         {product.qr_status === "active" && (
           <Link href={path} target="_blank" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline">
