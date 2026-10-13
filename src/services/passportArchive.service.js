@@ -12,6 +12,7 @@
 
 const { getPool } = require("../config/db");
 const passport = require("./passport.service");
+const edgeCache = require("./edgeCache.service");
 const logger = require("../utils/logger");
 
 const LOCK_NAMESPACE = 72_610_002;
@@ -113,16 +114,35 @@ async function recordVersionIfChanged(productId, { userId = null, reason = "upda
 // opgeslagen, dus een archieffout mag het verzoek niet laten mislukken. Wel luid
 // loggen (CloudWatch-alarm op "passport_archive_failed"); het dagelijkse onderhoud
 // vult ontbrekende versies aan zodra het weer lukt.
+//
+// Hier wordt ook de Cloudflare-cache van het publieke paspoort ververst: bij een nieuwe
+// versie (inhoud gewijzigd), en bij een paspoort dat openbaar was maar dat nu niet
+// meer is (teruggezet naar concept). Ongewijzigde paspoorten blijven gecachet.
 async function archiveSafely(productIds, options) {
   const results = [];
+  const purge = [];
   for (const id of [...new Set(productIds.map(Number))].filter(Number.isInteger)) {
+    let version = null;
+    let failed = false;
     try {
-      results.push(await recordVersionIfChanged(id, options));
+      version = await recordVersionIfChanged(id, options);
+      if (version) {
+        results.push(version);
+        purge.push(version.publicId);
+      }
     } catch (error) {
+      failed = true;
       logger.error("passport_archive_failed", { productId: id, reason: options?.reason, errorMessage: error.message });
     }
+    if (!version && edgeCache.enabled()) {
+      // Geen nieuwe versie: alleen verversen als het paspoort ooit openbaar was en dat
+      // nu niet meer is, of als het archiveren mislukte (de wijziging is wel opgeslagen).
+      const product = await passport.loadProduct(id).catch(() => null);
+      if (product?.public_id && product.published_at && (failed || !isOnMarket(product))) purge.push(product.public_id);
+    }
   }
-  return results.filter(Boolean);
+  await edgeCache.queuePurgeSafely(purge);
+  return results;
 }
 
 async function listVersions(productId) {

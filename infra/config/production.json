@@ -19,6 +19,7 @@
   "dbDeletionProtection": true,
   "enableDbSecretRotation": false,
   "enableWaf": false,
+  "cloudflareInFront": true,
   "publicRateLimitPer5Min": 1500,
   "enableS3CrossRegionReplication": false,
   "enableAwsBackupCopy": false,

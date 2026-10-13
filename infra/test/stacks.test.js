@@ -154,6 +154,30 @@ test("Caching: paspoorten 5 min (sleutel op Accept, geen cookies), foto's via OA
   assert.equal(distributionConfig().DefaultCacheBehavior.CachePolicyId, "4135ea2d-6df8-44a3-9df3-4b5a84be39ad");
 });
 
+test("Cloudflare vóór het QR-domein: één paspoortcache (Cloudflare), gedeeld geheim via Secrets Manager", () => {
+  const CACHING_DISABLED = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad";
+  const ALL_VIEWER_EXCEPT_HOST = "b689b0a8-53d0-40ab-baf2-68738e2966ac";
+  const passportBehavior = (cfg) => Object.fromEntries(cfg.CacheBehaviors.map((b) => [b.PathPattern, b]))["/p/*"];
+
+  // Met Cloudflare (productie): CloudFront cachet /p/* niet en stuurt Accept door.
+  assert.equal(config.cloudflareInFront, true);
+  const withCf = passportBehavior(distributionConfig());
+  assert.equal(withCf.CachePolicyId, CACHING_DISABLED);
+  assert.equal(withCf.OriginRequestPolicyId, ALL_VIEWER_EXCEPT_HOST);
+  assert.ok(withCf.FunctionAssociations, "domeinrouter (Accept-normalisatie) blijft actief");
+  assert.match(JSON.stringify(appFunction().Environment.Variables.EDGE_SYNC_TOKEN), /\{\{resolve:secretsmanager:/);
+  template.hasResourceProperties("AWS::SecretsManager::Secret", { Name: "veripasso-production-edge" });
+
+  // Zonder Cloudflare (staging): CloudFront cachet zelf 5 minuten, geen edge-geheim.
+  const staging = synthApp("staging");
+  assert.ok(!staging.config.cloudflareInFront);
+  const stagingDist = Object.values(staging.template.findResources("AWS::CloudFront::Distribution"))[0].Properties.DistributionConfig;
+  assert.notEqual(passportBehavior(stagingDist).CachePolicyId, CACHING_DISABLED);
+  const stagingEnv = Object.values(staging.template.findResources("AWS::Lambda::Function")).find((r) => r.Properties.PackageType === "Image").Properties.Environment.Variables;
+  assert.ok(!("EDGE_SYNC_TOKEN" in stagingEnv));
+  assert.throws(() => validateConfig({ ...staging.config, cloudflareInFront: "ja" }), /cloudflareInFront/);
+});
+
 test("S3: Intelligent-Tiering voor huidige objecten", () => {
   for (const bucket of Object.values(template.findResources("AWS::S3::Bucket"))) {
     const rules = bucket.Properties.LifecycleConfiguration.Rules;

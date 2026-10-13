@@ -44,6 +44,7 @@ function validateConfig(config) {
   if (config.webAclArn && !/^arn:aws:wafv2:us-east-1:\d{12}:global\/webacl\//.test(config.webAclArn)) {
     errors.push("webAclArn moet een WAF-web-ACL met scope CLOUDFRONT in us-east-1 zijn");
   }
+  if (config.cloudflareInFront != null && typeof config.cloudflareInFront !== "boolean") errors.push("cloudflareInFront: true of false");
   if (!["X86_64", "ARM64"].includes(config.cpuArchitecture)) errors.push("cpuArchitecture: X86_64 of ARM64");
   if (config.lambdaMemoryMb < 512 || config.lambdaMemoryMb > 10240) errors.push("lambdaMemoryMb: 512-10240");
   if (config.lambdaTimeoutSeconds < 10 || config.lambdaTimeoutSeconds > 900) errors.push("lambdaTimeoutSeconds: 10-900");

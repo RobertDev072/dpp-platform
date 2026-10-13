@@ -3,11 +3,12 @@
 import { useEffect } from "react";
 
 // Meldt één scan per weergave van het publieke paspoort. Nodig omdat de pagina zelf
-// door CloudFront gecachet wordt: niet elke weergave bereikt de server. sendBeacon is
+// aan de rand gecachet wordt: niet elke weergave bereikt de server. sendBeacon is
 // licht, blokkeert de pagina niet en werkt ook als de bezoeker direct wegnavigeert.
+// Eigen pad (/api/scan/), zodat alleen dit verzoek via de Cloudflare Worker loopt.
 export default function ScanBeacon({ publicId }) {
   useEffect(() => {
-    const url = `/api/public/products/${encodeURIComponent(publicId)}/scan`;
+    const url = `/api/scan/${encodeURIComponent(publicId)}`;
     try {
       if (navigator.sendBeacon && navigator.sendBeacon(url)) return;
     } catch {

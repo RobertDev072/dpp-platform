@@ -1,0 +1,36 @@
+# Cloudflare Worker voor qr.veripasso.com: scans bundelen en de paspoortcache verversen.
+# Uitrollen en geheimen instellen: zie docs/cloudflare.md.
+name = "veripasso-qr-edge"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Alleen het scan-beacon loopt via de Worker; al het andere verkeer niet (scheelt
+# Worker-aanvragen op het gratis plan: 100.000 per dag).
+routes = [
+  { pattern = "qr.veripasso.com/api/scan/*", zone_name = "veripasso.com" }
+]
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+QR_HOST = "qr.veripasso.com"
+# Via het app-domein (DNS-only, rechtstreeks naar CloudFront).
+SYNC_URL = "https://app.veripasso.com/api/edge/sync"
+# CF_ZONE_ID: zone-ID van veripasso.com (Cloudflare-dashboard, rechterkolom van "Overview").
+CF_ZONE_ID = "VUL_IN"
+
+# Geheimen (niet in dit bestand), eenmalig instellen:
+#   npx wrangler secret put EDGE_SYNC_TOKEN   (waarde uit AWS Secrets Manager: veripasso-production-edge)
+#   npx wrangler secret put CF_API_TOKEN      (Cloudflare API-token met alleen "Zone > Cache Purge")
+
+[[durable_objects.bindings]]
+name = "SCAN_BUFFER"
+class_name = "ScanBuffer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ScanBuffer"]
+
+[observability]
+enabled = true

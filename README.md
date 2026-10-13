@@ -18,7 +18,8 @@ Infrastructuur als code in [`infra/`](infra/) (AWS CDK). Volledige beschrijving:
 [**docs/infrastructuur.md**](docs/infrastructuur.md). Verder:
 [runbook](docs/aws-deployment-runbook.md), [assessment](docs/aws-migration-assessment.md),
 [kosten](docs/aws-cost-model.md), [beveiliging](docs/aws-security-checklist.md),
-[compliance-matrix](docs/compliance/requirements-matrix.md).
+[compliance-matrix](docs/compliance/requirements-matrix.md),
+[Cloudflare vóór qr.veripasso.com](docs/cloudflare.md) (paspoortcache en gebundelde scans).
 Vercel, Supabase en Azure worden niet meer gebruikt.
 
 ---

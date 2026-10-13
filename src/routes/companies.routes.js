@@ -147,6 +147,8 @@ router.patch("/:id", validateBody(updateCompanySchema), async (req, res, next) =
       entityId: id,
       metadata: req.body
     });
+    // Naam, logo en status bepalen wat op de publieke paspoorten van dit bedrijf staat.
+    await require("../services/edgeCache.service").queuePurgeForCompany(id);
 
     res.json(updated);
   } catch (error) {

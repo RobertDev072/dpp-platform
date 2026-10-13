@@ -55,9 +55,12 @@ router.get("/:publicId", async (req, res, next) => {
 });
 
 // Scansignaal van de paspoortpagina (navigator.sendBeacon): telt precies één scan per
-// weergave, ook als de pagina uit de CloudFront-cache komt. Bots zonder JavaScript
-// tellen zo niet mee. Geen persoonsgegevens: alleen user-agent en referrer, geen IP.
-router.post("/:publicId/scan", async (req, res, next) => {
+// weergave, ook als de pagina uit de cache komt. Bots zonder JavaScript tellen zo niet
+// mee. Geen persoonsgegevens: alleen user-agent en referrer, geen IP.
+// Met Cloudflare vóór het QR-domein vangt de Worker POST /api/scan/:publicId op en
+// bundelt de scans (zie edge/cloudflare/); deze route is dan alleen de terugvaloptie.
+// /:publicId/scan blijft bestaan voor pagina's die nog met het oude pad gecachet zijn.
+async function recordScan(req, res, next) {
   try {
     const product = await productsRepo.getProductByPublicId(req.params.publicId);
     if (!product) {
@@ -73,7 +76,12 @@ router.post("/:publicId/scan", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}
+router.post("/:publicId/scan", recordScan);
+
+const scanRouter = express.Router();
+scanRouter.use(publicApiLimiter);
+scanRouter.post("/:publicId", recordScan);
 
 // Publiek, maar alleen bereikbaar met de public_id van een gepubliceerd product (dezelfde
 // voorwaarde als hierboven) - geen enkele blob is rechtstreeks van buitenaf te raden of te
@@ -162,3 +170,4 @@ router.get("/:publicId/photo", async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.scanRouter = scanRouter;

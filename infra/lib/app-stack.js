@@ -97,6 +97,18 @@ class VeriPassoAppStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN
     });
 
+    // Cloudflare vóór het QR-domein (config.cloudflareInFront): gedeeld geheim met de
+    // Cloudflare Worker (Bearer-token voor /api/edge/sync) en de Transform Rule
+    // (X-Edge-Verify, voor het echte bezoekers-IP). Zie docs/cloudflare.md.
+    const edgeSecret = config.cloudflareInFront
+      ? new secretsmanager.Secret(this, "EdgeSecret", {
+          secretName: name("edge"),
+          description: "Gedeeld geheim Cloudflare (Worker en Transform Rule) -> app.",
+          generateSecretString: { secretStringTemplate: JSON.stringify({}), generateStringKey: "value", passwordLength: 48, excludePunctuation: true },
+          removalPolicy: cdk.RemovalPolicy.RETAIN
+        })
+      : null;
+
     // --- database ----------------------------------------------------------------------
     const parameterGroup = new rds.ParameterGroup(this, "DbParams", {
       engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_17 }),
@@ -290,7 +302,8 @@ class VeriPassoAppStack extends cdk.Stack {
         S3_DOCUMENTS_BUCKET: documentsBucket.bucketName,
         CONTAINER_MEMORY_MB: String(config.lambdaMemoryMb),
         COOKIE_SECRET: secretEnv(appSecret, "cookieSecret"),
-        MFA_ENCRYPTION_KEY: secretEnv(mfaKeySecret, "value")
+        MFA_ENCRYPTION_KEY: secretEnv(mfaKeySecret, "value"),
+        ...(edgeSecret ? { EDGE_SYNC_TOKEN: secretEnv(edgeSecret, "value") } : {})
       }
     });
     // Least privilege: alleen deze twee buckets lezen/schrijven (verwijderen alleen zoals
@@ -436,11 +449,16 @@ class VeriPassoAppStack extends cdk.Stack {
         },
         // Bedrijfslogo's: de app geeft max-age=86400 mee; CloudFront volgt die.
         "/api/public/products/*/logo": staticBehavior,
+        // Met Cloudflare ervoor cachet alleen Cloudflare de paspoorten (één cache, die
+        // de app na een wijziging laat verversen); CloudFront stuurt dan alles door,
+        // anders zou Cloudflare na een purge nog een verouderde kopie van CloudFront halen.
         "/p/*": {
           origin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-          cachePolicy: passportCache,
+          ...(config.cloudflareInFront
+            ? { cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED, originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER }
+            : { cachePolicy: passportCache }),
           responseHeadersPolicy: passportHeaders,
           compress: true,
           ...routed

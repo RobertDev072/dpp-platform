@@ -6,6 +6,7 @@ const companiesRepo = require("../repositories/companies.repository");
 const documentsRepo = require("../repositories/documents.repository");
 const { logAuditFromReq } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
+const edgeCache = require("../services/edgeCache.service");
 
 // Zelfbediening voor het EIGEN bedrijf (company_admin): bedrijfsprofiel + logo en
 // het documentenoverzicht. Bewust gescheiden van /api/admin/companies (Platform
@@ -63,6 +64,8 @@ router.patch("/", requireRole("company_admin"), requireOwnCompany, validateBody(
       entityId: req.user.companyId,
       metadata: { fields: Object.keys(req.body) }
     });
+    // Naam en logo staan op elk publiek paspoort van dit bedrijf.
+    await edgeCache.queuePurgeForCompany(req.user.companyId);
 
     res.json(updated);
   } catch (error) {
@@ -125,6 +128,7 @@ router.post(
         entityType: "Document",
         metadata: { requested: req.body.ids.length, affected: affected.length }
       });
+      await edgeCache.queuePurgeForDocuments(affected);
       res.json({ requested: req.body.ids.length, affected: affected.length });
     } catch (error) {
       next(error);

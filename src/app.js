@@ -35,6 +35,27 @@ if (process.env.CLIENT_IP_FROM_CLOUDFRONT === "true") {
   });
 }
 
+// Cloudflare vóór het QR-domein: voor CloudFront is Cloudflare dan de bezoeker, en
+// zouden alle scans van een paar Cloudflare-adressen lijken te komen (rate limiting per
+// IP zou echte bezoekers blokkeren). Cloudflare zet het echte IP in CF-Connecting-IP en
+// voegt via een Transform Rule de geheime header X-Edge-Verify toe. Alleen met die
+// header wordt CF-Connecting-IP vertrouwd; zonder header kan iedereen hem verzinnen.
+if (process.env.EDGE_SYNC_TOKEN) {
+  const crypto = require("crypto");
+  const secret = Buffer.from(process.env.EDGE_SYNC_TOKEN);
+  app.use((req, res, next) => {
+    const verify = req.get("x-edge-verify");
+    const ip = req.get("cf-connecting-ip");
+    if (verify && ip) {
+      const given = Buffer.from(verify);
+      if (given.length === secret.length && crypto.timingSafeEqual(given, secret)) {
+        Object.defineProperty(req, "ip", { value: ip.trim(), configurable: true });
+      }
+    }
+    next();
+  });
+}
+
 // Liveness (ALB-healthcheck, uptime-monitor): bewust alleen "OK" en geen
 // afhankelijkheden, zodat een korte databasestoring niet alle taken laat herstarten.
 // Gedetailleerde health zit owner-only achter /api/admin/system/health.
@@ -86,6 +107,8 @@ app.use(cookieParser(process.env.COOKIE_SECRET));
 
 // Interne taken (onderhoud, migraties) via een directe Lambda-aanroep; zie de route.
 app.use("/api/internal/events", require("./routes/internalEvents.routes"));
+// Synchronisatie met de Cloudflare Worker (gebundelde scans, cache verversen).
+app.use("/api/edge", require("./routes/edgeSync.routes"));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/admin/companies", companiesRoutes);
@@ -100,6 +123,7 @@ app.use("/api/admin/plans", plansRoutes);
 app.use("/api/invites", inviteActivationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/public/products", publicProductsRoutes);
+app.use("/api/scan", publicProductsRoutes.scanRouter);
 // Machineleesbare productpaspoorten (JSON, JSON-LD, XML via content negotiation) en
 // de versiegeschiedenis van gepubliceerde paspoorten.
 app.use("/api/dpp", require("./routes/dpp.routes"));
