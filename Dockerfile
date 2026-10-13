@@ -12,8 +12,11 @@
 # Het image bevat geen geheimen: die zet de infrastructuur als omgevingsvariabelen
 # (verwijzingen naar AWS Secrets Manager, zie infra/), bestandsopslag via de IAM-rol.
 
+# Basis-images via de AWS-spiegel van de officiële Docker Hub-images (zelfde inhoud):
+# Docker Hub begrenst anonieme downloads per IP, en GitHub-runners delen hun IP's.
+
 # --- build ------------------------------------------------------------------------
-FROM node:24-bookworm-slim AS build
+FROM public.ecr.aws/docker/library/node:24-bookworm-slim AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -24,7 +27,7 @@ COPY . .
 RUN npm run build
 
 # --- runtime ----------------------------------------------------------------------
-FROM node:24-bookworm-slim AS runtime
+FROM public.ecr.aws/docker/library/node:24-bookworm-slim AS runtime
 WORKDIR /app
 
 ARG GIT_SHA=unknown
