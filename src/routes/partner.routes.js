@@ -21,6 +21,7 @@ const { getAppBaseUrl } = require("../utils/baseUrl");
 // rol partner_admin simpelweg niet en geven dus 403.
 
 const router = express.Router();
+require("../middleware/params").numericParam(router, "id", "inviteId", "userId");
 
 router.use(requireAuth, requireRole("partner_admin"));
 
@@ -89,7 +90,11 @@ const createCustomerSchema = z.object({
   slug: z.string().min(1).max(100).regex(slugPattern, "Alleen kleine letters, cijfers en koppeltekens"),
   planId: z.number().int().positive(),
   licenseStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Gebruik het formaat JJJJ-MM-DD").nullable().optional(),
-  licenseEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Gebruik het formaat JJJJ-MM-DD").nullable().optional()
+  licenseEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Gebruik het formaat JJJJ-MM-DD").nullable().optional(),
+  // Eerste Company Admin: in hetzelfde formulier, krijgt een activatielink (48 uur).
+  adminFirstName: z.string().trim().min(1, "Vul een voornaam in").max(100),
+  adminLastName: z.string().trim().min(1, "Vul een achternaam in").max(100),
+  adminEmail: z.string().trim().email("Vul een geldig e-mailadres in").max(256)
 });
 
 router.post("/customers", validateBody(createCustomerSchema), async (req, res, next) => {
@@ -105,16 +110,26 @@ router.post("/customers", validateBody(createCustomerSchema), async (req, res, n
       return;
     }
 
-    // kind en partner_id staan hier bewust vast: een partner maakt altijd een
-    // klanttenant aan die aan zichzelf gekoppeld is - nooit een andere partner.
-    const company = await companiesRepo.createCompany({
-      name: req.body.name,
-      slug: req.body.slug,
-      planId: req.body.planId,
-      kind: "customer",
-      partnerId: req.user.companyId,
-      licenseStart: req.body.licenseStart ?? null,
-      licenseEnd: req.body.licenseEnd ?? null
+    if (req.body.licenseEnd && req.body.licenseStart && req.body.licenseEnd < req.body.licenseStart) {
+      next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { licenseEnd: ["Einddatum ligt vóór de startdatum"] } }));
+      return;
+    }
+
+    // Bedrijf + eerste Company Admin in één transactie. kind en partner_id staan vast:
+    // een partner maakt altijd een klantbedrijf dat aan zichzelf gekoppeld is.
+    const { company, invite, token } = await require("../services/onboarding.service").createCompanyWithAdmin({
+      company: {
+        name: req.body.name,
+        slug: req.body.slug,
+        planId: req.body.planId,
+        kind: "customer",
+        partnerId: req.user.companyId,
+        licenseStart: req.body.licenseStart ?? null,
+        licenseEnd: req.body.licenseEnd ?? null
+      },
+      admin: { email: req.body.adminEmail, firstName: req.body.adminFirstName, lastName: req.body.adminLastName },
+      adminRole: "company_admin",
+      invitedBy: req.user.id
     });
 
     await logAudit({
@@ -123,15 +138,12 @@ router.post("/customers", validateBody(createCustomerSchema), async (req, res, n
       action: "create",
       entityType: "Company",
       entityId: company.id,
-      metadata: { via: "partner", partnerId: req.user.companyId }
+      metadata: { via: "partner", partnerId: req.user.companyId, inviteId: invite.id }
     });
 
-    res.status(201).json(company);
+    // Het token staat alleen in dít antwoord (niet in logs of de database).
+    res.status(201).json({ ...company, invite: { ...invite, activationUrl: `${getAppBaseUrl(req)}/activate?token=${token}` } });
   } catch (error) {
-    if (error.number === 2627 || error.number === 2601) {
-      next(new HttpError(409, "Slug is al in gebruik"));
-      return;
-    }
     next(error);
   }
 });
@@ -226,8 +238,7 @@ router.post(
 
       // Altijd een lokaal wachtwoord (ook voor een account dat er nog geen had).
       const tempPassword = generateTempPassword();
-      await usersRepo.updatePasswordHash(target.id, await hashPassword(tempPassword));
-      await usersRepo.setMustChangePassword(target.id, true);
+      await usersRepo.setTemporaryPassword(target.id, await hashPassword(tempPassword));
 
       // Best-effort: het oude wachtwoord is al waardeloos; lopende sessies horen
       // dat ook meteen te zijn.

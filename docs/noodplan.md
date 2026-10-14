@@ -118,6 +118,27 @@ Caddy verlengt automatisch (poort 80 en 443 moeten open staan, DNS moet kloppen)
   docker compose exec -T db psql -U veripasso -d veripasso -c "UPDATE dbo.users SET mfa_secret_enc=NULL, mfa_pending_secret_enc=NULL, mfa_enabled_at=NULL, mfa_recovery_hashes=NULL, mfa_last_step=NULL WHERE lower(email)=lower('<e-mailadres>')"
   ```
 
+## Datalek (persoonsgegevens mogelijk ingezien, gewijzigd of verloren)
+
+Voorbeelden: iemand kwam binnen op de server, een gegevensdocument of sleutel is gelekt,
+een gebruiker zag gegevens van een ander bedrijf, een back-up of R2-sleutel is uitgelekt.
+
+1. **Indammen (direct):** toegang afsluiten (betreffende sleutels/tokens intrekken, wachtwoorden
+   resetten, sessies beëindigen; bij een hack de server offline halen, zie scenario 5).
+2. **Vastleggen:** tijdstip van ontdekken, wat er gebeurd is, welke gegevens en van wie, hoeveel
+   personen, genomen maatregelen. Elk datalek komt in het datalekregister, ook als het niet
+   gemeld hoeft te worden (art. 33 lid 5 AVG). Bronnen: auditlog, `docs/noodplan.md`-logs.
+3. **Beoordelen en melden** (art. 33/34 AVG):
+   - Is VeriPasso **verwerker** voor deze gegevens (gegevens van een klant)? Dan de klant
+     (verwerkingsverantwoordelijke) **onverwijld** informeren; die beslist over melden.
+   - Is VeriPasso **verwerkingsverantwoordelijke**? Melden bij de Autoriteit
+     Persoonsgegevens **binnen 72 uur** na ontdekking, tenzij het lek waarschijnlijk geen
+     risico oplevert. Bij een hoog risico ook de betrokkenen informeren.
+   - Welke rol VeriPasso per verwerking heeft: nog vast te stellen (`docs/compliance/wettelijke-matrix.md`).
+4. **Herstellen en evalueren:** oorzaak oplossen, controleren, dit noodplan bijwerken.
+
+Contactpersoon datalekken: [nog in te vullen].
+
 ## Regelmatig testen
 
 - Elk kwartaal: een back-up terugzetten in een testdatabase (`createdb restore_test` →

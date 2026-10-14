@@ -33,7 +33,7 @@ bevestigd. Dit document vervangt geen certificering; de compliance-eisen staan i
 | Publieke productpagina | 🟡 | data en toegang: PUB-01, R-SEC-01, R-EXCH-01..04, DOC-01; live: 404 bij onbekende code | 👤 mobiele weergave en browsers; toegankelijkheidsaudit (EN 301 549) |
 | QR downloaden en afdrukken | 🟡 | QR-01 (PNG 512/1200 px en SVG teruggelezen, PDF-label geldig); `ux-workflows` print-tests (labels-PDF 1/10/500, vector-QR, ZIP) | 👤 echte printeruitvoer en scannen van het geprinte label |
 | QR in bulk genereren | ✅ | BULK-01: 1.000 producten → 1.000 unieke QR's, 1 SVG-ZIP met 1.000 bestanden, steekproef van 25 teruggelezen; PNG-ZIP begrensd op 500 | — |
-| Excel/CSV-import | 🟡 | `ux-workflows`: 10 rijen + duplicaten, 251 rijen hervatten, 1.000+ rijen xlsx/xls + productlimiet; importrun eigen bestanden (§2.6) | **bevinding**: waarde "deels" bij Recyclebaar wordt geweigerd (34 van 50 rijen) |
+| Excel/CSV-import | ⛔ verwijderd | verwijderd op verzoek (2026-10-14); `ux-workflows` bewijst dat de API en oude routes weg zijn (404) | komt eventueel terug in versie 2 |
 | Bedrijfsisolatie | ✅ | `tenant-isolation`, `license-tenant-isolation`, ISO-01 (QR, labels, versies, documenten, bulk, ZIP, export), S3-upload (`s3-storage`), R-ARCH-06, DOC-01 | — |
 | Productdocumenten | 🟡 | DOC-01 (openbaar/privé, direct van paspoort af bij privé zetten, ander bedrijf 404); S3-presign 5 min en SVG nooit inline (`s3-storage`); validatie (`product-documents`) | 👤 echte upload en download op productie (S3) |
 | Scanstatistieken | 🟡 | SCAN-01 (ophalen telt niet, 5 weergaven via de beacon = 5 scans, machineleesbaar telt mee, per bedrijf gescheiden, concepten tellen niet); `ux-workflows` QR-statistieken | **besluit**: dubbele scans (zelfde bezoeker/refresh) worden nu allemaal geteld |
@@ -77,7 +77,7 @@ Na **elke** stap is gecontroleerd dat `public_id` gelijk is, de QR-afbeelding ex
 ### 2.5 Bedrijfsisolatie
 Bedrijf B krijgt **404** (bestaan wordt niet bevestigd) op product, QR-PNG/SVG/PDF, QR-reservering, versies en documenten van bedrijf A. Een bulkactie van B met A's id's raakt 0 producten. Een QR-ZIP met A's id's wordt geweigerd, en de export van B bevat A's paspoorten niet. Daarnaast bewijzen de bestaande suites isolatie van producten, gebruikers, licenties, partners en S3-uploads.
 
-### 2.6 Excel/CSV-import (met de bestanden van de eigenaar)
+### 2.6 Excel/CSV-import (met de bestanden van de eigenaar) — verwijderd 2026-10-14, historisch
 | Bestand | Herkend | Resultaat |
 |---|---|---|
 | `veripasso_testproducten_50.csv` | 19 kolommen automatisch gekoppeld | 16 aangemaakt, **34 geweigerd**: "Recyclebaar: onbekende waarde 'deels'" |

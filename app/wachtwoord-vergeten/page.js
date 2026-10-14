@@ -22,7 +22,10 @@ export default function ForgotPasswordPage() {
             Ben je zelf de beheerder van je organisatie? Neem dan contact op met je partner of met
             VeriPasso-support.
           </p>
-          <p>Bij je eerstvolgende login met het tijdelijke wachtwoord stel je direct een nieuw, eigen wachtwoord in.</p>
+          <p>
+            Een tijdelijk wachtwoord is <span className="font-medium text-slate-800">24 uur geldig</span>. Bij je eerstvolgende login
+            stel je direct een nieuw, eigen wachtwoord in; daarna werkt het tijdelijke wachtwoord niet meer.
+          </p>
         </div>
         <a
           href="/login"

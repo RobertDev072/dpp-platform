@@ -304,7 +304,7 @@ function QrCodesInner() {
                             <CopyIcon size={14} />
                           </button>
                           {product.qr_status === "active" && (
-                            <a href={`/p/${product.public_id}`} target="_blank" rel="noopener noreferrer" title="Paspoort bekijken" aria-label={`Paspoort van ${product.name} bekijken`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100">
+                            <a href={`/p/${product.public_id}?src=app`} target="_blank" rel="noopener noreferrer" title="Paspoort bekijken" aria-label={`Paspoort van ${product.name} bekijken`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100">
                               <EyeIcon size={14} />
                             </a>
                           )}

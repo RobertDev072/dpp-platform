@@ -11,9 +11,9 @@ import SubmitButton from "@/components/ui/SubmitButton";
 import FormError from "@/components/ui/FormError";
 import { useToast } from "@/components/ui/Toast";
 import ActivationUrlBox from "@/components/partner/ActivationUrlBox";
-import CustomerInviteForm from "@/components/partner/CustomerInviteForm";
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function slugify(value) {
   return (value || "")
@@ -30,6 +30,11 @@ function planOptionLabel(plan) {
   return `${plan.name} (max. ${plan.max_users} gebruikers, ${plan.max_products} producten)`;
 }
 
+const required = (label) => (value) => ((value || "").trim() ? null : `Vul ${label} in`);
+
+// Nieuw klantbedrijf + eerste Bedrijfsbeheerder in één formulier en één stap. De server
+// maakt beide in één transactie aan (alles of niets) en geeft een activatielink terug
+// (48 uur geldig, eenmalig); de beheerder kiest daarmee zelf een wachtwoord.
 export default function NieuwKlantbedrijfPage() {
   const toast = useToast();
 
@@ -37,31 +42,32 @@ export default function NieuwKlantbedrijfPage() {
   const [loadError, setLoadError] = useState("");
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState(null);
-
-  // Stap 2 (uitnodigen) verschijnt pas nadat het klantbedrijf is aangemaakt;
-  // de activatielink is eenmalig en blijft daarna op deze pagina staan.
-  const [createdCompany, setCreatedCompany] = useState(null);
-  const [createdInvite, setCreatedInvite] = useState(null);
+  const [created, setCreated] = useState(null);
 
   const form = useForm({
-    initial: { name: "", slug: "", planId: "", licenseStart: "", licenseEnd: "" },
+    initial: {
+      name: "",
+      slug: "",
+      planId: "",
+      licenseStart: "",
+      licenseEnd: "",
+      adminFirstName: "",
+      adminLastName: "",
+      adminEmail: ""
+    },
     validators: {
-      name: (value) => ((value || "").trim() ? null : "Vul een bedrijfsnaam in"),
+      name: required("een bedrijfsnaam"),
       slug: (value) => {
         const trimmed = (value || "").trim();
-        if (!trimmed) {
-          return "Vul een slug in";
-        }
-        if (!SLUG_PATTERN.test(trimmed)) {
-          return "Alleen kleine letters, cijfers en koppeltekens";
-        }
-        return null;
+        if (!trimmed) return "Vul een slug in";
+        return SLUG_PATTERN.test(trimmed) ? null : "Alleen kleine letters, cijfers en koppeltekens";
       },
       planId: (value) => (value ? null : "Kies een plan"),
       licenseEnd: (value, values) =>
-        value && values.licenseStart && value < values.licenseStart
-          ? "Einddatum ligt vóór de startdatum"
-          : null
+        value && values.licenseStart && value < values.licenseStart ? "Einddatum ligt vóór de startdatum" : null,
+      adminFirstName: required("een voornaam"),
+      adminLastName: required("een achternaam"),
+      adminEmail: (value) => (EMAIL_PATTERN.test((value || "").trim()) ? null : "Vul een geldig e-mailadres in")
     }
   });
 
@@ -73,8 +79,7 @@ export default function NieuwKlantbedrijfPage() {
   }, []);
 
   function handleNameBlur() {
-    // Slug voorstellen op basis van de naam, maar alleen zolang die nog leeg is —
-    // een handmatig ingevulde slug wordt nooit overschreven.
+    // Slug voorstellen op basis van de naam, maar alleen zolang die nog leeg is.
     if (!form.values.slug.trim() && form.values.name.trim()) {
       form.setValue("slug", slugify(form.values.name));
     }
@@ -84,36 +89,39 @@ export default function NieuwKlantbedrijfPage() {
   async function handleSubmit(event) {
     event.preventDefault();
     setFormError(null);
-
-    if (!form.validateAll()) {
-      return;
-    }
+    if (creating || !form.validateAll()) return;
 
     setCreating(true);
     try {
-      const created = await api.post("/api/partner/customers", {
+      const result = await api.post("/api/partner/customers", {
         name: form.values.name.trim(),
         slug: form.values.slug.trim(),
         planId: Number(form.values.planId),
         licenseStart: form.values.licenseStart || null,
-        licenseEnd: form.values.licenseEnd || null
+        licenseEnd: form.values.licenseEnd || null,
+        adminFirstName: form.values.adminFirstName.trim(),
+        adminLastName: form.values.adminLastName.trim(),
+        adminEmail: form.values.adminEmail.trim()
       });
-      toast.success(`Klantbedrijf ${created.name} aangemaakt`);
-      setCreatedCompany(created);
+      toast.success(`Klantbedrijf ${result.name} en beheerder aangemaakt`);
+      setCreated(result);
     } catch (err) {
-      const applied = form.applyServerErrors(err);
-      if (!applied) {
-        if (err.status === 409 && !err.code) {
-          // "Slug is al in gebruik" komt als kale 409-message terug: onder het slugveld tonen.
-          form.applyServerErrors({ fieldErrors: { slug: [err.message] } });
-        } else {
-          setFormError(err);
-        }
-      }
+      if (!form.applyServerErrors(err)) setFormError(err);
     } finally {
       setCreating(false);
     }
   }
+
+  const field = (name, props) => (
+    <Field
+      name={name}
+      value={form.values[name]}
+      onChange={(e) => form.setValue(name, e.target.value)}
+      onBlur={() => form.onBlur(name)}
+      error={form.errors[name]}
+      {...props}
+    />
+  );
 
   return (
     <div className="space-y-6">
@@ -126,123 +134,84 @@ export default function NieuwKlantbedrijfPage() {
 
       {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
 
-      {!createdCompany ? (
-        <Card className="max-w-xl">
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            <FormError error={formError} />
+      {!created ? (
+        <form onSubmit={handleSubmit} noValidate className="max-w-2xl space-y-6">
+          <FormError error={formError} />
 
-            <Field
-              label="Naam"
-              name="name"
-              required
-              autoComplete="off"
-              placeholder="Bijv. Bouwbedrijf Jansen"
-              value={form.values.name}
-              onChange={(e) => form.setValue("name", e.target.value)}
-              onBlur={handleNameBlur}
-              error={form.errors.name}
-            />
-
-            <Field
-              label="Slug"
-              name="slug"
-              required
-              autoComplete="off"
-              placeholder="bijv-bouwbedrijf-jansen"
-              help="Alleen kleine letters, cijfers en koppeltekens. Wordt automatisch voorgesteld op basis van de naam."
-              value={form.values.slug}
-              onChange={(e) => form.setValue("slug", e.target.value)}
-              onBlur={() => form.onBlur("slug")}
-              error={form.errors.slug}
-            />
-
-            <Select
-              label="Plan"
-              name="planId"
-              required
-              placeholder="Kies een plan"
-              options={plans.map((plan) => ({ value: String(plan.id), label: planOptionLabel(plan) }))}
-              value={form.values.planId}
-              onChange={(e) => form.setValue("planId", e.target.value)}
-              onBlur={() => form.onBlur("planId")}
-              error={form.errors.planId}
-            />
-
-            <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <h2 className="mb-4 text-sm font-semibold text-slate-900">1. Bedrijfsgegevens</h2>
+            <div className="space-y-4">
               <Field
-                label="Licentie geldig van"
-                name="licenseStart"
-                type="date"
-                help="Leeg = geen startdatum"
-                value={form.values.licenseStart}
-                onChange={(e) => form.setValue("licenseStart", e.target.value)}
-                error={form.errors.licenseStart}
+                label="Bedrijfsnaam"
+                name="name"
+                required
+                autoComplete="organization"
+                placeholder="Bijv. Bouwbedrijf Jansen"
+                value={form.values.name}
+                onChange={(e) => form.setValue("name", e.target.value)}
+                onBlur={handleNameBlur}
+                error={form.errors.name}
               />
-              <Field
-                label="Licentie geldig tot"
-                name="licenseEnd"
-                type="date"
-                help="Leeg = geen einddatum"
-                value={form.values.licenseEnd}
-                onChange={(e) => form.setValue("licenseEnd", e.target.value)}
-                onBlur={() => form.onBlur("licenseEnd")}
-                error={form.errors.licenseEnd}
+              {field("slug", {
+                label: "Slug",
+                required: true,
+                autoComplete: "off",
+                placeholder: "bijv-bouwbedrijf-jansen",
+                help: "Unieke korte naam: kleine letters, cijfers en koppeltekens. Wordt voorgesteld op basis van de naam."
+              })}
+              <Select
+                label="Abonnement"
+                name="planId"
+                required
+                placeholder="Kies een plan"
+                options={plans.map((plan) => ({ value: String(plan.id), label: planOptionLabel(plan) }))}
+                value={form.values.planId}
+                onChange={(e) => form.setValue("planId", e.target.value)}
+                onBlur={() => form.onBlur("planId")}
+                error={form.errors.planId}
               />
+              <div className="grid gap-4 sm:grid-cols-2">
+                {field("licenseStart", { label: "Geldig van", type: "date", help: "Leeg = direct" })}
+                {field("licenseEnd", { label: "Geldig tot", type: "date", help: "Leeg = geen einddatum" })}
+              </div>
             </div>
-
-            <SubmitButton loading={creating}>Klantbedrijf aanmaken</SubmitButton>
-          </form>
-        </Card>
-      ) : (
-        <>
-          <Card className="max-w-xl border-emerald-200 bg-emerald-50 text-emerald-800">
-            <p className="text-sm">
-              Klantbedrijf <span className="font-medium">{createdCompany.name}</span> is aangemaakt.
-              Nodig hieronder direct de eerste Bedrijfsbeheerder uit, of doe dit later via de
-              detailpagina.
-            </p>
           </Card>
 
-          {!createdInvite ? (
-            <Card className="max-w-xl">
-              <h2 className="mb-4 text-sm font-semibold text-slate-900">
-                Eerste Bedrijfsbeheerder uitnodigen
-              </h2>
-              <CustomerInviteForm
-                customerId={createdCompany.id}
-                onCreated={(invite) => setCreatedInvite(invite)}
-              />
-              <p className="mt-4 text-sm">
-                <Link
-                  href={`/partner/klanten/${createdCompany.id}`}
-                  className="text-blue-600 hover:underline"
-                >
-                  Overslaan — later uitnodigen via de detailpagina
-                </Link>
-              </p>
-            </Card>
-          ) : (
-            <Card className="max-w-xl">
-              <div className="space-y-4">
-                <ActivationUrlBox
-                  activationUrl={createdInvite.activationUrl}
-                  email={createdInvite.email}
-                />
-                <div className="flex flex-wrap gap-3 text-sm">
-                  <Link
-                    href={`/partner/klanten/${createdCompany.id}`}
-                    className="font-medium text-blue-600 hover:underline"
-                  >
-                    Naar klantdetail
-                  </Link>
-                  <Link href="/partner/klanten" className="text-blue-600 hover:underline">
-                    Naar Mijn klanten
-                  </Link>
-                </div>
+          <Card>
+            <h2 className="mb-1 text-sm font-semibold text-slate-900">2. Eerste Bedrijfsbeheerder</h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Krijgt een activatielink (48 uur geldig) en kiest daarmee zelf een wachtwoord. Daarna
+              kan de beheerder zelf medewerkers toevoegen.
+            </p>
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                {field("adminFirstName", { label: "Voornaam", required: true, autoComplete: "off" })}
+                {field("adminLastName", { label: "Achternaam", required: true, autoComplete: "off" })}
               </div>
-            </Card>
-          )}
-        </>
+              {field("adminEmail", { label: "E-mailadres", type: "email", required: true, autoComplete: "off" })}
+            </div>
+          </Card>
+
+          <SubmitButton loading={creating}>Bedrijf en beheerder aanmaken</SubmitButton>
+        </form>
+      ) : (
+        <Card className="max-w-2xl">
+          <div className="space-y-4">
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              Klantbedrijf <span className="font-medium">{created.name}</span> is aangemaakt, met{" "}
+              {created.invite.email} als eerste Bedrijfsbeheerder.
+            </p>
+            <ActivationUrlBox activationUrl={created.invite.activationUrl} email={created.invite.email} roleLabel="de Bedrijfsbeheerder" />
+            <div className="flex flex-wrap gap-3 text-sm">
+              <Link href={`/partner/klanten/${created.id}`} className="font-medium text-blue-600 hover:underline">
+                Naar klantdetail
+              </Link>
+              <Link href="/partner/klanten" className="text-blue-600 hover:underline">
+                Naar Mijn klanten
+              </Link>
+            </div>
+          </div>
+        </Card>
       )}
     </div>
   );

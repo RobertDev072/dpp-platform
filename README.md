@@ -18,7 +18,8 @@ Domeinen (DNS bij Cloudflare):
 | https://app.veripasso.com | de SaaS-applicatie (inloggen, dashboards, beheer) |
 | https://qr.veripasso.com | QR-scans en publieke productpaspoorten (permanent: staat op elke gedrukte code) |
 
-Infrastructuur en beheer: **[docs/hosting-strato.md](docs/hosting-strato.md)**, bij storingen **[docs/noodplan.md](docs/noodplan.md)** (live op een
+Infrastructuur en beheer: **[docs/hosting-strato.md](docs/hosting-strato.md)**, bij storingen **[docs/noodplan.md](docs/noodplan.md)**.
+Rollen en accounts: [docs/accounts.md](docs/accounts.md); QR-scans: [docs/scans.md](docs/scans.md); wettelijke compliance: [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md) (live op een
 STRATO-server sinds 2026-10-13). Verder: [compliance-matrix](docs/compliance/requirements-matrix.md),
 [Cloudflare vóór qr.veripasso.com](docs/cloudflare.md) (paspoortcache en gebundelde scans).
 
@@ -80,7 +81,8 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 ## 3. Producten, paspoorten, documenten en QR
 
 - Producten per tenant met duurzaamheid, compliance, onderdelen, batches en documenten;
-  compleetheid op 7 criteria; import (Excel/CSV, hervatbaar), bulkacties en labelprint.
+  compleetheid op 7 criteria; bulkacties en QR-downloads (PNG/SVG/ZIP). Importeren (Excel/CSV) en
+  labels printen zijn verwijderd (2026-10-14); importeren komt eventueel terug in versie 2.
 - **Uploads** (foto's JPEG/PNG/WEBP/GIF ≤ 5 MB; documenten PDF/JPEG/PNG/SVG/WEBP ≤ 10 MB)
   gaan rechtstreeks van de browser naar **privé buckets in S3-compatibele opslag**
   (lokaal bijv. MinIO, later bijv. Cloudflare R2; zonder ingestelde opslag staan uploads uit):
@@ -115,8 +117,8 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 - **Export voor replicatie/back-up-dienstverlener (EN 18221 §4.5)**:
   `GET /api/products/passports/export` (Company Admin; owner met `?companyId=`) levert
   NDJSON met alle paspoorten, de actuele stand en alle versies incl. hashes.
-- **Scans**: de publieke pagina registreert per bezoek precies één ScanEvent
-  (user-agent/referrer, geen IP).
+- **Scans**: alleen echte QR-scans tellen (niet vanuit de app, geen refresh, geen bots;
+  1× per apparaat per paspoort per 30 minuten; geen IP, niets op het apparaat). Zie docs/scans.md.
 
 ---
 
@@ -144,9 +146,9 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
   `src/monitoring/scheduler.js`). Het dagelijkse onderhoud gebruikt een lease-lock in
   `dbo.joblocks`, zodat er altijd precies één proces het doet. Het onderhoud vult ook
   ontbrekende paspoortversies aan.
-- **Scans**: de publieke paspoortpagina meldt elke weergave met een lichte beacon
-  (`POST /api/scan/:id`), zodat scans ook kloppen als een CDN de pagina uit de cache
-  serveert. Met Cloudflare vangt een Worker de beacon op (zie docs/cloudflare.md).
+- **Scans**: de publieke paspoortpagina meldt een scan met een lichte beacon
+  (`POST /api/scan/:id`), zodat scans ook kloppen als Cloudflare de pagina uit de cache
+  serveert; de Worker ontdubbelt en bundelt (docs/scans.md, docs/cloudflare.md).
 - **Health**: `GET /api/health` (liveness, alleen `OK`) en `GET /api/health/ready`
   (database bereikbaar). Gedetailleerd: owner-only `/api/admin/system/health`.
 - **Logs**: JSON-regels op stdout (`src/utils/logger.js`); gevoelige velden worden altijd
@@ -225,7 +227,7 @@ src/
                           publicProducts, auth (incl. MFA), users, partner, admin, systemMonitoring
   services/               passport (inhoud + JSON/JSON-LD/XML), passportArchive (versies, hash-keten),
                           mfa (TOTP), blobStorage (S3-compatibel), edgeCache (Cloudflare),
-                          license, import, print, qrCode
+                          license, onboarding, scanPolicy, qrCode
   utils/                  logger, roles, tenant, auditLog, password, baseUrl
 db/migrations/            PostgreSQL-migraties (oplopend; bijgehouden in dbo.schemamigrations)
 deploy/                   Serveropzet: compose.yaml (app + PostgreSQL + Caddy), Caddyfile, .env.example,

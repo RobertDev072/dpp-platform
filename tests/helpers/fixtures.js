@@ -57,7 +57,7 @@ async function createTestProduct({ companyId, name = "Test Product" }) {
 // Alles wat via een FK aan producten hangt (scans, documenten, onderdelen, ...) moet
 // weg vóór de producten zelf. productIds: kommalijst of subquery.
 async function deleteProductChildren(pool, productIds) {
-  for (const table of ["ScanEvents", "Documents", "ProductParts", "ProductBatches", "ProductSustainability", "ProductCompliance"]) {
+  for (const table of ["ScanEvents", "ScanDaily", "PassportSnapshots", "Documents", "ProductParts", "ProductBatches", "ProductSustainability", "ProductCompliance"]) {
     await pool.request().query(`DELETE FROM dbo.${table} WHERE product_id IN (${productIds})`);
   }
 }
@@ -110,6 +110,14 @@ async function cleanupTestData({ companyIds = [], userIds = [], productIds = [] 
   }
   if (users.length) {
     await pool.request().query(`DELETE FROM dbo.Users WHERE id IN (${users.join(",")})`);
+  }
+  if (companies.length) {
+    // Gebruikers die tijdens de test via een activatielink of door een beheerder ontstonden.
+    const ids = `SELECT id FROM dbo.Users WHERE company_id IN (${companies.join(",")})`;
+    await pool.request().query(`DELETE FROM dbo.Sessions WHERE user_id IN (${ids})`);
+    await pool.request().query(`DELETE FROM dbo.AuditLogs WHERE user_id IN (${ids})`);
+    await pool.request().query(`UPDATE dbo.CompanyAdminInvites SET invited_by = NULL WHERE invited_by IN (${ids})`);
+    await pool.request().query(`DELETE FROM dbo.Users WHERE company_id IN (${companies.join(",")})`);
   }
   if (companies.length) {
     await pool.request().query(`DELETE FROM dbo.Companies WHERE id IN (${companies.join(",")})`);

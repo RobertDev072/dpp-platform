@@ -160,13 +160,15 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     assert.equal((await request(baseUrl, "GET", `/api/products/${p2}/documents`, { cookie: cookieB })).status, 404);
   });
 
-  await t.test("SCAN-01: één scan per apparaat per paspoort per 30 minuten (refresh telt niet), per bedrijf gescheiden; concepten tellen niet", async () => {
+  await t.test("SCAN-01: één scan per apparaat per paspoort per 30 minuten (refresh telt niet), machineleesbaar telt niet, per bedrijf gescheiden; concepten tellen niet", async () => {
     const p3 = await createTestProduct({ companyId: companyA, name: "Scan Product" });
     const pub3 = await request(baseUrl, "POST", `/api/products/${p3}/publish`, { cookie: cookieA });
     const pool = await getPool();
     const count = async () =>
       Number((await pool.query("SELECT COUNT(*)::int AS n FROM dbo.scanevents WHERE product_id = $1", [p3])).rows[0].n);
-    const beacon = (ua) => fetch(`${baseUrl}/api/scan/${pub3.data.public_id}`, { method: "POST", headers: { "User-Agent": ua } });
+    // Zoals een browser op de paspoortpagina hem stuurt (Sec-Fetch-Site: same-origin).
+    const beacon = (ua) =>
+      fetch(`${baseUrl}/api/scan/${pub3.data.public_id}`, { method: "POST", headers: { "User-Agent": ua, "Sec-Fetch-Site": "same-origin" } });
 
     const before = await count();
     // De pagina zelf is cachebaar (CDN); het ophalen van de gegevens telt dus niet,
@@ -180,14 +182,14 @@ test("Bewijs: QR, publieke pagina, documenten, scans, isolatie, uitnodigingen", 
     for (let i = 0; i < 2; i++) assert.equal((await beacon("Telefoon-B")).status, 204);
     assert.equal(await count(), before + 2, "ander apparaat telt wel");
 
-    // Machineleesbare opvraging (/api/dpp) telt ook als scan, met dezelfde regel.
-    for (let i = 0; i < 2; i++) await fetch(`${baseUrl}/api/dpp/${pub3.data.public_id}`, { headers: { Accept: "application/json", "User-Agent": "Systeem-C" } });
+    // Machineleesbare opvraging (/api/dpp) is geen camera-scan en telt niet.
+    await fetch(`${baseUrl}/api/dpp/${pub3.data.public_id}`, { headers: { Accept: "application/json", "User-Agent": "Systeem-C" } });
     await new Promise((r) => setTimeout(r, 300));
-    assert.equal(await count(), before + 3);
+    assert.equal(await count(), before + 2);
 
     const statsA = await request(baseUrl, "GET", "/api/products/qr-stats", { cookie: cookieA });
     assert.equal(statsA.status, 200);
-    assert.ok(statsA.data.scans.total >= 3, "statistiek van A bevat de scans");
+    assert.ok(statsA.data.scans.total >= 2, "statistiek van A bevat de scans");
     const statsB = await request(baseUrl, "GET", "/api/products/qr-stats", { cookie: cookieB });
     assert.equal(statsB.data.scans.total, 0, "bedrijf B ziet geen scans van A");
 

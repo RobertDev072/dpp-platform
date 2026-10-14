@@ -10,6 +10,7 @@ const { HttpError } = require("../middleware/errorHandler");
 const { getAppBaseUrl } = require("../utils/baseUrl");
 
 const router = express.Router();
+require("../middleware/params").numericParam(router, "id", "inviteId");
 
 router.use(requireAuth, requireRole(...require("../utils/roles").PLATFORM_OWNER_ROLES));
 
@@ -87,14 +88,13 @@ router.get("/:id/overview", async (req, res, next) => {
     const productsRepo = require("../repositories/products.repository");
     const documentsRepo = require("../repositories/documents.repository");
     const scanEventsRepo = require("../repositories/scanEvents.repository");
-    const importsRepo = require("../repositories/imports.repository");
     const usersRepo = require("../repositories/users.repository");
     const plansRepo = require("../repositories/plans.repository");
     const { listAuditLogs } = require("../repositories/auditLogs.repository");
     const { getLicenseUsage } = require("../services/license.service");
     const { buildOnboarding } = require("../services/insights.service");
 
-    const [plan, partner, license, users, stats, scans, documents, imports, activity] = await Promise.all([
+    const [plan, partner, license, users, stats, scans, documents, activity] = await Promise.all([
       company.plan_id ? plansRepo.getPlanById(company.plan_id) : null,
       company.partner_id ? companiesRepo.getCompanyById(company.partner_id) : null,
       getLicenseUsage(id),
@@ -102,7 +102,6 @@ router.get("/:id/overview", async (req, res, next) => {
       productsRepo.getProductStats({ companyId: id }),
       scanEventsRepo.getScanSummary(id),
       documentsRepo.getDocumentStats(id),
-      importsRepo.listImports(id, { page: 1, pageSize: 10 }),
       listAuditLogs({ companyId: id, page: 1, pageSize: 15 })
     ]);
 
@@ -115,7 +114,6 @@ router.get("/:id/overview", async (req, res, next) => {
       stats,
       scans,
       documents,
-      imports: imports.items,
       activity: activity.items || activity,
       onboarding: buildOnboarding({ company, stats, documents })
     });
@@ -183,19 +181,15 @@ router.post("/:id/invites", validateBody(createInviteSchema), async (req, res, n
       return;
     }
 
-    // De invite-flow levert een company_admin op; partnerbedrijven krijgen hun
-    // Partner Admins direct via de Platform Owner (gebruikersbeheer), niet via invites.
-    if (company.kind === "partner") {
-      next(new HttpError(409, "Partnerbedrijven krijgen geen Company Admin-uitnodigingen; maak een Partner Admin aan via Gebruikers"));
-      return;
-    }
-
+    // Activatielink (48 uur) voor de beheerder van dit bedrijf: Partner Admin bij een
+    // partnerbedrijf, anders Company Admin. Een nieuwe link maakt de vorige ongeldig.
     const { invite, token } = await invitesRepo.createInvite({
       companyId,
       email: req.body.email,
       firstName: req.body.firstName,
       lastName: req.body.lastName,
-      invitedBy: req.user.id
+      invitedBy: req.user.id,
+      role: company.kind === "partner" ? "partner_admin" : "company_admin"
     });
 
     await logAudit({

@@ -1,7 +1,11 @@
 const crypto = require("crypto");
 const { getPool, sql } = require("../config/db");
 
-const INVITE_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+// Activatielink: 48 uur geldig (beveiligingsbeleid), eenmalig, alleen de SHA-256-hash
+// van het token staat in de database. Het token zelf staat alleen in het antwoord aan
+// degene die de link uitgeeft (geen e-mail, zie docs/accounts.md).
+const INVITE_DURATION_MS = 48 * 60 * 60 * 1000;
+const INVITE_COLUMNS = "id, company_id, email, first_name, last_name, role, status, expires_at, accepted_at, created_at";
 
 function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -11,29 +15,61 @@ function generateInviteToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-async function createInvite({ companyId, email, firstName, lastName, invitedBy }) {
-  const pool = await getPool();
+// Nieuwe activatielink. Een eerdere openstaande link voor hetzelfde bedrijf en e-mailadres
+// wordt in dezelfde transactie ingetrokken (alleen de nieuwste werkt).
+// db: optionele pg-client binnen een lopende transactie (bijv. bedrijf + beheerder in één keer).
+async function createInvite({ companyId, email, firstName, lastName, invitedBy, role = "company_admin" }, db = null) {
   const token = generateInviteToken();
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + INVITE_DURATION_MS);
+  const run = async (client) => {
+    await client.query(
+      "UPDATE dbo.companyadmininvites SET status = 'revoked' WHERE company_id = $1 AND lower(email) = lower($2) AND status = 'pending'",
+      [companyId, email]
+    );
+    const result = await client.query(
+      `INSERT INTO dbo.companyadmininvites
+         (company_id, email, first_name, last_name, token_hash, invited_by, expires_at, role)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING ${INVITE_COLUMNS}`,
+      [companyId, email, firstName ?? null, lastName ?? null, tokenHash, invitedBy ?? null, expiresAt, role]
+    );
+    return result.rows[0];
+  };
 
-  const result = await pool
-    .request()
-    .input("companyId", sql.Int, companyId)
-    .input("email", sql.NVarChar(256), email)
-    .input("firstName", sql.NVarChar(100), firstName ?? null)
-    .input("lastName", sql.NVarChar(100), lastName ?? null)
-    .input("tokenHash", sql.Char(64), tokenHash)
-    .input("invitedBy", sql.Int, invitedBy)
-    .input("expiresAt", sql.DateTime2, expiresAt)
-    .query(`
-      INSERT INTO dbo.CompanyAdminInvites
-        (company_id, email, first_name, last_name, token_hash, invited_by, expires_at)
-      VALUES (@companyId, @email, @firstName, @lastName, @tokenHash, @invitedBy, @expiresAt)
-      RETURNING id, company_id, email, first_name, last_name, status, expires_at, created_at
-    `);
+  if (db) return { invite: await run(db), token };
+  const pool = await getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const invite = await run(client);
+    await client.query("COMMIT");
+    return { invite, token };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
-  return { invite: result.recordset[0], token };
+// Eenmalig gebruik, atomair: alleen een openstaande, niet-verlopen link kan worden
+// geclaimd. Twee gelijktijdige activaties: er wint er precies één.
+async function claimInvite(id) {
+  const pool = await getPool();
+  const result = await pool.query(
+    `UPDATE dbo.companyadmininvites SET status = 'accepted', accepted_at = now()
+     WHERE id = $1 AND status = 'pending' AND expires_at > now()
+     RETURNING ${INVITE_COLUMNS}`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+// Terugdraaien als het account na het claimen toch niet aangemaakt kon worden.
+async function releaseInvite(id) {
+  const pool = await getPool();
+  await pool.query("UPDATE dbo.companyadmininvites SET status = 'pending', accepted_at = NULL WHERE id = $1 AND status = 'accepted'", [id]);
 }
 
 async function listInvitesForCompany(companyId) {
@@ -87,7 +123,7 @@ async function getInviteByToken(token) {
     .request()
     .input("tokenHash", sql.Char(64), hashToken(token))
     .query(`
-      SELECT id, company_id, email, first_name, last_name, status, expires_at, accepted_at, created_at
+      SELECT id, company_id, email, first_name, last_name, role, status, expires_at, accepted_at, created_at
       FROM dbo.CompanyAdminInvites
       WHERE token_hash = @tokenHash
     `);
@@ -136,6 +172,9 @@ async function countPendingInvites() {
 module.exports = {
   countPendingInvites,
   createInvite,
+  claimInvite,
+  releaseInvite,
+  INVITE_DURATION_MS,
   listInvitesForCompany,
   listInvitesForPartner,
   getInviteById,

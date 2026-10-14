@@ -7,6 +7,7 @@ const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 
 const router = express.Router();
+require("../middleware/params").numericParam(router, "id");
 
 router.use(requireAuth, requireRole(...require("../utils/roles").PLATFORM_OWNER_ROLES));
 

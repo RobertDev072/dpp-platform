@@ -52,7 +52,8 @@ export default function AbonnementPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err.message);
+          // Medewerkers hebben geen toegang tot abonnementsgegevens (server geeft 403).
+          setError(err.status === 403 ? "Alleen bedrijfsbeheerders kunnen het abonnement bekijken. Vraag je beheerder als je meer wilt weten." : err.message);
         }
       });
 
@@ -72,7 +73,7 @@ export default function AbonnementPage() {
         </p>
       </div>
 
-      {error && <Card className="border-red-200 bg-red-50 text-red-700">{error}</Card>}
+      {error && <Card className="text-sm text-slate-600">{error}</Card>}
 
       {loading ? (
         <Card>

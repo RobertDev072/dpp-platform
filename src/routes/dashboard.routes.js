@@ -125,15 +125,15 @@ router.get("/stats", requireAuth, async (req, res, next) => {
       require("../repositories/scanEvents.repository").countScanEvents({ companyId: req.user.companyId })
     ]);
 
+    // Plan, limieten en verbruik alleen voor de bedrijfsbeheerder.
+    const admin = req.user.role === "company_admin";
     res.json({
       scope: "company",
       activeUsers,
       products,
       qrScans,
       companyName: company ? company.name : null,
-      planName: plan ? plan.name : null,
-      maxUsers,
-      license
+      ...(admin ? { planName: plan ? plan.name : null, maxUsers, license } : {})
     });
   } catch (error) {
     next(error);
@@ -150,7 +150,7 @@ router.get("/overview", requireAuth, async (req, res, next) => {
       return;
     }
     const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
-    const overview = await require("../services/insights.service").getCompanyOverview(req.user.companyId, { days });
+    const overview = await require("../services/insights.service").getCompanyOverview(req.user.companyId, { days, role: req.user.role });
     res.json({ ...overview, user: { firstName: req.user.firstName, role: req.user.role } });
   } catch (error) {
     next(error);
@@ -165,7 +165,7 @@ router.get("/notifications", requireAuth, async (req, res, next) => {
     let items = [];
 
     if (["company_admin", "company_user"].includes(user.role) && user.companyId != null) {
-      items = await require("../services/insights.service").getCompanyNotifications(user.companyId);
+      items = await require("../services/insights.service").getCompanyNotifications(user.companyId, { role: user.role });
       if (user.role !== "company_admin") {
         // Abonnementsmeldingen linken naar een beheerpagina die alleen de beheerder ziet.
         items = items.map((item) => (item.id.startsWith("license:") ? { ...item, href: null } : item));

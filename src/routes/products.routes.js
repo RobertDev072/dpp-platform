@@ -38,6 +38,7 @@ const {
 } = require("../services/blobStorage.service");
 
 const router = express.Router();
+require("../middleware/params").numericParam(router, "id", "documentId");
 
 const photoUpload = multer({
   storage: multer.memoryStorage(),
@@ -167,12 +168,14 @@ router.post("/", requireRole(...EDITOR_ROLES), validateBody(createProductSchema)
   try {
     // Licentie: verlopen licentie of bereikte productlimiet blokkeert aanmaken
     // (per bedrijf; zie license.service.js).
-    await require("../services/license.service").assertCanCreate(req.user.companyId, "product");
-
-    const product = await productsRepo.createProduct({
-      ...req.body,
-      companyId: req.user.companyId,
-      createdBy: req.user.id
+    const license = require("../services/license.service");
+    const product = await license.withCreationLock(req.user.companyId, async () => {
+      await license.assertCanCreate(req.user.companyId, "product", { role: req.user.role });
+      return productsRepo.createProduct({
+        ...req.body,
+        companyId: req.user.companyId,
+        createdBy: req.user.id
+      });
     });
 
     await logAudit({
@@ -421,7 +424,14 @@ router.post("/:id/publish", requireRole(...EDITOR_ROLES), async (req, res, next)
     }
     assertCompanyAccess(req.user, existing.company_id);
 
-    const published = await productsRepo.publishProduct(id);
+    // Een gearchiveerd product opnieuw publiceren telt weer mee voor de productlimiet.
+    const license = require("../services/license.service");
+    const published = await license.withCreationLock(existing.company_id, async () => {
+      if (existing.status === "archived") {
+        await license.assertCanCreate(existing.company_id, "product", { role: req.user.role });
+      }
+      return productsRepo.publishProduct(id);
+    });
 
     await logAudit({
       companyId: existing.company_id,
@@ -467,9 +477,10 @@ router.post("/:id/duplicate", requireRole(...EDITOR_ROLES), async (req, res, nex
   try {
     const source = await loadEditableProduct(req, next);
     if (!source) return;
-    await require("../services/license.service").assertCanCreate(req.user.companyId, "product");
-
-    const copy = await productsRepo.createProduct({
+    const license = require("../services/license.service");
+    const copy = await license.withCreationLock(req.user.companyId, async () => {
+      await license.assertCanCreate(req.user.companyId, "product", { role: req.user.role });
+      return productsRepo.createProduct({
       companyId: source.company_id,
       createdBy: req.user.id,
       name: `${source.name} (kopie)`.slice(0, 200),
@@ -483,6 +494,7 @@ router.post("/:id/duplicate", requireRole(...EDITOR_ROLES), async (req, res, nex
       manufacturer: source.manufacturer,
       countryOfOrigin: source.country_of_origin,
       photoUrl: source.photo_url
+      });
     });
 
     const [sustainability, compliance] = await Promise.all([

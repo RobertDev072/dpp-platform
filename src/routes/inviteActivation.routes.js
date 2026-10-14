@@ -8,31 +8,36 @@ const plansRepo = require("../repositories/plans.repository");
 const { hashPassword } = require("../utils/password");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
+const { loginIpLimiter } = require("../middleware/rateLimit");
 
+// Account activeren met een activatielink (uitnodiging): 48 uur geldig, eenmalig,
+// alleen de hash van het token staat in de database. De nieuwe gebruiker kiest hier
+// direct een eigen wachtwoord; er bestaat dus nooit een tijdelijk wachtwoord voor dit
+// account. Het token komt nooit in logs (routes worden genormaliseerd gelogd).
 const router = express.Router();
+router.use(loginIpLimiter);
 
-function isInviteUsable(invite) {
-  return invite && invite.status === "pending" && new Date(invite.expires_at) >= new Date();
+const EXPIRED_MESSAGE =
+  "Deze activatielink is verlopen (een link is 48 uur geldig). Vraag je partner of VeriPasso om een nieuwe link.";
+const USED_MESSAGE = "Deze activatielink is al gebruikt of ingetrokken. Je kunt inloggen met je eigen wachtwoord, of vraag om een nieuwe link.";
+
+function assertUsable(invite) {
+  if (!invite) throw new HttpError(404, "Activatielink niet gevonden. Controleer of je de volledige link hebt gebruikt.");
+  if (invite.status !== "pending") throw new HttpError(410, USED_MESSAGE, undefined, "INVITE_USED");
+  if (new Date(invite.expires_at) <= new Date()) throw new HttpError(410, EXPIRED_MESSAGE, undefined, "INVITE_EXPIRED");
 }
 
 router.get("/:token", async (req, res, next) => {
   try {
     const invite = await invitesRepo.getInviteByToken(req.params.token);
-    if (!invite) {
-      next(new HttpError(404, "Uitnodiging niet gevonden"));
-      return;
-    }
-    if (!isInviteUsable(invite)) {
-      next(new HttpError(410, "Deze uitnodiging is niet meer geldig"));
-      return;
-    }
-
+    assertUsable(invite);
     const company = await companiesRepo.getCompanyById(invite.company_id);
-
+    res.set("Cache-Control", "no-store");
     res.json({
       email: invite.email,
       companyName: company ? company.name : null,
-      // De nieuwe beheerder kiest bij activatie direct een eigen wachtwoord.
+      role: invite.role,
+      expiresAt: invite.expires_at,
       requiresPassword: true
     });
   } catch (error) {
@@ -43,60 +48,62 @@ router.get("/:token", async (req, res, next) => {
 router.post("/:token/accept", validateBody(acceptInviteSchema), async (req, res, next) => {
   try {
     const invite = await invitesRepo.getInviteByToken(req.params.token);
-    if (!invite) {
-      next(new HttpError(404, "Uitnodiging niet gevonden"));
-      return;
+    assertUsable(invite);
+
+    if (await usersRepo.getUserByEmail(invite.email)) {
+      throw new HttpError(409, "Er bestaat al een account met dit e-mailadres. Log in, of vraag je beheerder om hulp.");
     }
-    if (!isInviteUsable(invite)) {
-      next(new HttpError(410, "Deze uitnodiging is niet meer geldig"));
-      return;
-    }
-
-    // Verlopen licentie of volle seat-limiet blokkeert ook activatie via uitnodiging.
-    await require("../services/license.service").assertCanCreate(invite.company_id, "user");
-
-    const maxUsers = await plansRepo.getMaxUsersForCompany(invite.company_id);
-
-    if (!req.body.password) {
-      next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { password: ["Kies een wachtwoord"] } }));
-      return;
+    const isCompanyAdmin = invite.role === "company_admin";
+    if (isCompanyAdmin) {
+      // Verlopen abonnement of volle gebruikerslimiet blokkeert ook activatie.
+      await require("../services/license.service").assertCanCreate(invite.company_id, "user", { role: "company_admin" });
     }
     const passwordHash = await hashPassword(req.body.password);
 
-    const { limitReached, user } = await usersRepo.createUserWithSeatLimit({
-      companyId: invite.company_id,
-      maxUsers,
-      email: invite.email,
-      passwordHash,
-      firstName: invite.first_name,
-      lastName: invite.last_name,
-      role: "company_admin",
-      status: "active"
-    });
+    // Eerst de link claimen (atomair, eenmalig), dan pas het account aanmaken. Mislukt
+    // het aanmaken, dan wordt de link weer vrijgegeven: nooit een half geactiveerd account.
+    const claimed = await invitesRepo.claimInvite(invite.id);
+    if (!claimed) throw new HttpError(410, USED_MESSAGE, undefined, "INVITE_USED");
 
-    if (limitReached) {
-      next(new HttpError(409, "Licentielimiet bereikt voor dit bedrijf", undefined, "LICENSE_LIMIT_REACHED"));
-      return;
+    let result;
+    try {
+      result = await usersRepo.createUserWithSeatLimit({
+        companyId: invite.company_id,
+        maxUsers: isCompanyAdmin ? await plansRepo.getMaxUsersForCompany(invite.company_id) : null,
+        email: invite.email,
+        passwordHash,
+        firstName: invite.first_name,
+        lastName: invite.last_name,
+        role: invite.role,
+        status: "active"
+      });
+    } catch (error) {
+      await invitesRepo.releaseInvite(invite.id);
+      if (error.code === "23505" || error.number === 2627 || error.number === 2601) {
+        throw new HttpError(409, "Er bestaat al een account met dit e-mailadres.");
+      }
+      throw error;
     }
-
-    const accepted = await invitesRepo.markInviteAccepted(invite.id);
-    if (!accepted) {
-      // Race: een andere gelijktijdige request won de one-time-use-guard. De hierboven
-      // aangemaakte identity blijft dan als ongebruikt account achter (zelfde bekende
-      // MVP-beperking als bij de race in users.routes.js).
-      next(new HttpError(409, "Deze uitnodiging is net door een andere aanvraag geactiveerd"));
-      return;
+    if (result.limitReached) {
+      await invitesRepo.releaseInvite(invite.id);
+      throw new HttpError(
+        409,
+        "De gebruikerslimiet van het abonnement van dit bedrijf is bereikt. Neem contact op met je partner of VeriPasso.",
+        undefined,
+        "LICENSE_LIMIT_REACHED"
+      );
     }
 
     await logAudit({
       companyId: invite.company_id,
-      userId: user.id,
+      userId: result.user.id,
       action: "invite_activation",
       entityType: "User",
-      entityId: user.id
+      entityId: result.user.id,
+      metadata: { role: invite.role }
     });
 
-    res.status(201).json({ email: user.email, mustSetPassword: false });
+    res.status(201).json({ email: result.user.email, mustSetPassword: false });
   } catch (error) {
     next(error);
   }

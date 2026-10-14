@@ -2,40 +2,82 @@
 
 import { useEffect } from "react";
 
-// Meldt een scan van het publieke paspoort. Nodig omdat de pagina zelf aan de rand
-// gecachet wordt: niet elke weergave bereikt de server. sendBeacon is licht, blokkeert
-// de pagina niet en werkt ook als de bezoeker direct wegnavigeert.
-// Eigen pad (/api/scan/), zodat alleen dit verzoek via de Cloudflare Worker loopt.
-//
-// Eén scan per apparaat per paspoort per 30 minuten: refreshen, terugnavigeren of een
-// nieuw tabblad telt niet opnieuw. Het tijdstip staat alleen in deze browser
-// (localStorage, geen cookie). De Worker en de server passen dezelfde regel toe als
-// vangnet, voor het geval de browser geen opslag toestaat.
-const WINDOW_MS = 30 * 60 * 1000;
+// Meldt een QR-scan van het publieke paspoort. De pagina zelf wordt aan de rand
+// gecachet, dus de scan wordt apart gemeld (POST /api/scan/<id>, via de Cloudflare
+// Worker). Alleen wat waarschijnlijk een echte scan is, wordt gemeld - een webbezoek is
+// technisch niet van een camera-scan te onderscheiden, daarom sluiten we uit wat
+// aantoonbaar géén scan is:
+//   - links vanuit de VeriPasso-app (?src=app, of verwijzer app.veripasso.com);
+//   - verversen en terug/vooruit (Navigation Timing: reload / back_forward);
+//   - geautomatiseerde browsers (navigator.webdriver);
+//   - prerender en tabbladen op de achtergrond (pas melden als de pagina zichtbaar is).
+// Er wordt niets op het apparaat opgeslagen (geen cookie, geen localStorage). De Worker
+// en de server tellen daarnaast één scan per apparaat per paspoort per 30 minuten en
+// weren bots. Zie docs/scans.md.
+const APP_HOSTS = ["app.veripasso.com", "localhost"];
 
-function alreadyCounted(publicId) {
+function isInternalVisit() {
   try {
-    const key = `vp-scan:${String(publicId).toLowerCase()}`;
-    const last = Number(window.localStorage.getItem(key));
-    const now = Date.now();
-    if (last && now - last < WINDOW_MS) return true;
-    window.localStorage.setItem(key, String(now));
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("src") === "app") return true;
+    if (document.referrer) {
+      const host = new URL(document.referrer).hostname;
+      if (APP_HOSTS.includes(host) && host !== window.location.hostname) return true;
+    }
   } catch {
-    // Geen opslag (privévenster, geblokkeerd): de server bewaakt de 30 minuten.
+    // ongeldige verwijzer: niet intern
   }
   return false;
 }
 
+function isRepeatNavigation() {
+  try {
+    const nav = performance.getEntriesByType("navigation")[0];
+    return nav ? nav.type === "reload" || nav.type === "back_forward" : false;
+  } catch {
+    return false;
+  }
+}
+
+function send(publicId) {
+  const url = `/api/scan/${encodeURIComponent(publicId)}`;
+  try {
+    if (navigator.sendBeacon && navigator.sendBeacon(url)) return;
+  } catch {
+    // val terug op fetch
+  }
+  fetch(url, { method: "POST", keepalive: true, credentials: "omit" }).catch(() => {});
+}
+
 export default function ScanBeacon({ publicId }) {
   useEffect(() => {
-    if (alreadyCounted(publicId)) return;
-    const url = `/api/scan/${encodeURIComponent(publicId)}`;
-    try {
-      if (navigator.sendBeacon && navigator.sendBeacon(url)) return;
-    } catch {
-      // val terug op fetch
+    if (navigator.webdriver || isInternalVisit() || isRepeatNavigation()) return;
+    // Interne marker niet laten staan: een gedeelde of later verversde URL zonder ?src=app
+    // is weer een gewone (externe) link.
+    if (new URLSearchParams(window.location.search).has("src")) {
+      try {
+        window.history.replaceState(null, "", window.location.pathname);
+      } catch {
+        // niet kritiek
+      }
     }
-    fetch(url, { method: "POST", keepalive: true }).catch(() => {});
+    if (document.visibilityState === "visible" && !document.prerendering) {
+      send(publicId);
+      return;
+    }
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !document.prerendering) {
+        document.removeEventListener("visibilitychange", onVisible);
+        document.removeEventListener("prerenderingchange", onVisible);
+        send(publicId);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    document.addEventListener("prerenderingchange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("prerenderingchange", onVisible);
+    };
   }, [publicId]);
   return null;
 }

@@ -14,6 +14,7 @@ const { PLATFORM_OWNER_ROLES, isPlatformOwner } = require("../utils/roles");
 const licenseService = require("../services/license.service");
 
 const router = express.Router();
+require("../middleware/params").numericParam(router, "id");
 
 router.use(requireAuth, requireRole(...PLATFORM_OWNER_ROLES, "company_admin"));
 
@@ -78,7 +79,7 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
     // bedrijf). De race-veilige, autoritatieve seat-check zit daarnaast in
     // createUserWithSeatLimit hieronder.
     if (body.companyId != null) {
-      await licenseService.assertCanCreate(body.companyId, "user");
+      await licenseService.assertCanCreate(body.companyId, "user", { role: req.user.role });
     }
 
     // Het aanmaakformulier heeft bewust geen wachtwoordveld: de server genereert een
@@ -121,10 +122,10 @@ router.post("/", validateBody(createUserSchema), async (req, res, next) => {
 
     // Bij een gegenereerd tijdelijk wachtwoord: gedwongen wijziging bij eerste login.
     if (tempPassword) {
-      await usersRepo.setMustChangePassword(user.id, true);
+      await usersRepo.setTemporaryPassword(user.id, passwordHash);
     }
 
-    res.status(201).json(tempPassword ? { ...user, tempPassword } : user);
+    res.status(201).json(tempPassword ? { ...user, tempPassword, tempPasswordValidHours: usersRepo.TEMP_PASSWORD_HOURS } : user);
   } catch (error) {
     next(error);
   }
@@ -276,8 +277,9 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
     // login dwingt daarna (via must_change_password) af dat er meteen een nieuw,
     // eigen wachtwoord wordt ingesteld voordat er een sessie ontstaat.
     const tempPassword = generateTempPassword();
-    await usersRepo.updatePasswordHash(id, await hashPassword(tempPassword));
-    await usersRepo.setMustChangePassword(id, true);
+    await usersRepo.setTemporaryPassword(id, await hashPassword(tempPassword));
+    // Het oude wachtwoord is waardeloos; lopende sessies horen dat ook meteen te zijn.
+    await require("../middleware/auth").destroySessionsForUser(id).catch(() => {});
 
     await logAudit({
       companyId: existing.company_id,

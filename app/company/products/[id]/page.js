@@ -221,8 +221,9 @@ function ProductEditor() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {/* ?src=app: bekijken vanuit de app telt niet als QR-scan */}
             {product.qr_status === "active" && (
-              <ButtonLink href={`/p/${product.public_id}`} external target="_blank" rel="noopener noreferrer" icon={ExternalIcon} size="sm">
+              <ButtonLink href={`/p/${product.public_id}?src=app`} external target="_blank" rel="noopener noreferrer" icon={ExternalIcon} size="sm">
                 Paspoort bekijken
               </ButtonLink>
             )}
@@ -902,7 +903,7 @@ function QrTab({ product, onChanged }) {
           <li>Minimaal 2 × 2 cm drukken, met witte rand rondom; altijd een testscan doen vóór de oplage</li>
         </ul>
         {product.qr_status === "active" && (
-          <Link href={path} target="_blank" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline">
+          <Link href={`${path}?src=app`} target="_blank" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline">
             Openbaar paspoort bekijken <ExternalIcon size={12} />
           </Link>
         )}

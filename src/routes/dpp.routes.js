@@ -1,7 +1,5 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
-const scanEventsRepo = require("../repositories/scanEvents.repository");
-const { shouldCount } = require("../services/scanDedup.service");
 const passport = require("../services/passport.service");
 const archive = require("../services/passportArchive.service");
 const { getProductDocumentUrl } = require("../services/blobStorage.service");
@@ -129,13 +127,8 @@ router.get("/:publicId", async (req, res, next) => {
     const latest = await archive.getLatestVersion(product.id);
     const isCurrent = latest && latest.contentSha256 === passport.contentHash(snapshot);
 
-    Promise.resolve()
-      .then(() =>
-        shouldCount({ publicId: req.params.publicId, ip: req.ip, userAgent: req.get("user-agent") })
-          ? scanEventsRepo.recordScanEvent({ productId: product.id, userAgent: req.get("user-agent"), referrer: req.get("referer") })
-          : null
-      )
-      .catch(() => {});
+    // Machineleesbare opvragingen tellen niet als QR-scan: alleen een bezoek aan de
+    // paspoortpagina in een browser kan een camera-scan zijn (zie docs/scans.md).
 
     send(res, format, snapshot, {
       qrBaseUrl: getQrBaseUrl(req),

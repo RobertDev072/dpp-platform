@@ -190,4 +190,49 @@ router.get("/config-status", requireAuth, requireRole(...PLATFORM_OWNER_ROLES), 
   });
 });
 
+// Nieuwe partner + eerste Partner Admin in één stap (alleen de Platform Owner). De Partner
+// Admin krijgt een activatielink (48 uur, eenmalig) en kiest zelf een wachtwoord.
+const createPartnerSchema = require("zod").z.object({
+  name: require("zod").z.string().trim().min(1, "Vul een naam in").max(200),
+  slug: require("zod")
+    .z.string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Alleen kleine letters, cijfers en koppeltekens"),
+  adminFirstName: require("zod").z.string().trim().min(1, "Vul een voornaam in").max(100),
+  adminLastName: require("zod").z.string().trim().min(1, "Vul een achternaam in").max(100),
+  adminEmail: require("zod").z.string().trim().email("Vul een geldig e-mailadres in").max(256)
+});
+
+router.post(
+  "/partners",
+  requireAuth,
+  requireRole(...PLATFORM_OWNER_ROLES),
+  require("../middleware/validate").validateBody(createPartnerSchema),
+  async (req, res, next) => {
+    try {
+      const { company, invite, token } = await require("../services/onboarding.service").createCompanyWithAdmin({
+        company: { name: req.body.name, slug: req.body.slug, kind: "partner" },
+        admin: { email: req.body.adminEmail, firstName: req.body.adminFirstName, lastName: req.body.adminLastName },
+        adminRole: "partner_admin",
+        invitedBy: req.user.id
+      });
+      await require("../utils/auditLog").logAudit({
+        companyId: company.id,
+        userId: req.user.id,
+        action: "create",
+        entityType: "Company",
+        entityId: company.id,
+        metadata: { kind: "partner", inviteId: invite.id }
+      });
+      res.status(201).json({
+        ...company,
+        invite: { ...invite, activationUrl: `${require("../utils/baseUrl").getAppBaseUrl(req)}/activate?token=${token}` }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 module.exports = router;

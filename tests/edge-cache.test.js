@@ -99,8 +99,13 @@ test("Cloudflare-rand: gebundelde scans, cache verversen, echt bezoekers-IP", as
 
   await t.test("terugvaloptie: POST /api/scan/:publicId telt direct (als de Worker niet draait)", async () => {
     const before = await scanCount(product);
-    const res = await fetch(`${baseUrl}/api/scan/${publicId}`, { method: "POST" });
+    // Zoals een browser op de paspoortpagina de beacon stuurt (docs/scans.md).
+    const browser = { "User-Agent": "Mozilla/5.0 (iPhone) Safari/604.1", "Sec-Fetch-Site": "same-origin" };
+    const res = await fetch(`${baseUrl}/api/scan/${publicId}`, { method: "POST", headers: browser });
     assert.equal(res.status, 204);
+    assert.equal(await scanCount(product), before + 1);
+    // Zonder browserheader (script) telt het niet.
+    await fetch(`${baseUrl}/api/scan/${publicId}`, { method: "POST", headers: { "User-Agent": "Mozilla/5.0 (Android) Chrome" } });
     assert.equal(await scanCount(product), before + 1);
     assert.equal((await fetch(`${baseUrl}/api/scan/00000000-0000-4000-8000-000000000000`, { method: "POST" })).status, 404);
   });

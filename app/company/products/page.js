@@ -10,7 +10,7 @@ import Modal from "@/components/ui/Modal";
 import PageHeader from "@/components/ui/PageHeader";
 import { useToast } from "@/components/ui/Toast";
 import ProductsTable from "@/components/ProductsTable";
-import { PlusIcon, UploadIcon } from "@/components/ui/icons";
+import { PlusIcon } from "@/components/ui/icons";
 
 function NewProductDialog({ open, onClose }) {
   const toast = useToast();
@@ -103,12 +103,9 @@ function ProductsPageInner() {
     <div className="space-y-6">
       <PageHeader
         title="Producten"
-        description="Beheer digitale productpaspoorten, documentatie en publicatiestatus. Selecteer producten voor bulkacties zoals publiceren, QR-codes en labels."
+        description="Beheer digitale productpaspoorten, documentatie en publicatiestatus. Selecteer producten voor bulkacties zoals publiceren en QR-codes."
         actions={
           <>
-            <ButtonLink href="/company/products/import" icon={UploadIcon}>
-              Importeren
-            </ButtonLink>
             <Button variant="accent" icon={PlusIcon} onClick={() => setShowCreate(true)}>
               Product
             </Button>

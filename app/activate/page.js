@@ -35,9 +35,10 @@ function ActivateForm() {
           setInvite(data);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
-          setLoadError("Deze uitnodiging is niet (meer) geldig.");
+          // De server legt uit waarom (verlopen na 48 uur, al gebruikt of onbekend).
+          setLoadError(err.message || "Deze activatielink is niet (meer) geldig.");
         }
       })
       .finally(() => {
@@ -79,8 +80,10 @@ function ActivateForm() {
           {!loading && loadError && <p className="text-red-600">{loadError}</p>}
           {!loading && invite && (
             <p>
-              Welkom bij {invite.companyName || "DPP Platform"}. Activeer je account voor{" "}
-              {invite.email}.
+              Welkom bij {invite.companyName || "VeriPasso"}. Activeer je account als{" "}
+              {invite.role === "partner_admin" ? "Partner Admin" : "Bedrijfsbeheerder"} voor {invite.email}. Deze link werkt
+              één keer en is geldig tot{" "}
+              {new Date(invite.expiresAt).toLocaleString("nl-NL", { dateStyle: "long", timeStyle: "short" })}.
             </p>
           )}
         </div>

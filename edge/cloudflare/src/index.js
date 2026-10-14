@@ -27,6 +27,17 @@ const PURGE_CHUNK = 30; // URL's per purge-verzoek (veilig binnen de limiet van 
 const DEDUP_WINDOW_MS = 30 * 60 * 1000;
 const PAGE_CACHE_SECONDS = 2 * 60 * 60;
 const ORIGIN_TIMEOUT_MS = 6000;
+// Zelfde regels als src/services/scanPolicy.service.js (test: tests/scan-policy.test.js
+// controleert dat dit patroon gelijk is): bots, linkpreviews en scripts tellen niet.
+const BOT_PATTERN =
+  /bot\b|bot\/|crawler|spider|slurp|preview|facebookexternalhit|embedly|whatsapp|telegram|discord|slack|skype|linkedin|pinterest|vkshare|quora|outbrain|headless|phantom|puppeteer|playwright|selenium|lighthouse|pagespeed|curl\/|wget\/|python-|python\/|go-http|java\/|okhttp|axios|node-fetch|undici|postman|insomnia|httpclient|libwww|scrapy/i;
+
+function isCountableBeacon(request) {
+  const ua = request.headers.get("user-agent") || "";
+  if (!ua || BOT_PATTERN.test(ua)) return false;
+  // Browsers sturen bij een beacon vanaf de paspoortpagina "same-origin"; scripts en andere sites niet.
+  return request.headers.get("sec-fetch-site") === "same-origin";
+}
 
 export class ScanBuffer extends DurableObject {
   constructor(ctx, env) {
@@ -137,6 +148,8 @@ async function visitorKey(request, env, publicId) {
 }
 
 async function handleScan(request, env, publicId) {
+  // Geen echte scan (bot, script, andere site): wel 204, niet tellen.
+  if (!isCountableBeacon(request)) return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   try {
     const result = await buffer(env).add({
       publicId,

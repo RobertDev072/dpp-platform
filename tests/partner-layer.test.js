@@ -97,18 +97,26 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
   await t.test("partner maakt klantbedrijf aan: eigen tenant, gekoppeld aan de partner", async () => {
     const res = await request(baseUrl, "POST", "/api/partner/customers", {
       cookie: partner1Cookie,
-      body: { name: "Nieuwe Klant BV", slug: `nieuwe-klant-${Date.now()}`, planId: partnerPlanId }
+      body: {
+        name: "Nieuwe Klant BV",
+        slug: `nieuwe-klant-${Date.now()}`,
+        planId: partnerPlanId,
+        adminFirstName: "Nina",
+        adminLastName: "Nieuw",
+        adminEmail: `nina-${Date.now()}@example.com`
+      }
     });
     assert.equal(res.status, 201);
     assert.equal(res.data.kind, "customer");
     assert.equal(res.data.partner_id, partnerCo1);
+    assert.match(res.data.invite.activationUrl, /\/activate\?token=/, "eerste beheerder in dezelfde stap");
     extraCleanup.companyIds.push(res.data.id);
   });
 
   await t.test("partner kan geen niet-partner_assignable plan toewijzen", async () => {
     const res = await request(baseUrl, "POST", "/api/partner/customers", {
       cookie: partner1Cookie,
-      body: { name: "Klant Fout Plan", slug: `fout-plan-${Date.now()}`, planId: internPlanId }
+      body: { name: "Klant Fout Plan", slug: `fout-plan-${Date.now()}`, planId: internPlanId, adminFirstName: "A", adminLastName: "B", adminEmail: `fout-${Date.now()}@example.com` }
     });
     assert.equal(res.status, 400);
     assert.ok(res.data.error.details.fieldErrors.planId);
@@ -239,12 +247,13 @@ test("partnerlaag: scoping, klant-onboarding, rolguards en afscherming", async (
     assert.ok(res.data.error.details.fieldErrors.role);
   });
 
-  await t.test("owner-invite op een partnerbedrijf wordt geweigerd", async () => {
+  await t.test("owner-uitnodiging op een partnerbedrijf is een Partner Admin-activatielink", async () => {
     const res = await request(baseUrl, "POST", `/api/admin/companies/${partnerCo1}/invites`, {
       cookie: ownerCookie,
       body: { email: `partnerinvite-${Date.now()}@example.com` }
     });
-    assert.equal(res.status, 409);
+    assert.equal(res.status, 201);
+    assert.equal(res.data.role, "partner_admin");
   });
 
   // --- Dashboard ---

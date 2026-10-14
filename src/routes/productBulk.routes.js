@@ -13,6 +13,8 @@ const { heavyWorkLimiter } = require("../middleware/rateLimit");
 // Bulkacties op producten van het eigen bedrijf. De selectie is óf een lijst id's óf
 // een filter; beide worden server-side tegen req.user.companyId opgelost, dus id's of
 // filters kunnen nooit producten van een ander bedrijf raken.
+const license = require("../services/license.service");
+
 const router = express.Router();
 const COMPANY_ROLES = ["company_admin", "company_user"];
 const MAX_SELECTION = 10000;
@@ -61,7 +63,16 @@ router.post("/actions", validateBody(actionSchema), async (req, res, next) => {
       case "publish":
         // Standaard alleen complete producten: publiceren is een bewuste stap, en
         // een bulkactie mag geen half paspoort openbaar maken.
-        affected = await productsRepo.bulkPublish(companyId, ids, { onlyComplete: !req.body.includeIncomplete });
+        // Gearchiveerde producten opnieuw publiceren telt weer mee voor de productlimiet;
+        // controle en uitvoering in één vergrendelde stap per bedrijf.
+        affected = await license.withCreationLock(companyId, async () => {
+          const pool = await require("../config/db").getPool();
+          const archived = Number(
+            (await pool.query("SELECT COUNT(*) AS n FROM dbo.products WHERE company_id = $1 AND id = ANY($2::int[]) AND status = 'archived'", [companyId, ids])).rows[0].n
+          );
+          if (archived > 0) await license.assertCanCreate(companyId, "product", { role: req.user.role, extra: archived });
+          return productsRepo.bulkPublish(companyId, ids, { onlyComplete: !req.body.includeIncomplete });
+        });
         break;
       case "archive":
         affected = await productsRepo.bulkArchive(companyId, ids);

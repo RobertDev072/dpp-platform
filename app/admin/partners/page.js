@@ -68,10 +68,10 @@ export default function PartnersPage() {
           </p>
         </div>
         <Link
-          href="/admin/companies/new"
+          href="/admin/partners/nieuw"
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
         >
-          Nieuw bedrijf
+          Nieuwe partner
         </Link>
       </div>
 
@@ -102,7 +102,7 @@ export default function PartnersPage() {
         ) : partners.length === 0 ? (
           <EmptyState
             title="Nog geen partners"
-            description="Maak een partnerbedrijf aan via Nieuw bedrijf en kies daar het type Partnerbedrijf."
+            description="Maak een partner en de eerste Partner Admin aan via Nieuwe partner."
           />
         ) : (
           <div className="overflow-x-auto">

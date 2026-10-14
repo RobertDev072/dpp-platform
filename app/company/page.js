@@ -29,8 +29,7 @@ import {
   PlusIcon,
   RefreshIcon,
   ScanIcon,
-  SparkIcon,
-  UploadIcon
+  SparkIcon
 } from "@/components/ui/icons";
 
 function greeting() {
@@ -83,9 +82,6 @@ export default function CompanyDashboardPage() {
         description={data?.company ? `Hier is het overzicht van ${data.company.name}.` : "Je productpaspoorten, QR-scans en wat er nog moet gebeuren."}
         actions={
           <>
-            <ButtonLink href="/company/products/import" icon={UploadIcon}>
-              Importeren
-            </ButtonLink>
             <ButtonLink href="/company/products?new=1" variant="accent" icon={PlusIcon}>
               Product
             </ButtonLink>
@@ -246,12 +242,9 @@ export default function CompanyDashboardPage() {
               compact
               icon={BoxIcon}
               title="Nog geen producten"
-              description="Maak een product aan of importeer je hele catalogus vanuit Excel."
+              description="Maak je eerste product aan."
               action={
                 <>
-                  <ButtonLink href="/company/products/import" size="sm" icon={UploadIcon}>
-                    Importeren
-                  </ButtonLink>
                   <ButtonLink href="/company/products?new=1" size="sm" variant="accent" icon={PlusIcon}>
                     Product
                   </ButtonLink>

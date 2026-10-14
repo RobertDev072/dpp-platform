@@ -252,8 +252,8 @@ function NewUserForm({ companies, companiesById, onCreated }) {
       {createdInfo && createdInfo.tempPassword && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <p className="mb-2 text-sm font-medium text-amber-800">
-            Tijdelijk wachtwoord voor {createdInfo.email} (wordt maar één keer getoond, deel dit
-            zelf veilig met de gebruiker):
+            Tijdelijk wachtwoord voor {createdInfo.email} (wordt maar één keer getoond en is 24 uur
+            geldig; deel het zelf veilig met de gebruiker):
           </p>
           <input
             readOnly

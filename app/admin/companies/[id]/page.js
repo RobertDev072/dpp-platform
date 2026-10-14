@@ -24,7 +24,6 @@ const TABS = [
   { key: "overview", label: "Overzicht" },
   { key: "users", label: "Gebruikers" },
   { key: "products", label: "Producten & QR" },
-  { key: "imports", label: "Imports" },
   { key: "activity", label: "Activiteit" },
   { key: "subscription", label: "Abonnement" }
 ];
@@ -67,7 +66,7 @@ export default function Customer360Page() {
     );
   }
 
-  const { company, license, users, stats, scans, documents, imports, activity, onboarding, plan } = data;
+  const { company, license, users, stats, scans, documents, activity, onboarding, plan } = data;
   const [statusVariant, statusText] = COMPANY_STATUS[company.status] || ["neutral", company.status];
   const admins = users.filter((u) => u.role === "company_admin" && u.status === "active");
 
@@ -211,28 +210,6 @@ export default function Customer360Page() {
           <ButtonLink href={`/admin/products?companyId=${company.id}`} size="sm" className="mt-4">
             Alle producten van {company.name}
           </ButtonLink>
-        </Card>
-      )}
-
-      {tab === "imports" && (
-        <Card>
-          {imports.length === 0 ? (
-            <EmptyState title="Nog geen imports" description="Dit bedrijf heeft nog geen producten via Excel/CSV geïmporteerd." />
-          ) : (
-            <ul className="divide-y divide-slate-100 text-sm">
-              {imports.map((job) => (
-                <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                  <span>
-                    <span className="font-medium text-slate-900">{job.filename}</span>
-                    <span className="block text-xs text-slate-500">{formatDateTime(job.created_at)} · {job.status}</span>
-                  </span>
-                  <span className="text-xs text-slate-600">
-                    {formatNumber(job.total_rows)} rijen · {formatNumber(job.created_count)} toegevoegd · {formatNumber(job.updated_count)} bijgewerkt · {formatNumber(job.error_count)} fouten
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
         </Card>
       )}
 

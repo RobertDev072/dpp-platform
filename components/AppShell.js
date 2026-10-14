@@ -161,8 +161,6 @@ const EXTRA_SEGMENT_LABELS = {
   uitnodigen: "Uitnodigen",
   profiel: "Profiel",
   products: "Producten",
-  import: "Importeren",
-  imports: "Import Center",
   rapportages: "Rapportages"
 };
 

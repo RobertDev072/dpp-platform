@@ -8,6 +8,7 @@ const { publicApiLimiter } = require("../middleware/rateLimit");
 const { HttpError } = require("../middleware/errorHandler");
 
 const { shouldCount } = require("../services/scanDedup.service");
+const { isCountableBeacon } = require("../services/scanPolicy.service");
 const { readImage } = require("../services/blobStorage.service");
 const { mediaVersion } = require("./media.routes");
 
@@ -86,8 +87,12 @@ async function recordScan(req, res, next) {
       next(new HttpError(404, "Niet gevonden"));
       return;
     }
-    // Eén scan per apparaat per paspoort per 30 minuten (refresh telt niet).
-    if (shouldCount({ publicId: req.params.publicId, ip: req.ip, userAgent: req.get("user-agent") })) {
+    // Alleen meldingen van een gewone browser op de paspoortpagina (geen bots, scripts of
+    // andere sites), en één scan per apparaat per paspoort per 30 minuten.
+    if (
+      isCountableBeacon(req.headers) &&
+      shouldCount({ publicId: req.params.publicId, ip: req.ip, userAgent: req.get("user-agent") })
+    ) {
       await scanEventsRepo.recordScanEvent({
         productId: product.id,
         userAgent: req.get("user-agent"),

@@ -79,30 +79,71 @@ async function getLicenseUsage(companyId) {
 // Afdwinging bij aanmaken. Verlopen licentie blokkeert elk aanmaken; limieten
 // blokkeren alleen de eigen resource-soort. Bestaande data en publieke
 // QR-paspoorten blijven altijd werken (bewuste keuze van de Platform Owner).
-async function assertCanCreate(companyId, kind) {
+// Een medewerker krijgt geen abonnementsdetails (plan, aantallen); alleen dat de actie
+// niet kan en wie hem kan helpen. Beheerders krijgen de reden en wat ze kunnen doen.
+const EMPLOYEE_BLOCKED =
+  "Dit kan op dit moment niet vanwege het abonnement van je bedrijf. Neem contact op met je bedrijfsbeheerder.";
+
+function isAdminRole(role) {
+  return role === "company_admin" || role === "partner_admin" || role === "platform_owner" || role == null;
+}
+
+// kind: "product" | "user". extra: aantal dat erbij komt (bijv. heractiveren van meerdere
+// gearchiveerde producten tegelijk). role: rol van de aanvrager (bepaalt de melding).
+async function assertCanCreate(companyId, kind, { role = null, extra = 1 } = {}) {
   const usage = await getLicenseUsage(companyId);
   if (!usage) {
     throw new HttpError(404, "Niet gevonden");
   }
+  const admin = isAdminRole(role);
   if (usage.status === STATUS.EXPIRED) {
     throw new HttpError(
       409,
-      "De licentie van dit bedrijf is verlopen. Neem contact op met de beheerder om te verlengen.",
+      admin
+        ? "Het abonnement van dit bedrijf is verlopen, daarom kunnen er geen producten of gebruikers worden toegevoegd. Neem contact op met VeriPasso of je partner om te verlengen."
+        : EMPLOYEE_BLOCKED,
       undefined,
       "LICENSE_EXPIRED"
     );
   }
-  if (kind === "product" && usage.products.max != null && usage.products.used >= usage.products.max) {
+  if (kind === "product" && usage.products.max != null && usage.products.used + extra > usage.products.max) {
     throw new HttpError(
       409,
-      `Productlimiet bereikt (${usage.products.used}/${usage.products.max}). Upgrade het licentieplan of archiveer producten.`,
+      admin
+        ? `Productlimiet van het abonnement bereikt (${usage.products.used}/${usage.products.max} actieve producten). Archiveer producten die niet meer nodig zijn, of neem contact op met VeriPasso of je partner om het abonnement te wijzigen.`
+        : EMPLOYEE_BLOCKED,
       undefined,
       "LICENSE_LIMIT_REACHED"
     );
   }
-  if (kind === "user" && usage.users.max != null && usage.users.used >= usage.users.max) {
-    throw new HttpError(409, "Licentielimiet bereikt voor dit bedrijf", undefined, "LICENSE_LIMIT_REACHED");
+  if (kind === "user" && usage.users.max != null && usage.users.used + extra > usage.users.max) {
+    throw new HttpError(
+      409,
+      admin
+        ? `Gebruikerslimiet van het abonnement bereikt (${usage.users.used}/${usage.users.max} actieve gebruikers). Deactiveer een gebruiker of neem contact op met VeriPasso of je partner.`
+        : EMPLOYEE_BLOCKED,
+      undefined,
+      "LICENSE_LIMIT_REACHED"
+    );
   }
 }
 
-module.exports = { STATUS, buildUsage, getLicenseUsage, assertCanCreate };
+// Controle + aanmaken als één ondeelbare stap per bedrijf: gelijktijdige verzoeken
+// (dubbelklik, twee tabbladen, scripts) wachten op elkaar, zodat de limiet nooit
+// overschreden wordt. PostgreSQL-adviesvergrendeling op (namespace, bedrijfs-id).
+const CREATION_LOCK_NAMESPACE = 7301;
+
+async function withCreationLock(companyId, fn) {
+  const { getPool } = require("../config/db");
+  const pool = await getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock($1, $2)", [CREATION_LOCK_NAMESPACE, companyId]);
+    return await fn();
+  } finally {
+    await client.query("SELECT pg_advisory_unlock($1, $2)", [CREATION_LOCK_NAMESPACE, companyId]).catch(() => {});
+    client.release();
+  }
+}
+
+module.exports = { STATUS, buildUsage, getLicenseUsage, assertCanCreate, withCreationLock };

@@ -26,8 +26,8 @@ export default function TempPasswordBox({ tempPassword, email, onClose }) {
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="mb-2 text-sm font-medium text-amber-800">
-          Tijdelijk wachtwoord{email ? ` voor ${email}` : ""} — dit wordt maar één keer getoond
-          en is daarna niet meer opvraagbaar. Kopieer het nu en deel het zelf veilig met de
+          Tijdelijk wachtwoord{email ? ` voor ${email}` : ""} — dit wordt maar één keer getoond,
+          is daarna niet meer opvraagbaar en is 24 uur geldig. Kopieer het nu en deel het zelf veilig met de
           Bedrijfsbeheerder; bij de eerstvolgende login moet die verplicht een nieuw wachtwoord
           instellen.
         </p>

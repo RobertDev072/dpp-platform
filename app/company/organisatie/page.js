@@ -182,8 +182,8 @@ export default function OrganisatiePage() {
       {createdInfo && createdInfo.tempPassword && (
         <Card className="border-amber-200 bg-amber-50 text-amber-800">
           <p className="mb-2 text-sm font-medium">
-            Tijdelijk wachtwoord voor {createdInfo.email} (wordt maar één keer getoond, deel dit zelf
-            veilig met de gebruiker):
+            Tijdelijk wachtwoord voor {createdInfo.email} (wordt maar één keer getoond en is 24 uur
+            geldig; deel het zelf veilig met de gebruiker):
           </p>
           <input
             readOnly
@@ -192,8 +192,8 @@ export default function OrganisatiePage() {
             className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm text-slate-900"
           />
           <p className="mt-2 text-xs">
-            De gebruiker kan het wachtwoord daarna zelf wijzigen via Wachtwoord vergeten op de
-            loginpagina.
+            Bij de eerste login stelt de gebruiker verplicht een eigen wachtwoord in; daarna werkt
+            dit tijdelijke wachtwoord niet meer. Verlopen? Gebruik Wachtwoord resetten voor een nieuw.
           </p>
         </Card>
       )}

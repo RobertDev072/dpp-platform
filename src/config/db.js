@@ -135,7 +135,15 @@ class Request {
 
   async query(text) {
     const { text: positional, values } = toPositional(text, this.inputs);
-    const result = await this.executor.query(positional, values);
+    let result;
+    try {
+      result = await this.executor.query(positional, values);
+    } catch (error) {
+      // Unieke-sleutelschending (PostgreSQL 23505): de routes herkennen die via de oude
+      // SQL Server-nummers 2627/2601 en geven dan een nette 409 i.p.v. een serverfout.
+      if (error && error.code === "23505" && error.number == null) error.number = 2627;
+      throw error;
+    }
     // Meerdere statements zonder parameters geven een array terug; de laatste telt.
     const last = Array.isArray(result) ? result[result.length - 1] : result;
     return { recordset: last.rows, rowsAffected: [last.rowCount ?? 0] };

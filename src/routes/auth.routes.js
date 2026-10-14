@@ -18,13 +18,17 @@ const {
   setSessionCookie,
   clearSessionCookie,
   requireAuth,
-  denyIfImpersonating
+  denyIfImpersonating,
+  destroySessionsForUser
 } = require("../middleware/auth");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const { loginIpLimiter, loginEmailLimiter, mfaLimiter } = require("../middleware/rateLimit");
 
 const router = express.Router();
+
+const TEMP_EXPIRED_MESSAGE =
+  "Je tijdelijke wachtwoord is verlopen (het is 24 uur geldig). Vraag je beheerder om een nieuw tijdelijk wachtwoord.";
 
 // Vloer voor de responstijd van mislukte logins: zo verschillen "onbekend account",
 // "geblokkeerd account" en "verkeerd wachtwoord" niet meetbaar in duur, en kan een
@@ -68,6 +72,12 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
     if (outcome !== "ok") {
       await padFailedLogin(startedAt);
       next(new HttpError(401, "Ongeldige inloggegevens"));
+      return;
+    }
+
+    if (usersRepo.isTemporaryPasswordExpired(user)) {
+      // Pas na een correct wachtwoord, dus geen hint of het account bestaat.
+      next(new HttpError(401, TEMP_EXPIRED_MESSAGE, undefined, "TEMP_PASSWORD_EXPIRED"));
       return;
     }
 
@@ -134,6 +144,11 @@ router.post(
         return;
       }
 
+      if (usersRepo.isTemporaryPasswordExpired(user)) {
+        next(new HttpError(401, TEMP_EXPIRED_MESSAGE, undefined, "TEMP_PASSWORD_EXPIRED"));
+        return;
+      }
+
       if (user.mfa_enabled_at) {
         const method = await verifySecondFactor(user, { code: req.body.mfaCode, recoveryCode: req.body.recoveryCode });
         if (!method) {
@@ -143,8 +158,13 @@ router.post(
         }
       }
 
-      await usersRepo.updatePasswordHash(user.id, await hashPassword(newPassword));
-      await usersRepo.setMustChangePassword(user.id, false);
+      if (await verifyPassword(newPassword, user.password_hash)) {
+        next(new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { newPassword: ["Kies een ander wachtwoord dan het tijdelijke"] } }));
+        return;
+      }
+      // Eigen wachtwoord: het tijdelijke vervalt direct, oude sessies ook.
+      await usersRepo.setOwnPassword(user.id, await hashPassword(newPassword));
+      await destroySessionsForUser(user.id).catch(() => {});
 
       const { token, expiresAt } = await createSession(user.id);
       setSessionCookie(res, token, expiresAt);

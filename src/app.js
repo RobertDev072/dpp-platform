@@ -115,8 +115,8 @@ app.use("/api/edge", require("./routes/edgeSync.routes"));
 app.use("/api/auth", authRoutes);
 app.use("/api/admin/companies", companiesRoutes);
 app.use("/api/users", usersRoutes);
-// Vóór productsRoutes: anders vangt GET /api/products/:id "import"/"bulk" als id.
-app.use("/api/products/import", require("./routes/productImport.routes"));
+// Vóór productsRoutes: anders vangt GET /api/products/:id "bulk" als id.
+// (Importeren via Excel/CSV is verwijderd; komt eventueel terug in versie 2.)
 app.use("/api/products/bulk", require("./routes/productBulk.routes"));
 app.use("/api/products", productsRoutes);
 app.use("/api/qr", require("./routes/qrExport.routes"));

@@ -79,6 +79,37 @@ async function clearMustChangePasswordByEmail(email) {
     .query("UPDATE dbo.Users SET must_change_password = false, updated_at = now() WHERE lower(email) = lower(@email)");
 }
 
+// Tijdelijk wachtwoord: maximaal 24 uur geldig. De login weigert het daarna en dwingt
+// tot die tijd een eigen wachtwoord af (must_change_password). Alleen de hash wordt
+// opgeslagen; het wachtwoord zelf staat alleen in het antwoord aan de beheerder.
+const TEMP_PASSWORD_HOURS = 24;
+
+async function setTemporaryPassword(id, passwordHash) {
+  const pool = await getPool();
+  await pool.query(
+    `UPDATE dbo.users
+     SET password_hash = $2, must_change_password = true,
+         temp_password_expires_at = now() + make_interval(hours => $3::int), updated_at = now()
+     WHERE id = $1`,
+    [id, passwordHash, TEMP_PASSWORD_HOURS]
+  );
+}
+
+// Eigen wachtwoord ingesteld: het tijdelijke vervalt direct.
+async function setOwnPassword(id, passwordHash) {
+  const pool = await getPool();
+  await pool.query(
+    `UPDATE dbo.users
+     SET password_hash = $2, must_change_password = false, temp_password_expires_at = NULL, updated_at = now()
+     WHERE id = $1`,
+    [id, passwordHash]
+  );
+}
+
+function isTemporaryPasswordExpired(user) {
+  return Boolean(user && user.must_change_password && user.temp_password_expires_at && new Date(user.temp_password_expires_at) <= new Date());
+}
+
 async function updatePasswordHash(id, passwordHash) {
   const pool = await getPool();
   await pool
@@ -93,7 +124,7 @@ async function getUserByEmail(email) {
   const result = await pool
     .request()
     .input("email", sql.NVarChar(256), email)
-    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password,
+    .query(`SELECT id, company_id, email, password_hash, role, status, must_change_password, temp_password_expires_at,
                    mfa_enabled_at, mfa_secret_enc, mfa_last_step, mfa_recovery_hashes
             FROM dbo.Users WHERE lower(email) = lower(@email)`);
   return result.recordset[0] || null;
@@ -307,6 +338,10 @@ module.exports = {
   updateUser,
   getUserAuthInfo,
   updatePasswordHash,
+  setTemporaryPassword,
+  setOwnPassword,
+  isTemporaryPasswordExpired,
+  TEMP_PASSWORD_HOURS,
   setMustChangePassword,
   clearMustChangePasswordByEmail
 };

@@ -6,7 +6,7 @@ import { useToast } from "@/components/ui/Toast";
 // Eenmalige weergave van de activatielink van een Company Admin-uitnodiging.
 // Het token zit alleen in het aanmaak-antwoord en is daarna nooit meer
 // opvraagbaar — vandaar de nadrukkelijke waarschuwing en de kopieerknop.
-export default function ActivationUrlBox({ activationUrl, email }) {
+export default function ActivationUrlBox({ activationUrl, email, roleLabel }) {
   const toast = useToast();
 
   if (!activationUrl) {
@@ -26,8 +26,9 @@ export default function ActivationUrlBox({ activationUrl, email }) {
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
       <p className="mb-2 text-sm font-medium text-amber-800">
         Activatielink{email ? ` voor ${email}` : ""} — deze wordt maar één keer getoond en is
-        daarna niet meer opvraagbaar. Kopieer de link nu en deel deze zelf veilig met de
-        Bedrijfsbeheerder.
+        daarna niet meer opvraagbaar. De link is <strong>48 uur geldig</strong> en werkt maar één keer.
+        Kopieer hem nu en deel hem zelf veilig met {roleLabel || "de nieuwe beheerder"}; die kiest dan een eigen
+        wachtwoord. Een nieuwe link maakt deze ongeldig.
       </p>
       <div className="flex gap-2">
         <input
