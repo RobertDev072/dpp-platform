@@ -129,6 +129,8 @@ app.use("/api/scan", publicProductsRoutes.scanRouter);
 // Machineleesbare productpaspoorten (JSON, JSON-LD, XML via content negotiation) en
 // de versiegeschiedenis van gepubliceerde paspoorten.
 app.use("/api/dpp", require("./routes/dpp.routes"));
+// Organisaties & gebruikers (owner): boom partners → klantbedrijven → gebruikers.
+app.use("/api/admin/org", require("./routes/organization.routes"));
 app.use("/api/admin", require("./routes/admin.routes"));
 app.use("/api/admin/system", require("./routes/systemMonitoring.routes"));
 app.use("/api/partner", require("./routes/partner.routes"));

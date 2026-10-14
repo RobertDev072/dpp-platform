@@ -1,855 +1,569 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
-import { useForm } from "@/lib/useForm";
-import { homeHrefForRole } from "@/lib/nav";
-import {
-  ASSIGNABLE_ROLE_OPTIONS,
-  PARTNER_ROLE_OPTIONS,
-  USER_STATUS_BADGE_VARIANTS,
-  USER_STATUS_OPTIONS,
-  fullName,
-  roleLabel,
-  statusLabel
-} from "@/lib/labels";
-import Card from "@/components/ui/Card";
+import { USER_STATUS_BADGE_VARIANTS, USER_STATUS_OPTIONS, fullName, statusLabel } from "@/lib/labels";
 import Badge from "@/components/ui/Badge";
-import Button from "@/components/ui/Button";
-import Field from "@/components/ui/Field";
+import Card from "@/components/ui/Card";
 import Select from "@/components/ui/Select";
-import SubmitButton from "@/components/ui/SubmitButton";
-import FormError from "@/components/ui/FormError";
 import EmptyState from "@/components/ui/EmptyState";
-import IconButton, { CogIcon, KeyIcon, LoginIcon, TrashIcon } from "@/components/ui/IconButton";
-import Skeleton from "@/components/ui/Skeleton";
-import { useToast } from "@/components/ui/Toast";
-import AdminStatTile from "@/components/admin/AdminStatTile";
-import ListPagination from "@/components/admin/ListPagination";
-import { downloadCsv, formatRelativeTime, initialsOf } from "@/components/admin/listUtils";
+import { ChevronRightIcon, SearchIcon, UsersIcon } from "@/components/ui/icons";
+import { formatRelativeTime } from "@/components/admin/listUtils";
+import OrgDetailPanel from "@/components/admin/org/OrgDetailPanel";
+import {
+  CompanyStatusBadge,
+  InlineError,
+  KindBadge,
+  Pager,
+  RoleBadge,
+  RowSkeleton,
+  usePagedList
+} from "@/components/admin/org/orgUi";
 
-const PAGE_SIZE = 25;
+// Organisaties & gebruikers (Platform Owner). Zonder zoekterm of filter: een uitklapbare
+// boom Platform → Partners → (Partner Admins, Klantbedrijven → gebruikers), plus de groep
+// Zelfstandige klantbedrijven. Elk niveau laadt pas bij uitklappen en is server-side
+// gepagineerd. Met zoekterm of filter: één gepagineerde resultatenlijst met het pad
+// (partner › bedrijf), zodat ook resultaten diep in de boom direct vindbaar zijn.
 
-const ROLE_FILTER_OPTIONS = [
+const TYPE_OPTIONS = [
+  { value: "partner", label: "Partners" },
+  { value: "customer", label: "Klantbedrijven" },
+  { value: "standalone", label: "Zelfstandige klantbedrijven" },
+  { value: "user", label: "Gebruikers" }
+];
+
+const ROLE_OPTIONS = [
   { value: "platform_owner", label: "Platform Owner" },
   { value: "partner_admin", label: "Partner Admin" },
   { value: "company_admin", label: "Bedrijfsbeheerder" },
   { value: "company_user", label: "Medewerker" }
 ];
 
-// Soft-verwijderde accounts komen niet meer terug uit de API, dus geen "Verwijderd"-filter.
-const STATUS_FILTER_OPTIONS = USER_STATUS_OPTIONS;
-
-// auth_provider van de backend: 'local' (eigen wachtwoord) of 'none' (nog geen
-// wachtwoord: een beheerder moet een tijdelijk wachtwoord geven). Bewust "Verificatie" genoemd.
-const PROVIDER_FILTER_OPTIONS = [
-  { value: "none", label: "Geen wachtwoord" },
-  { value: "local", label: "Lokaal" }
+const PARTNER_SORT_OPTIONS = [
+  { value: "name", label: "Naam (A–Z)" },
+  { value: "customers", label: "Meeste klantbedrijven" },
+  { value: "created", label: "Nieuwste eerst" }
 ];
 
-function providerOf(user) {
-  return user.auth_provider === "none" ? "none" : "local";
+const CUSTOMER_SORT_OPTIONS = [
+  { value: "name", label: "Naam (A–Z)" },
+  { value: "users", label: "Meeste gebruikers" },
+  { value: "products", label: "Meeste producten" },
+  { value: "activity", label: "Recent actief" },
+  { value: "created", label: "Nieuwste eerst" }
+];
+
+function plural(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
-function RoleBadge({ role }) {
-  if (role === "platform_owner") {
-    // Paars valt buiten de standaard Badge-varianten: de eigenaar is uniek op het platform.
-    return (
-      <span className="inline-flex items-center rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
-        Platform Owner
-      </span>
-    );
-  }
-  if (role === "partner_admin") {
-    // Violet: hoort visueel bij de paarse Partner-badge op de bedrijvenpagina,
-    // maar blijft te onderscheiden van de Platform Owner.
-    return (
-      <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-700">
-        Partner Admin
-      </span>
-    );
-  }
-  return <Badge variant={role === "company_admin" ? "info" : "neutral"}>{roleLabel(role)}</Badge>;
+function useDebounced(value, delay = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
 }
 
-function LockIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <rect x="4" y="8.5" width="12" height="8" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M7 8.5V6a3 3 0 0 1 6 0v2.5" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Rolopties horen bij de bedrijfssoort: in een partnerbedrijf bestaat alleen
-// Partner Admin; company-rollen horen exclusief bij klantbedrijven (de backend
-// dwingt dit ook af, wij tonen dus nooit een keuze die toch geweigerd wordt).
-function roleOptionsForCompany(company) {
-  return company?.kind === "partner" ? PARTNER_ROLE_OPTIONS : ASSIGNABLE_ROLE_OPTIONS;
-}
-
-// Aanmaakformulier van de Platform Owner: primair bedoeld voor Partner Admins
-// (kies een partnerbedrijf), maar werkt ook voor company-rollen op klantbedrijven.
-function NewUserForm({ companies, companiesById, onCreated }) {
-  const toast = useToast();
-  const [creating, setCreating] = useState(false);
-  const [formError, setFormError] = useState(null);
-  // Na aanmaken: ofwel een eenmalig tijdelijk wachtwoord (legacy), ofwel de SSPR-instructie.
-  const [createdInfo, setCreatedInfo] = useState(null);
-
-  const form = useForm({
-    initial: { companyId: "", role: "", email: "", firstName: "", lastName: "" },
-    validators: {
-      companyId: (value) => (value ? null : "Kies een bedrijf"),
-      role: (value) => (value ? null : "Kies een rol"),
-      email: (value) => (EMAIL_PATTERN.test((value || "").trim()) ? null : "Vul een geldig e-mailadres in")
-    }
-  });
-
-  const selectedCompany = form.values.companyId
-    ? companiesById[Number(form.values.companyId)]
-    : null;
-  const roleOptions = roleOptionsForCompany(selectedCompany);
-
-  function handleCompanyChange(value) {
-    form.setValue("companyId", value);
-    const company = value ? companiesById[Number(value)] : null;
-    const options = roleOptionsForCompany(company);
-    // Rol meebewegen met de bedrijfssoort: partnerbedrijf → altijd Partner Admin;
-    // klantbedrijf → een eerder gekozen partnerrol vervalt.
-    if (!options.some((option) => option.value === form.values.role)) {
-      form.setValue("role", company?.kind === "partner" ? "partner_admin" : "");
-    }
-  }
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setFormError(null);
-    setCreatedInfo(null);
-
-    if (!form.validateAll()) {
-      return;
-    }
-
-    setCreating(true);
-    try {
-      const created = await api.post("/api/users", {
-        email: form.values.email.trim(),
-        firstName: form.values.firstName.trim() || undefined,
-        lastName: form.values.lastName.trim() || undefined,
-        role: form.values.role,
-        companyId: Number(form.values.companyId)
-      });
-
-      setCreatedInfo({ email: created.email, tempPassword: created.tempPassword || null });
-      form.reset();
-      toast.success(`Gebruiker ${created.email} aangemaakt`);
-      // Het tijdelijke wachtwoord is eenmalig zichtbaar hierboven en hoort niet
-      // in de lijst-state te blijven hangen.
-      const { tempPassword: _tempPassword, ...createdUser } = created;
-      onCreated(createdUser);
-    } catch (err) {
-      const applied = form.applyServerErrors(err);
-      if (!applied) {
-        if (err.status === 409 && !err.code) {
-          // Duplicaat-e-mail komt als kale 409-message terug: onder het e-mailveld tonen.
-          form.applyServerErrors({ fieldErrors: { email: [err.message] } });
-        } else {
-          setFormError(err);
-        }
-      }
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  return (
-    <Card>
-      <h2 className="mb-4 text-sm font-semibold text-slate-900">Nieuwe gebruiker</h2>
-      <form onSubmit={handleSubmit} noValidate className="space-y-4">
-        <FormError error={formError} />
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Select
-            label="Bedrijf"
-            name="new-user-companyId"
-            required
-            placeholder="Kies een bedrijf"
-            options={companies.map((company) => ({
-              value: String(company.id),
-              label: company.kind === "partner" ? `${company.name} (partner)` : company.name
-            }))}
-            value={form.values.companyId}
-            onChange={(e) => handleCompanyChange(e.target.value)}
-            onBlur={() => form.onBlur("companyId")}
-            error={form.errors.companyId}
-          />
-          <Select
-            label="Rol"
-            name="new-user-role"
-            required
-            placeholder="Kies een rol"
-            options={roleOptions}
-            help={
-              selectedCompany?.kind === "partner"
-                ? "In een partnerbedrijf is alleen de rol Partner Admin mogelijk."
-                : undefined
-            }
-            value={form.values.role}
-            onChange={(e) => form.setValue("role", e.target.value)}
-            onBlur={() => form.onBlur("role")}
-            error={form.errors.role}
-          />
-          <Field
-            label="E-mail"
-            name="new-user-email"
-            type="email"
-            required
-            autoComplete="off"
-            placeholder="naam@bedrijf.nl"
-            value={form.values.email}
-            onChange={(e) => form.setValue("email", e.target.value)}
-            onBlur={() => form.onBlur("email")}
-            error={form.errors.email}
-          />
-          <Field
-            label="Voornaam"
-            name="new-user-firstName"
-            autoComplete="off"
-            placeholder="Bijv. Anna"
-            value={form.values.firstName}
-            onChange={(e) => form.setValue("firstName", e.target.value)}
-            error={form.errors.firstName}
-          />
-          <Field
-            label="Achternaam"
-            name="new-user-lastName"
-            autoComplete="off"
-            placeholder="Bijv. de Vries"
-            value={form.values.lastName}
-            onChange={(e) => form.setValue("lastName", e.target.value)}
-            error={form.errors.lastName}
-          />
-        </div>
-
-        <p className="text-xs text-slate-400">
-          De nieuwe gebruiker stelt het eigen wachtwoord in via Wachtwoord vergeten op de loginpagina.
-        </p>
-
-        <SubmitButton loading={creating}>Aanmaken</SubmitButton>
-      </form>
-
-      {createdInfo && !createdInfo.tempPassword && (
-        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-          Laat <span className="font-medium">{createdInfo.email}</span> het wachtwoord instellen via{" "}
-          <span className="font-medium">Wachtwoord vergeten</span> op de loginpagina.
-        </div>
-      )}
-
-      {createdInfo && createdInfo.tempPassword && (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <p className="mb-2 text-sm font-medium text-amber-800">
-            Tijdelijk wachtwoord voor {createdInfo.email} (wordt maar één keer getoond en is 24 uur
-            geldig; deel het zelf veilig met de gebruiker):
-          </p>
-          <input
-            readOnly
-            value={createdInfo.tempPassword}
-            onClick={(e) => e.target.select()}
-            className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-mono text-sm text-slate-900"
-          />
-        </div>
-      )}
-    </Card>
-  );
-}
-
-export default function UsersPage() {
-  const toast = useToast();
-
-  const [users, setUsers] = useState([]);
-  const [companies, setCompanies] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-
-  const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [companyFilter, setCompanyFilter] = useState("");
-  const [providerFilter, setProviderFilter] = useState("");
+// Paginering per lijst; terug naar pagina 1 als het aantal per pagina wijzigt.
+function usePaging() {
   const [page, setPage] = useState(1);
-
-  // Rij die het beheerpaneel (rol/status/verwijderen) uitgeklapt heeft.
-  const [expandedId, setExpandedId] = useState(null);
-  // Tijdelijk wachtwoord na reset: éénmalig getoond in een rij-uitklap onder de gebruiker.
-  const [resetInfo, setResetInfo] = useState(null);
-
-  const companiesById = useMemo(
-    () => Object.fromEntries(companies.map((company) => [company.id, company])),
-    [companies]
-  );
-
-  useEffect(() => {
-    Promise.all([api.get("/api/admin/companies"), api.get("/api/users")])
-      .then(([companyData, userData]) => {
-        setCompanies(companyData);
-        setUsers(userData);
-      })
-      .catch((err) => setLoadError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  // Elke filterwijziging springt terug naar pagina 1.
-  useEffect(() => {
-    setPage(1);
-  }, [search, roleFilter, statusFilter, companyFilter, providerFilter]);
-
-  function companyName(user) {
-    if (user.company_name) {
-      return user.company_name;
+  const [pageSize, setPageSize] = useState(25);
+  return {
+    page,
+    pageSize,
+    setPage,
+    setPageSize: (size) => {
+      setPageSize(size);
+      setPage(1);
     }
-    if (user.company_id == null) {
-      return "";
-    }
-    return companiesById[user.company_id]?.name || `#${user.company_id}`;
-  }
+  };
+}
 
-  const stats = useMemo(
-    () => ({
-      // Verwijderde accounts komen niet meer terug uit /api/users, dus alles telt mee.
-      total: users.length,
-      admins: users.filter((u) => u.role === "company_admin").length,
-      members: users.filter((u) => u.role === "company_user").length,
-      owners: users.filter((u) => u.role === "platform_owner").length,
-      partners: users.filter((u) => u.role === "partner_admin").length,
-      blocked: users.filter((u) => u.status === "blocked").length,
-      online: users.filter((u) => Number(u.active_sessions) > 0).length
-    }),
-    [users]
-  );
-
-  const filteredUsers = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return users.filter((user) => {
-      if (term) {
-        const haystack = [user.email, fullName(user), companyName(user)].join(" ").toLowerCase();
-        if (!haystack.includes(term)) return false;
-      }
-      if (roleFilter && user.role !== roleFilter) return false;
-      if (statusFilter && user.status !== statusFilter) return false;
-      if (companyFilter && String(user.company_id ?? "") !== companyFilter) return false;
-      if (providerFilter && providerOf(user) !== providerFilter) return false;
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [users, search, roleFilter, statusFilter, companyFilter, providerFilter, companiesById]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pageItems = filteredUsers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const hasFilters = Boolean(
-    search.trim() || roleFilter || statusFilter || companyFilter || providerFilter
-  );
-
-  const companyOptions = useMemo(
-    () => companies.map((company) => ({ value: String(company.id), label: company.name })),
-    [companies]
-  );
-
-  async function patchUser(user, body) {
-    const previous = users;
-    setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...body } : u)));
-    try {
-      const updated = await api.patch(`/api/users/${user.id}`, body);
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, ...updated } : u)));
-    } catch (err) {
-      setUsers(previous);
-      // O.a. 409 LAST_COMPANY_ADMIN: de server legt in het Nederlands uit waarom het niet mag.
-      toast.error(err.message);
-    }
-  }
-
-  async function handleDelete(user) {
-    const sure = window.confirm(
-      `Weet je zeker dat je ${user.email} wilt verwijderen? Het account kan daarna nooit meer inloggen ` +
-        "en dit kan niet ongedaan gemaakt worden."
-    );
-    if (!sure) return;
-    await patchUser(user, { status: "deleted" });
-  }
-
-  // Tweestapsverificatie uitzetten (telefoon én herstelcodes kwijt). De gebruiker
-  // koppelt daarna zelf opnieuw via het profiel.
-  async function handleResetMfa(user) {
-    const sure = window.confirm(
-      `Tweestapsverificatie van ${user.email} uitzetten? Alle sessies van dit account worden beëindigd; ` +
-        "de gebruiker moet daarna zelf opnieuw koppelen."
-    );
-    if (!sure) return;
-    try {
-      await api.post(`/api/users/${user.id}/mfa/reset`);
-      toast.success(`Tweestapsverificatie van ${user.email} staat uit`);
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, mfa_enabled: false } : u)));
-    } catch (err) {
-      toast.error(err.message);
-    }
-  }
-
-  async function handleResetPassword(user) {
-    try {
-      const result = await api.post(`/api/users/${user.id}/reset-password`);
-      if (result?.selfService) {
-        // Informatieve melding van de server i.p.v. een tijdelijk wachtwoord.
-        setResetInfo({
-          userId: user.id,
-          email: user.email,
-          message:
-            result.message ||
-            `${user.email} moet het wachtwoord zelf opnieuw instellen via "Wachtwoord vergeten" op de inlogpagina.`
-        });
-      } else if (result?.tempPassword) {
-        setResetInfo({ userId: user.id, email: user.email, tempPassword: result.tempPassword });
-      } else {
-        toast.error("Onverwacht antwoord van de server bij het resetten van het wachtwoord");
-      }
-    } catch (err) {
-      toast.error(err.message);
-    }
-  }
-
-  async function handleCopyPassword() {
-    try {
-      await navigator.clipboard.writeText(resetInfo.tempPassword);
-      toast.success("Wachtwoord gekopieerd naar het klembord");
-    } catch {
-      toast.error("Kopiëren mislukt — selecteer het wachtwoord en kopieer handmatig");
-    }
-  }
-
-  async function handleImpersonate(user) {
-    const sure = window.confirm(
-      `Je logt in als ${user.email}. Alle acties worden vastgelegd in het auditlog.`
-    );
-    if (!sure) return;
-    try {
-      await api.post(`/api/admin/impersonate/${user.id}`);
-      // Partner Admins landen in hun eigen partnergebied, company-rollen in /company.
-      window.location.href = homeHrefForRole(user.role);
-    } catch (err) {
-      toast.error(err.message);
-    }
-  }
-
-  // CSV van de huidige (gefilterde) lijst.
-  function handleExport() {
-    downloadCsv(
-      "veripasso-gebruikers.csv",
-      ["Naam", "E-mail", "Bedrijf", "Rol", "Verificatie", "Status", "Laatst actief"],
-      filteredUsers.map((user) => [
-        fullName(user),
-        user.email,
-        companyName(user),
-        roleLabel(user.role),
-        providerOf(user) === "none" ? "Geen wachtwoord" : "Lokaal",
-        statusLabel(user.status),
-        user.last_activity ? new Date(user.last_activity).toLocaleString("nl-NL") : ""
-      ])
-    );
-  }
-
+function Chevron({ open }) {
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Alle gebruikers</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Beheer platformtoegang, rollen en accountbeveiliging.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleExport}
-          disabled={loading || filteredUsers.length === 0}
-          className="disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Exporteren
-        </Button>
-      </div>
+    <span aria-hidden="true" className={`flex h-5 w-5 shrink-0 items-center justify-center text-slate-400 transition-transform ${open ? "rotate-90" : ""}`}>
+      <ChevronRightIcon size={14} />
+    </span>
+  );
+}
 
-      {loadError && <Card className="border-red-200 bg-red-50 text-red-700">{loadError}</Card>}
-
-      {loading ? (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Card key={index}>
-              <Skeleton className="h-12 w-full" />
-            </Card>
-          ))}
-        </div>
+// Eén rij in de boom: uitklappen (chevron) en selecteren (naam) zijn aparte knoppen,
+// zodat toetsenbordgebruikers beide kunnen.
+function TreeRow({ depth, open, onToggle, selected, onSelect, title, meta, badges, aside }) {
+  return (
+    <div
+      className={`group flex min-w-0 items-center gap-2 border-b border-slate-100 py-2 pr-3 ${selected ? "bg-emerald-50" : "hover:bg-slate-50"}`}
+      style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
+    >
+      {onToggle ? (
+        <button type="button" onClick={onToggle} aria-expanded={open} aria-label={open ? "Inklappen" : "Uitklappen"} className="rounded p-0.5 hover:bg-slate-200">
+          <Chevron open={open} />
+        </button>
       ) : (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-          <AdminStatTile label="Totaal gebruikers" value={stats.total} sub={`${stats.online} met actieve sessie`} />
-          <AdminStatTile label="Bedrijfsbeheerders" value={stats.admins} />
-          <AdminStatTile label="Medewerkers" value={stats.members} />
-          <AdminStatTile label="Partner Admins" value={stats.partners} />
-          <AdminStatTile label="Platform Owners" value={stats.owners} />
-          <AdminStatTile label="Geblokkeerd" value={stats.blocked} tone="danger" />
-        </div>
+        <span className="w-6 shrink-0" />
       )}
-
-      <Card className="border-blue-200 bg-blue-50 text-blue-800">
-        <p className="text-sm">
-          Partner Admins maak je hieronder aan door een partnerbedrijf te kiezen. Bedrijfsbeheerders
-          nodig je bij voorkeur uit via de{" "}
-          <Link href="/admin/companies" className="font-medium underline hover:no-underline">
-            klantbedrijvenpagina
-          </Link>
-          ; medewerkers worden aangemaakt door hun eigen Bedrijfsbeheerder.
-        </p>
-      </Card>
-
-      {!loading && (
-        <NewUserForm
-          companies={companies}
-          companiesById={companiesById}
-          onCreated={(created) => setUsers((prev) => [created, ...prev])}
-        />
-      )}
-
-      <Card className="sticky top-0 z-10">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-          <Field
-            label="Zoeken"
-            name="users-search"
-            type="search"
-            placeholder="Zoek op naam, e-mail of bedrijf..."
-            autoComplete="off"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="min-w-0 flex-1"
-          />
-          <Select
-            label="Rol"
-            name="users-role"
-            placeholder="Alle rollen"
-            options={ROLE_FILTER_OPTIONS}
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="w-full lg:w-44"
-          />
-          <Select
-            label="Status"
-            name="users-status"
-            placeholder="Alle statussen"
-            options={STATUS_FILTER_OPTIONS}
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full lg:w-44"
-          />
-          <Select
-            label="Bedrijf"
-            name="users-company"
-            placeholder="Alle bedrijven"
-            options={companyOptions}
-            value={companyFilter}
-            onChange={(e) => setCompanyFilter(e.target.value)}
-            className="w-full lg:w-48"
-          />
-          <Select
-            label="Verificatie"
-            name="users-provider"
-            placeholder="Alle"
-            options={PROVIDER_FILTER_OPTIONS}
-            value={providerFilter}
-            onChange={(e) => setProviderFilter(e.target.value)}
-            className="w-full lg:w-36"
-          />
-        </div>
-      </Card>
-
-      <Card>
-        {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : filteredUsers.length === 0 ? (
-          <EmptyState
-            title={hasFilters ? "Geen gebruikers gevonden" : "Nog geen gebruikers"}
-            description={
-              hasFilters
-                ? "Pas je zoekopdracht of filters aan."
-                : "Zodra bedrijven gebruikers hebben, verschijnen ze hier."
-            }
-          />
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-500">
-                    <th className="py-2 pr-3 font-medium">Gebruiker</th>
-                    <th className="py-2 pr-3 font-medium">Bedrijf</th>
-                    <th className="py-2 pr-3 font-medium">Rol</th>
-                    <th className="py-2 pr-3 font-medium">Verificatie</th>
-                    <th className="py-2 pr-3 font-medium">Status</th>
-                    <th className="py-2 pr-3 font-medium">Laatst actief</th>
-                    <th className="py-2 pr-3 font-medium">Acties</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map((user) => {
-                    const isPlatformOwner = user.role === "platform_owner";
-                    const name = fullName(user);
-                    const canImpersonate =
-                      !isPlatformOwner &&
-                      user.status === "active" &&
-                      (user.role === "company_admin" ||
-                        user.role === "company_user" ||
-                        user.role === "partner_admin");
-                    const isExpanded = expandedId === user.id && !isPlatformOwner;
-                    const showReset = resetInfo && resetInfo.userId === user.id;
-
-                    return (
-                      <UserRows
-                        key={user.id}
-                        user={user}
-                        name={name}
-                        companyLabel={companyName(user)}
-                        roleOptions={roleOptionsForCompany(companiesById[user.company_id])}
-                        isPlatformOwner={isPlatformOwner}
-                        canImpersonate={canImpersonate}
-                        isExpanded={isExpanded}
-                        showReset={showReset}
-                        resetInfo={resetInfo}
-                        onToggleExpand={() =>
-                          setExpandedId((prev) => (prev === user.id ? null : user.id))
-                        }
-                        onImpersonate={() => handleImpersonate(user)}
-                        onResetPassword={() => handleResetPassword(user)}
-                        onResetMfa={() => handleResetMfa(user)}
-                        onCloseReset={() => setResetInfo(null)}
-                        onCopyPassword={handleCopyPassword}
-                        onRoleChange={(role) => patchUser(user, { role })}
-                        onStatusChange={(status) => patchUser(user, { status })}
-                        onDelete={() => handleDelete(user)}
-                      />
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <ListPagination
-              page={currentPage}
-              totalPages={totalPages}
-              totalItems={filteredUsers.length}
-              singular="gebruiker"
-              plural="gebruikers"
-              onPageChange={setPage}
-            />
-          </>
-        )}
-      </Card>
+      <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="truncate text-sm font-medium text-slate-900">{title}</span>
+          {badges}
+        </span>
+        {meta && <span className="mt-0.5 block truncate text-xs text-slate-500">{meta}</span>}
+      </button>
+      {aside && <span className="hidden shrink-0 text-xs text-slate-400 sm:block">{aside}</span>}
     </div>
   );
 }
 
-// Eén gebruiker = maximaal drie rijen: de datarij, een optionele beheer-uitklap
-// (rol/status/verwijderen) en een optionele eenmalige wachtwoord-uitklap.
-function UserRows({
-  user,
-  name,
-  companyLabel,
-  roleOptions,
-  isPlatformOwner,
-  canImpersonate,
-  isExpanded,
-  showReset,
-  resetInfo,
-  onToggleExpand,
-  onImpersonate,
-  onResetPassword,
-  onResetMfa,
-  onCloseReset,
-  onCopyPassword,
-  onRoleChange,
-  onStatusChange,
-  onDelete
-}) {
+function GroupLabel({ depth, children }) {
+  return (
+    <div className="border-b border-slate-100 bg-slate-50/70 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400" style={{ paddingLeft: `${2.25 + depth * 1.25}rem` }}>
+      {children}
+    </div>
+  );
+}
+
+function LevelState({ state, depth, emptyText, onRetry }) {
+  const pad = { paddingLeft: `${2.25 + depth * 1.25}rem` };
+  if (state.loading && !state.data) return <div style={pad}><RowSkeleton rows={2} /></div>;
+  if (state.error) return <div className="py-2 pr-3" style={pad}><InlineError message={state.error} onRetry={onRetry} /></div>;
+  if (state.data && state.data.total === 0) return <p className="border-b border-slate-100 py-2 pr-3 text-sm text-slate-500" style={pad}>{emptyText}</p>;
+  return null;
+}
+
+// --- niveau: gebruikers van één bedrijf ------------------------------------------------
+function UserList({ companyId, depth, ctx }) {
+  const paging = usePaging();
+  const [retry, setRetry] = useState(0);
+  const state = usePagedList(`/api/admin/org/companies/${companyId}/users`, { page: paging.page, pageSize: paging.pageSize }, ctx.refreshKey + retry);
+  return (
+    <div>
+      <LevelState state={state} depth={depth} emptyText="Nog geen gebruikers." onRetry={() => setRetry((r) => r + 1)} />
+      {state.data?.items.map((user) => (
+        <TreeRow
+          key={user.id}
+          depth={depth}
+          selected={ctx.isSelected("user", user.id)}
+          onSelect={() => ctx.select({ kind: "user", id: user.id })}
+          title={fullName(user) || user.email}
+          meta={fullName(user) ? user.email : null}
+          badges={
+            <>
+              <RoleBadge role={user.role} />
+              {user.status !== "active" && <Badge variant={USER_STATUS_BADGE_VARIANTS[user.status]}>{statusLabel(user.status)}</Badge>}
+            </>
+          }
+          aside={formatRelativeTime(user.last_activity, "nooit actief")}
+        />
+      ))}
+      {state.data && state.data.pages > 1 && (
+        <div style={{ paddingLeft: `${1.5 + depth * 1.25}rem` }}>
+          <Pager data={state.data} onPage={paging.setPage} onPageSize={paging.setPageSize} singular="gebruiker" plural="gebruikers" name={`pager-users-${companyId}`} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- niveau: klantbedrijven van een partner of de zelfstandige groep -----------------
+function CustomerNode({ customer, depth, ctx }) {
+  const [open, setOpen] = useState(false);
+  const meta = [
+    plural(customer.admin_count, "beheerder", "beheerders"),
+    plural(customer.employee_count, "medewerker", "medewerkers"),
+    plural(customer.product_count, "product", "producten"),
+    customer.plan_name || "geen plan"
+  ].join(" · ");
   return (
     <>
-      <tr className="border-b border-slate-100">
-        <td className="py-2.5 pr-3">
-          <div className="flex items-center gap-3">
-            <div
-              aria-hidden="true"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600"
-            >
-              {initialsOf(name || user.email)}
-            </div>
-            <div className="min-w-0">
-              <p className="font-medium text-slate-900">{name || user.email}</p>
-              {name && <p className="text-xs text-slate-500">{user.email}</p>}
-            </div>
-          </div>
-        </td>
-        <td className="py-2.5 pr-3 text-slate-600">{companyLabel || "—"}</td>
-        <td className="py-2.5 pr-3">
-          <RoleBadge role={user.role} />
-        </td>
-        <td className="py-2.5 pr-3">
-          {user.auth_provider === "none" ? (
-            <Badge variant="warning">Geen wachtwoord</Badge>
-          ) : (
-            <Badge variant="neutral">Lokaal</Badge>
-          )}
-          {user.mfa_enabled && (
-            <span className="ml-1">
-              <Badge variant="success">MFA</Badge>
-            </span>
-          )}
-        </td>
-        <td className="py-2.5 pr-3">
-          <Badge variant={USER_STATUS_BADGE_VARIANTS[user.status] || "neutral"}>
-            {statusLabel(user.status)}
-          </Badge>
-        </td>
-        <td className="whitespace-nowrap py-2.5 pr-3 text-slate-600">
-          {formatRelativeTime(user.last_activity, "Nog nooit")}
-          <span className="block text-xs text-slate-400">
-            {user.last_login ? `login ${formatRelativeTime(user.last_login)}` : "nog nooit ingelogd"}
-            {Number(user.active_sessions) > 0 && (
-              <span title="Aantal actieve sessies (ingelogde apparaten)" className="ml-1 text-emerald-600">
-                · {user.active_sessions} sessie{Number(user.active_sessions) === 1 ? "" : "s"}
-              </span>
-            )}
-          </span>
-        </td>
-        <td className="py-2.5 pr-3">
-          {isPlatformOwner ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
-              <LockIcon />
-              Beschermd
-            </span>
-          ) : (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {canImpersonate && (
-                <IconButton title="Inloggen als" tone="primary" onClick={onImpersonate}>
-                  <LoginIcon />
-                </IconButton>
-              )}
-              <IconButton title="Reset wachtwoord" onClick={onResetPassword}>
-                <KeyIcon />
-              </IconButton>
-              {user.mfa_enabled && (
-                <button
-                  type="button"
-                  onClick={onResetMfa}
-                  className="rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
-                  title="Tweestapsverificatie uitzetten (telefoon kwijt)"
-                >
-                  MFA resetten
-                </button>
-              )}
-              <IconButton
-                title={isExpanded ? "Sluiten" : "Beheren"}
-                onClick={onToggleExpand}
-                aria-expanded={isExpanded}
-              >
-                <CogIcon />
-              </IconButton>
-              <IconButton title="Verwijderen" tone="danger" onClick={onDelete}>
-                <TrashIcon />
-              </IconButton>
-            </div>
-          )}
-        </td>
-      </tr>
+      <TreeRow
+        depth={depth}
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        selected={ctx.isSelected("customer", customer.id)}
+        onSelect={() => ctx.select({ kind: "customer", id: customer.id })}
+        title={customer.name}
+        meta={meta}
+        badges={customer.status !== "active" && <CompanyStatusBadge status={customer.status} />}
+        aside={customer.last_activity ? `actief ${formatRelativeTime(customer.last_activity)}` : "nog geen activiteit"}
+      />
+      {open && <UserList companyId={customer.id} depth={depth + 1} ctx={ctx} />}
+    </>
+  );
+}
 
-      {isExpanded && (
-        <tr className="border-b border-slate-100 bg-slate-50">
-          <td colSpan={7} className="px-3 py-3">
-            <div className="flex flex-wrap items-end gap-3">
-              <Select
-                label="Rol"
-                name={`user-role-${user.id}`}
-                options={roleOptions}
-                help={
-                  roleOptions === PARTNER_ROLE_OPTIONS
-                    ? "In een partnerbedrijf is alleen de rol Partner Admin mogelijk."
-                    : undefined
-                }
-                value={user.role}
-                onChange={(e) => onRoleChange(e.target.value)}
-                className="w-full sm:w-56"
-              />
-              <Select
-                label="Status"
-                name={`user-status-${user.id}`}
-                options={USER_STATUS_OPTIONS}
-                value={user.status}
-                onChange={(e) => onStatusChange(e.target.value)}
-                className="w-full sm:w-56"
-              />
-            </div>
-          </td>
-        </tr>
+function CustomerList({ groupId, depth, ctx }) {
+  const paging = usePaging();
+  const [retry, setRetry] = useState(0);
+  const state = usePagedList(
+    `/api/admin/org/groups/${groupId}/customers`,
+    { page: paging.page, pageSize: paging.pageSize, sort: ctx.customerSort },
+    ctx.refreshKey + retry
+  );
+  useEffect(() => paging.setPage(1), [ctx.customerSort]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div>
+      <LevelState state={state} depth={depth} emptyText="Nog geen klantbedrijven." onRetry={() => setRetry((r) => r + 1)} />
+      {state.data?.items.map((customer) => (
+        <CustomerNode key={customer.id} customer={customer} depth={depth} ctx={ctx} />
+      ))}
+      {state.data && state.data.pages > 1 && (
+        <div style={{ paddingLeft: `${1.5 + depth * 1.25}rem` }}>
+          <Pager data={state.data} onPage={paging.setPage} onPageSize={paging.setPageSize} singular="klantbedrijf" plural="klantbedrijven" name={`pager-customers-${groupId}`} />
+        </div>
       )}
+    </div>
+  );
+}
 
-      {showReset && resetInfo.tempPassword && (
-        <tr className="border-b border-amber-100 bg-amber-50">
-          <td colSpan={7} className="px-3 py-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="text-sm font-medium text-amber-800">
-                Nieuw tijdelijk wachtwoord voor {resetInfo.email} — dit wordt maar één keer
-                getoond, deel het zelf veilig met de gebruiker.
-              </p>
-              <button
-                type="button"
-                onClick={onCloseReset}
-                className="text-xs font-medium text-amber-700 hover:text-amber-900"
-              >
-                Verbergen
-              </button>
-            </div>
-            <div className="mt-2 flex max-w-md gap-2">
-              <input
-                readOnly
-                aria-label="Tijdelijk wachtwoord"
-                value={resetInfo.tempPassword}
-                onClick={(e) => e.target.select()}
-                className="w-full rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-mono text-sm text-slate-900"
-              />
-              <Button type="button" variant="outline" onClick={onCopyPassword} className="shrink-0 bg-white">
-                Kopiëren
-              </Button>
-            </div>
-          </td>
-        </tr>
-      )}
-
-      {showReset && !resetInfo.tempPassword && (
-        <tr className="border-b border-blue-100 bg-blue-50">
-          <td colSpan={7} className="px-3 py-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="text-sm text-blue-800">{resetInfo.message}</p>
-              <button
-                type="button"
-                onClick={onCloseReset}
-                className="text-xs font-medium text-blue-700 hover:text-blue-900"
-              >
-                Verbergen
-              </button>
-            </div>
-          </td>
-        </tr>
+// --- niveau: partners ---------------------------------------------------------------
+function PartnerNode({ partner, ctx }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TreeRow
+        depth={1}
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        selected={ctx.isSelected("partner", partner.id)}
+        onSelect={() => ctx.select({ kind: "partner", id: partner.id })}
+        title={partner.name}
+        badges={
+          <>
+            <KindBadge kind="partner" />
+            {partner.status !== "active" && <CompanyStatusBadge status={partner.status} />}
+          </>
+        }
+        meta={[
+          plural(partner.customer_count, "klantbedrijf", "klantbedrijven"),
+          plural(partner.partner_admin_count, "Partner Admin", "Partner Admins"),
+          plural(partner.customer_user_count, "gebruiker bij klanten", "gebruikers bij klanten")
+        ].join(" · ")}
+      />
+      {open && (
+        <>
+          <GroupLabel depth={1}>Partner Admins</GroupLabel>
+          <UserList companyId={partner.id} depth={2} ctx={ctx} />
+          <GroupLabel depth={1}>Klantbedrijven</GroupLabel>
+          <CustomerList groupId={partner.id} depth={2} ctx={ctx} />
+        </>
       )}
     </>
+  );
+}
+
+function OwnersNode({ ctx }) {
+  const [open, setOpen] = useState(false);
+  const paging = usePaging();
+  const state = usePagedList(open ? "/api/admin/org/owners" : null, { page: paging.page, pageSize: paging.pageSize }, ctx.refreshKey);
+  return (
+    <>
+      <TreeRow
+        depth={0}
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        onSelect={() => setOpen((o) => !o)}
+        title="VeriPasso platform"
+        badges={<RoleBadge role="platform_owner" />}
+        meta="Platform Owners: beheren alle partners en klantbedrijven"
+      />
+      {open && (
+        <>
+          <LevelState state={state} depth={1} emptyText="Geen Platform Owners." />
+          {state.data?.items.map((user) => (
+            <TreeRow
+              key={user.id}
+              depth={1}
+              selected={ctx.isSelected("user", user.id)}
+              onSelect={() => ctx.select({ kind: "user", id: user.id })}
+              title={fullName(user) || user.email}
+              meta={fullName(user) ? user.email : null}
+              badges={<RoleBadge role={user.role} />}
+              aside={formatRelativeTime(user.last_activity, "nooit actief")}
+            />
+          ))}
+          {state.data && state.data.pages > 1 && (
+            <Pager data={state.data} onPage={paging.setPage} onPageSize={paging.setPageSize} singular="Platform Owner" plural="Platform Owners" name="pager-owners" />
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function StandaloneNode({ summary, ctx }) {
+  const [open, setOpen] = useState(false);
+  if (!summary || summary.customer_count === 0) return null;
+  return (
+    <>
+      <TreeRow
+        depth={0}
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        onSelect={() => setOpen((o) => !o)}
+        title="Zelfstandige klantbedrijven"
+        badges={<KindBadge kind="customer" standalone />}
+        meta={`${plural(summary.customer_count, "klantbedrijf", "klantbedrijven")} zonder partner · ${plural(summary.customer_user_count, "gebruiker", "gebruikers")}`}
+      />
+      {open && <CustomerList groupId="standalone" depth={1} ctx={ctx} />}
+    </>
+  );
+}
+
+function OrgTree({ ctx }) {
+  const paging = usePaging();
+  const [retry, setRetry] = useState(0);
+  const state = usePagedList("/api/admin/org/groups", { page: paging.page, pageSize: paging.pageSize, sort: ctx.partnerSort }, ctx.refreshKey + retry);
+  useEffect(() => paging.setPage(1), [ctx.partnerSort]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div>
+      <OwnersNode ctx={ctx} />
+      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Partners</span>
+        {state.data && <span className="text-xs text-slate-400">{plural(state.data.total, "partner", "partners")}</span>}
+      </div>
+      {state.loading && !state.data && <RowSkeleton rows={5} />}
+      {state.error && (
+        <div className="p-3">
+          <InlineError message={state.error} onRetry={() => setRetry((r) => r + 1)} />
+        </div>
+      )}
+      {state.data && state.data.total === 0 && (
+        <p className="border-b border-slate-100 px-3 py-3 text-sm text-slate-500">
+          Nog geen partners. <Link href="/admin/partners/nieuw" className="font-medium text-blue-600 hover:underline">Nieuwe partner</Link>
+        </p>
+      )}
+      {state.data?.items.map((partner) => (
+        <PartnerNode key={partner.id} partner={partner} ctx={ctx} />
+      ))}
+      {state.data && state.data.total > 0 && (
+        <Pager data={state.data} onPage={paging.setPage} onPageSize={paging.setPageSize} singular="partner" plural="partners" name="pager-partners" />
+      )}
+      <StandaloneNode summary={state.data?.standalone} ctx={ctx} />
+    </div>
+  );
+}
+
+// --- zoek-/filterresultaten -------------------------------------------------------------
+function ResultPath({ item }) {
+  const parts = [];
+  if (item.kind === "customer") parts.push(item.partner_name || "Zelfstandig");
+  if (item.kind === "user") {
+    if (item.role === "platform_owner") parts.push("VeriPasso platform");
+    else {
+      if (item.company_kind === "customer") parts.push(item.partner_name || "Zelfstandig");
+      if (item.company_name) parts.push(item.company_name);
+    }
+  }
+  if (!parts.length) return null;
+  return <span className="mt-0.5 block truncate text-xs text-slate-400">{parts.join(" › ")}</span>;
+}
+
+function SearchResults({ params, ctx }) {
+  const paging = usePaging();
+  const [retry, setRetry] = useState(0);
+  const key = JSON.stringify(params);
+  useEffect(() => paging.setPage(1), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const state = usePagedList("/api/admin/org/search", { ...params, page: paging.page, pageSize: paging.pageSize }, ctx.refreshKey + retry);
+
+  if (state.loading && !state.data) return <RowSkeleton rows={6} />;
+  if (state.error)
+    return (
+      <div className="p-3">
+        <InlineError message={state.error} onRetry={() => setRetry((r) => r + 1)} />
+      </div>
+    );
+  if (!state.data || state.data.total === 0)
+    return (
+      <div className="p-4">
+        <EmptyState icon={SearchIcon} title="Geen resultaten" description="Pas je zoekterm of filters aan." compact />
+      </div>
+    );
+
+  return (
+    <div aria-busy={state.loading}>
+      <ul>
+        {state.data.items.map((item) => {
+          const kind = item.kind === "user" ? "user" : item.kind;
+          return (
+            <li key={`${item.kind}-${item.id}`}>
+              <button
+                type="button"
+                onClick={() => ctx.select({ kind, id: item.id })}
+                className={`flex w-full min-w-0 items-start gap-3 border-b border-slate-100 px-3 py-2.5 text-left ${ctx.isSelected(kind, item.id) ? "bg-emerald-50" : "hover:bg-slate-50"}`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="truncate text-sm font-medium text-slate-900">{item.title}</span>
+                    {item.kind === "user" ? (
+                      <RoleBadge role={item.role} />
+                    ) : (
+                      <KindBadge kind={item.kind} standalone={item.kind === "customer" && !item.partner_id} />
+                    )}
+                    {item.status !== "active" &&
+                      (item.kind === "user" ? (
+                        <Badge variant={USER_STATUS_BADGE_VARIANTS[item.status]}>{statusLabel(item.status)}</Badge>
+                      ) : (
+                        <CompanyStatusBadge status={item.status} />
+                      ))}
+                  </span>
+                  {item.kind === "user" && item.subtitle !== item.title && (
+                    <span className="block truncate text-xs text-slate-500">{item.subtitle}</span>
+                  )}
+                  <ResultPath item={item} />
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <Pager data={state.data} onPage={paging.setPage} onPageSize={paging.setPageSize} singular="resultaat" plural="resultaten" name="pager-search" />
+    </div>
+  );
+}
+
+export default function OrganizationsPage() {
+  const [search, setSearch] = useState("");
+  const [type, setType] = useState("");
+  const [role, setRole] = useState("");
+  const [status, setStatus] = useState("");
+  const [partnerSort, setPartnerSort] = useState("name");
+  const [customerSort, setCustomerSort] = useState("name");
+  const [selection, setSelection] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const q = useDebounced(search.trim());
+
+  // Oude deeplink /admin/users?companyId=… opent direct het detailpaneel van dat bedrijf.
+  useEffect(() => {
+    const companyId = new URLSearchParams(window.location.search).get("companyId");
+    if (companyId && /^\d+$/.test(companyId)) setSelection({ kind: "customer", id: Number(companyId) });
+  }, []);
+
+  const filtering = Boolean(q || type || role || status);
+  const ctx = {
+    refreshKey,
+    partnerSort,
+    customerSort,
+    select: setSelection,
+    isSelected: (kind, id) =>
+      Boolean(selection) && selection.id === id && (selection.kind === kind || (kind !== "user" && selection.kind !== "user"))
+  };
+
+  function resetFilters() {
+    setSearch("");
+    setType("");
+    setRole("");
+    setStatus("");
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Organisaties & gebruikers</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Bekijk hoe partners, klantbedrijven en gebruikers binnen VeriPasso georganiseerd zijn.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/admin/partners/nieuw" className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+            Nieuwe partner
+          </Link>
+          <Link href="/admin/companies/new" className="inline-flex items-center rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+            Nieuw klantbedrijf
+          </Link>
+        </div>
+      </div>
+
+      <Card>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))] xl:items-end">
+          <div className="md:col-span-2 xl:col-span-1">
+            <label htmlFor="org-search" className="block text-sm font-medium text-slate-700">
+              Zoeken
+            </label>
+            <div className="relative mt-1">
+              <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+                <SearchIcon size={16} />
+              </span>
+              <input
+                id="org-search"
+                type="search"
+                autoComplete="off"
+                maxLength={100}
+                placeholder="Zoek op bedrijfsnaam, gebruiker of e-mailadres..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="block w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+              />
+            </div>
+          </div>
+          <Select label="Type" name="org-type" placeholder="Alle typen" options={TYPE_OPTIONS} value={type} onChange={(e) => setType(e.target.value)} />
+          <Select label="Rol" name="org-role" placeholder="Alle rollen" options={ROLE_OPTIONS} value={role} onChange={(e) => setRole(e.target.value)} />
+          <Select label="Status" name="org-status" placeholder="Alle statussen" options={USER_STATUS_OPTIONS} value={status} onChange={(e) => setStatus(e.target.value)} />
+          {filtering ? (
+            <div className="flex items-end">
+              <button type="button" onClick={resetFilters} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                Filters wissen
+              </button>
+            </div>
+          ) : (
+            <Select
+              label="Sorteren"
+              name="org-sort"
+              options={PARTNER_SORT_OPTIONS}
+              value={partnerSort}
+              onChange={(e) => setPartnerSort(e.target.value)}
+            />
+          )}
+        </div>
+        {!filtering && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <label htmlFor="org-customer-sort">Klantbedrijven sorteren op</label>
+            <select
+              id="org-customer-sort"
+              value={customerSort}
+              onChange={(e) => setCustomerSort(e.target.value)}
+              className="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs"
+            >
+              {CUSTOMER_SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </Card>
+
+      <div className="flex items-start gap-5">
+        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {filtering ? (
+            <SearchResults params={{ q, type, role, status }} ctx={ctx} />
+          ) : (
+            <OrgTree ctx={ctx} />
+          )}
+        </div>
+        {selection ? (
+          <OrgDetailPanel
+            selection={selection}
+            onSelect={setSelection}
+            onClose={() => setSelection(null)}
+            onChanged={() => setRefreshKey((k) => k + 1)}
+          />
+        ) : (
+          <div className="sticky top-4 hidden w-96 shrink-0 lg:block">
+            <EmptyState
+              icon={UsersIcon}
+              title="Niets geselecteerd"
+              description="Kies een partner, klantbedrijf of gebruiker om details en acties te zien."
+              compact
+            />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

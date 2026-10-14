@@ -439,7 +439,7 @@ export default function CompaniesPage() {
                             <span className="text-slate-400">
                               Partner Admins beheer je via{" "}
                               <Link href="/admin/users" className="font-medium text-blue-600 hover:underline">
-                                Alle gebruikers
+                                Organisaties & gebruikers
                               </Link>
                             </span>
                           ) : (

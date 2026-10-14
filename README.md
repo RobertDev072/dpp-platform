@@ -124,7 +124,7 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 
 ## 4. Menu's per rol
 
-- **Platform Owner**: Overzicht, Partners, Klantbedrijven, Alle gebruikers,
+- **Platform Owner**: Overzicht, Partners, Klantbedrijven, Organisaties & gebruikers (boom partners → klantbedrijven → gebruikers, server-side gepagineerd),
   Abonnementen, Auditlog, Systeemstatus, Instellingen.
 - **Partner Admin**: Overzicht, Mijn klanten, Uitnodigingen, Licenties, Activiteiten,
   Instellingen, Help & support.
