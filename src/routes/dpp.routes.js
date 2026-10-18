@@ -98,7 +98,7 @@ async function sendArchivedVersion(req, res, product, version, format) {
   });
 }
 
-router.get("/:publicId", async (req, res, next) => {
+async function readPassport(req, res, next) {
   try {
     const format = negotiate(req);
     const product = await loadPublicProduct(req.params.publicId);
@@ -139,7 +139,9 @@ router.get("/:publicId", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
+}
+
+router.get("/:publicId", readPassport);
 
 router.get("/:publicId/versions", async (req, res, next) => {
   try {
@@ -200,3 +202,7 @@ router.get("/:publicId/versions/:version/documents/:documentId/file", async (req
 });
 
 module.exports = router;
+// Hergebruikt door de B2B-API (/api/v1): zelfde inhoud en content negotiation.
+module.exports.readPassport = readPassport;
+module.exports.negotiate = negotiate;
+module.exports.send = send;

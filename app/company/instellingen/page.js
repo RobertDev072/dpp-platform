@@ -10,6 +10,7 @@ import FormError from "@/components/ui/FormError";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import OperatorIdCard from "@/components/company/OperatorIdCard";
+import ApiKeysCard from "@/components/company/ApiKeysCard";
 
 // De backend accepteert een data-URI van max ~200KB; na verkleinen naar 256px
 // past vrijwel elk logo daar ruim binnen.
@@ -274,6 +275,7 @@ export default function InstellingenPage() {
       </Card>
 
       {company && <OperatorIdCard company={company} />}
+      {company && <ApiKeysCard />}
     </div>
   );
 }

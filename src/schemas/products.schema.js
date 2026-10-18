@@ -16,7 +16,7 @@ const createProductSchema = z.object({
   photoUrl: z.string().max(1000).optional()
 });
 
-const updateProductSchema = z
+const productFieldsSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
     brand: z.string().max(150).optional(),
@@ -40,11 +40,12 @@ const updateProductSchema = z
     contentSpecificationIds: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
     language: z.string().regex(LANGUAGE_PATTERN, "Gebruik een taalcode zoals nl-NL of en").optional()
   })
-  .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
+  ;
+const updateProductSchema = productFieldsSchema.refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
 
 const translationSchema = z.object({
   name: z.string().trim().max(200).nullable().optional(),
   description: z.string().max(20000).nullable().optional()
 });
 
-module.exports = { createProductSchema, updateProductSchema, translationSchema, LANGUAGE_PATTERN };
+module.exports = { createProductSchema, productFieldsSchema, updateProductSchema, translationSchema, LANGUAGE_PATTERN };

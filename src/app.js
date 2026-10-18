@@ -129,6 +129,8 @@ app.use("/api/scan", publicProductsRoutes.scanRouter);
 // Machineleesbare productpaspoorten (JSON, JSON-LD, XML via content negotiation) en
 // de versiegeschiedenis van gepubliceerde paspoorten.
 app.use("/api/dpp", require("./routes/dpp.routes"));
+// B2B-API voor externe systemen (API-sleutels, EN 18222-richting); zie docs/api-v1.md.
+app.use("/api/v1", require("./routes/v1.routes"));
 // Organisaties & gebruikers (owner): boom partners → klantbedrijven → gebruikers.
 app.use("/api/admin/org", require("./routes/organization.routes"));
 app.use("/api/admin", require("./routes/admin.routes"));

@@ -95,7 +95,20 @@ const publicApiLimiter = rateLimit({
   handler: tooManyRequests("Te veel aanvragen vanaf dit adres. Probeer het over een minuut opnieuw.")
 });
 
+// B2B-API (/api/v1): per API-sleutel (anders per IP). Ruimer dan de publieke limiet,
+// omdat een koppeling legitiem veel opvragingen doet.
+const apiClientLimiter = rateLimit({
+  windowMs: PUBLIC_WINDOW_MS,
+  limit: Number(process.env.API_RATE_LIMIT_PER_MINUTE) || 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.apiClient ? `key:${req.apiClient.keyId}` : ipKeyGenerator(req.ip)),
+  skip: (req) => isLoopback(req.ip),
+  handler: tooManyRequests("Te veel aanvragen. Probeer het over een minuut opnieuw.")
+});
+
 module.exports = {
+  apiClientLimiter,
   loginIpLimiter,
   loginEmailLimiter,
   mfaLimiter,
