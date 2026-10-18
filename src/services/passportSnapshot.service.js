@@ -31,6 +31,12 @@ function snapshotKey(publicId, ext) {
   return `${PREFIX}${String(publicId).toLowerCase()}.${ext}`;
 }
 
+// Batch-/item-id → model-id (platte tekst). Leest de Worker als er geen eigen kopie is.
+const ALIAS_PREFIX = "passport-aliases/";
+function aliasKey(publicId) {
+  return `${ALIAS_PREFIX}${String(publicId).toLowerCase()}.txt`;
+}
+
 async function queueSnapshots(publicIds) {
   if (!enabled()) return 0;
   const ids = [...new Set(publicIds.filter(Boolean).map((id) => String(id).toLowerCase()))];
@@ -235,6 +241,21 @@ function qrBaseUrl() {
 
 // Eén paspoort: kopie schrijven (als de inhoud gewijzigd is) of weghalen (niet meer openbaar).
 async function writeSnapshot(publicId) {
+  // Batch- of itempaspoort: geen eigen kopie (dat zouden er duizenden kunnen zijn), maar
+  // een verwijzing naar de kopie van het model. De Worker volgt die bij een storing.
+  const resolved = await require("../repositories/instances.repository").resolvePublicPassport(publicId);
+  if (resolved?.instance) {
+    await putObject(
+      aliasKey(publicId),
+      Buffer.from(String(resolved.product.public_id).toLowerCase(), "utf8"),
+      "text/plain; charset=utf-8"
+    );
+    const pool = await getPool();
+    for (const table of ["productitems", "productbatches"]) {
+      await pool.query(`UPDATE dbo.${table} SET alias_written_at = now() WHERE public_id = $1`, [String(publicId).toLowerCase()]);
+    }
+    return "alias";
+  }
   const product = await productsRepo.getProductByPublicId(publicId);
   if (!product) {
     await deleteSnapshot(null, publicId);
@@ -299,7 +320,24 @@ async function processSnapshots({ limit = 100 } = {}) {
         ).rows
       : [];
 
-  const counts = { written: 0, unchanged: 0, removed: 0, failed: 0 };
+  // Verwijzingen voor batches/items die er nog geen hebben (eenmalig per id).
+  const aliasesMissing =
+    queued.length + missing.length < limit
+      ? (
+          await pool.query(
+            `SELECT x.public_id::text AS public_id FROM (
+               SELECT public_id, product_id FROM dbo.productitems WHERE alias_written_at IS NULL
+               UNION ALL SELECT public_id, product_id FROM dbo.productbatches WHERE alias_written_at IS NULL
+             ) x JOIN dbo.products p ON p.id = x.product_id
+             WHERE p.public_id IS NOT NULL AND p.published_at IS NOT NULL
+             LIMIT $1`,
+            [limit - queued.length - missing.length]
+          )
+        ).rows
+      : [];
+  missing.push(...aliasesMissing);
+
+  const counts = { written: 0, unchanged: 0, removed: 0, alias: 0, failed: 0 };
   for (const row of [...queued, ...missing]) {
     try {
       counts[await writeSnapshot(row.public_id)] += 1;
@@ -312,4 +350,4 @@ async function processSnapshots({ limit = 100 } = {}) {
   return counts;
 }
 
-module.exports = { enabled, queueSnapshots, processSnapshots, writeSnapshot, renderHtml, snapshotKey, PREFIX };
+module.exports = { enabled, queueSnapshots, processSnapshots, writeSnapshot, renderHtml, snapshotKey, aliasKey, PREFIX, ALIAS_PREFIX };

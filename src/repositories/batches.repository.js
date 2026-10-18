@@ -6,7 +6,7 @@ async function listBatchesForProduct(productId) {
     .request()
     .input("productId", sql.Int, productId)
     .query(`
-      SELECT id, product_id, company_id, batch_number, production_date, quantity, created_at
+      SELECT id, product_id, company_id, batch_number, production_date, quantity, created_at, public_id
       FROM dbo.ProductBatches
       WHERE product_id = @productId
       ORDER BY id
@@ -26,7 +26,7 @@ async function createBatch({ productId, companyId, batchNumber, productionDate, 
     .query(`
       INSERT INTO dbo.ProductBatches (product_id, company_id, batch_number, production_date, quantity)
       VALUES (@productId, @companyId, @batchNumber, @productionDate, @quantity)
-      RETURNING id, product_id, company_id, batch_number, production_date, quantity, created_at
+      RETURNING id, product_id, company_id, batch_number, production_date, quantity, created_at, public_id
     `);
   return result.recordset[0];
 }

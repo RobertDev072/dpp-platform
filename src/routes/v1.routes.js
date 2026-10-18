@@ -6,6 +6,7 @@ const { validateBody, validateQuery } = require("../middleware/validate");
 const { HttpError } = require("../middleware/errorHandler");
 const { getPool } = require("../config/db");
 const productsRepo = require("../repositories/products.repository");
+const instancesRepo = require("../repositories/instances.repository");
 const sustainabilityRepo = require("../repositories/sustainability.repository");
 const complianceRepo = require("../repositories/compliance.repository");
 const passport = require("../services/passport.service");
@@ -95,10 +96,22 @@ async function findPublicIdsForProductId(productId, { limit = 50 } = {}) {
   const dppId = parseDppId(value);
   if (dppId) {
     const row = (await pool.query(
-      "SELECT public_id FROM dbo.products WHERE public_id = $1 AND published_at IS NOT NULL AND status IN ('published','archived')",
+      `SELECT pi.public_id FROM dbo.passportids pi JOIN dbo.products p ON p.id = pi.product_id
+       WHERE pi.public_id = $1 AND p.published_at IS NOT NULL AND p.status IN ('published','archived')`,
       [dppId]
     )).rows[0];
     return row ? [String(row.public_id)] : [];
+  }
+  // GS1 Digital Link met lot (AI 10) en/of serienummer (AI 21): batch- of itempaspoort.
+  const full = /\/01\/(\d{14})(?:\/10\/([^/?#]+))?(?:\/21\/([^/?#]+))?/.exec(value);
+  if (full && (full[2] || full[3])) {
+    if (!gs1.isValidGtin(full[1])) return [];
+    const id = await instancesRepo.findByGs1({
+      gtin14: full[1],
+      lot: full[2] ? decodeURIComponent(full[2]) : null,
+      serial: full[3] ? decodeURIComponent(full[3]) : null
+    });
+    return id ? [id] : [];
   }
   const dl = /\/01\/(\d{14})(?:\/|$)/.exec(value);
   const gtin = gs1.normalizeGtin(dl ? dl[1] : value);
@@ -152,6 +165,21 @@ router.post("/dpp/search", validateBody(searchSchema), async (req, res, next) =>
   }
 });
 
+// Resolver voor GS1 Digital Links op ons domein (/01/{gtin}[/10/{lot}][/21/{serie}]),
+// gebruikt door app/01/[...gs1]/route.js. Geeft het meest specifieke openbare paspoort.
+router.get("/resolve", validateQuery(z.object({ link: z.string().min(4).max(500) })), async (req, res, next) => {
+  try {
+    const [publicId] = await findPublicIdsForProductId(req.validatedQuery.link, { limit: 1 });
+    if (!publicId) throw new HttpError(404, "Geen paspoort gevonden voor deze GS1-link");
+    res.set("Cache-Control", "public, max-age=300").json({
+      digitalProductPassportId: `urn:uuid:${publicId.toLowerCase()}`,
+      url: `${getQrBaseUrl(req)}/p/${publicId.toUpperCase()}`
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/dpp/:dppId", (req, res, next) => {
   const id = parseDppId(req.params.dppId);
   if (!id) return next(new HttpError(404, "Niet gevonden"));
@@ -162,10 +190,11 @@ router.get("/dpp/:dppId", (req, res, next) => {
 router.get("/dpp/:dppId/elements/:elementId", async (req, res, next) => {
   try {
     const id = parseDppId(req.params.dppId);
-    const product = id ? await productsRepo.getProductByPublicId(id) : null;
-    if (!product) throw new HttpError(404, "Niet gevonden");
+    const resolved = id ? await instancesRepo.resolvePublicPassport(id) : null;
+    if (!resolved) throw new HttpError(404, "Niet gevonden");
+    const { product, instance } = resolved;
     const snapshot = await passport.buildSnapshot(product);
-    const json = passport.toDppJson(snapshot, { qrBaseUrl: getQrBaseUrl(req), lastUpdated: product.updated_at });
+    const json = passport.toDppJson(snapshot, { qrBaseUrl: getQrBaseUrl(req), lastUpdated: product.updated_at, instance });
     const element = json.dataElements.find((e) => e.elementId === req.params.elementId);
     if (!element) throw new HttpError(404, "Dataveld niet gevonden of leeg");
     res.set("Cache-Control", "public, max-age=60").json({ digitalProductPassportId: json.digitalProductPassportId, ...element });

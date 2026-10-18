@@ -1,5 +1,6 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
+const instancesRepo = require("../repositories/instances.repository");
 const { getProductDocumentUrl } = require("../services/blobStorage.service");
 const documentsRepo = require("../repositories/documents.repository");
 const scanEventsRepo = require("../repositories/scanEvents.repository");
@@ -42,11 +43,14 @@ router.get("/:publicId", async (req, res, next) => {
       res.set("Cache-Control", "no-store").json(hit.view);
       return;
     }
-    const product = await productsRepo.getProductByPublicId(req.params.publicId);
-    if (!product) {
+    // Model-, batch- of itempaspoort; afbeeldingen en documenten via de model-id.
+    const resolved = await instancesRepo.resolvePublicPassport(req.params.publicId);
+    if (!resolved) {
       next(new HttpError(404, "Niet gevonden"));
       return;
     }
+    const { product, instance } = resolved;
+    const assetId = instance ? String(product.public_id).toUpperCase() : req.params.publicId;
 
     const data = await passport.loadPassportData(product);
     const snapshot = passport.snapshotFromData(product, data);
@@ -56,16 +60,25 @@ router.get("/:publicId", async (req, res, next) => {
     // POST /api/scan/:publicId (zie hieronder).
     res.set("Cache-Control", "no-store");
     const view = passport.toPublicPageView(snapshot, {
-        urlPublicId: req.params.publicId,
+        urlPublicId: assetId,
         // Logo en foto als losse afbeeldingen met een versie in de URL: browser en
         // Cloudflare mogen ze een jaar bewaren; een nieuw logo/nieuwe foto = nieuwe URL.
         issuerLogo: data.company?.has_logo
-          ? `/api/public/products/${req.params.publicId}/logo?v=${data.company.logo_version}`
+          ? `/api/public/products/${assetId}/logo?v=${data.company.logo_version}`
           : null,
         photoUrl: product.photo_blob_name
-          ? `/api/public/products/${req.params.publicId}/photo?v=${mediaVersion(product.photo_thumb_blob_name || product.photo_blob_name)}`
+          ? `/api/public/products/${assetId}/photo?v=${mediaVersion(product.photo_thumb_blob_name || product.photo_blob_name)}`
           : null
       });
+    if (instance) {
+      view.instance = {
+        granularity: instance.granularity,
+        serialNumber: instance.serialNumber ?? null,
+        lotNumber: instance.lotNumber ?? null,
+        productionDate: instance.productionDate ? new Date(instance.productionDate).toISOString().slice(0, 10) : null,
+        modelPassportId: String(product.public_id).toUpperCase()
+      };
+    }
     if (viewCache.size >= VIEW_MAX) viewCache.delete(viewCache.keys().next().value);
     viewCache.set(cacheKey, { view, at: Date.now(), urlId: req.params.publicId });
     res.json(view);
@@ -82,7 +95,7 @@ router.get("/:publicId", async (req, res, next) => {
 // /:publicId/scan blijft bestaan voor pagina's die nog met het oude pad gecachet zijn.
 async function recordScan(req, res, next) {
   try {
-    const product = await productsRepo.getProductByPublicId(req.params.publicId);
+    const product = (await instancesRepo.resolvePublicPassport(req.params.publicId))?.product;
     if (!product) {
       next(new HttpError(404, "Niet gevonden"));
       return;

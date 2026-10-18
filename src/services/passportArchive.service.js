@@ -141,6 +141,15 @@ async function archiveSafely(productIds, options) {
       if (product?.public_id && product.published_at && (failed || !isOnMarket(product))) purge.push(product.public_id);
     }
   }
+  // Batch- en itempaspoorten tonen dezelfde productgegevens: ook die verversen (de meest
+  // recente 500; oudere vervallen vanzelf na de cache-duur van 2 uur).
+  if (purge.length) {
+    const changedProducts = results.map((v) => v.productId).filter(Boolean);
+    const instances = await require("../repositories/instances.repository")
+      .instancePublicIds(changedProducts.length ? changedProducts : [...new Set(productIds.map(Number))])
+      .catch(() => []);
+    purge.push(...instances);
+  }
   await edgeCache.queuePurgeSafely(purge);
   return results;
 }

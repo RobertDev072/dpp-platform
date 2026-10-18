@@ -57,7 +57,7 @@ async function createTestProduct({ companyId, name = "Test Product" }) {
 // Alles wat via een FK aan producten hangt (scans, documenten, onderdelen, ...) moet
 // weg vóór de producten zelf. productIds: kommalijst of subquery.
 async function deleteProductChildren(pool, productIds) {
-  for (const table of ["ScanEvents", "ScanDaily", "PassportSnapshots", "Documents", "ProductParts", "ProductBatches", "ProductSustainability", "ProductCompliance"]) {
+  for (const table of ["ScanEvents", "ScanDaily", "PassportSnapshots", "Documents", "ProductParts", "ProductItems", "ProductBatches", "ProductSustainability", "ProductCompliance"]) {
     await pool.request().query(`DELETE FROM dbo.${table} WHERE product_id IN (${productIds})`);
   }
 }

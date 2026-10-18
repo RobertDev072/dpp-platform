@@ -195,7 +195,16 @@ async function handlePassport(request, env, publicId) {
 
 async function serveSnapshot(env, publicId, machine) {
   try {
-    const object = await env.PASSPORTS.get(`passport-snapshots/${publicId}.${machine ? "json" : "html"}`);
+    let object = await env.PASSPORTS.get(`passport-snapshots/${publicId}.${machine ? "json" : "html"}`);
+    if (!object) {
+      // Batch- of itempaspoort: verwijzing naar het modelpaspoort volgen (dezelfde
+      // productgegevens; serie-/lotnummer ontbreken dan tijdelijk in de noodkopie).
+      const alias = await env.PASSPORTS.get(`passport-aliases/${publicId}.txt`);
+      const modelId = alias ? (await alias.text()).trim().toLowerCase() : "";
+      if (/^[0-9a-f-]{36}$/.test(modelId)) {
+        object = await env.PASSPORTS.get(`passport-snapshots/${modelId}.${machine ? "json" : "html"}`);
+      }
+    }
     if (object) {
       return new Response(object.body, {
         status: 200,

@@ -1,5 +1,6 @@
 const express = require("express");
 const productsRepo = require("../repositories/products.repository");
+const instancesRepo = require("../repositories/instances.repository");
 const passport = require("../services/passport.service");
 const archive = require("../services/passportArchive.service");
 const { getProductDocumentUrl } = require("../services/blobStorage.service");
@@ -48,7 +49,7 @@ function send(res, format, snapshot, { qrBaseUrl, version, immutable, lastUpdate
   const options = { qrBaseUrl, version, lastUpdated, instance };
   res.vary("Accept");
   res.set("Cache-Control", immutable ? "public, max-age=86400, immutable" : "public, max-age=60");
-  res.set("Link", `<${qrBaseUrl}/p/${snapshot.publicId.toUpperCase()}>; rel="canonical"`);
+  res.set("Link", `<${qrBaseUrl}/p/${(instance?.publicId || snapshot.publicId).toUpperCase()}>; rel="canonical"`);
   if (version?.contentSha256) res.set("ETag", `"${version.contentSha256}"`);
   if (format === "xml") {
     res.type("application/xml; charset=utf-8").send(passport.toDppXml(snapshot, options));
@@ -59,10 +60,13 @@ function send(res, format, snapshot, { qrBaseUrl, version, immutable, lastUpdate
   }
 }
 
+// Model-, batch- of itempaspoort. Bij batch/item draagt het product een (niet-opsombare)
+// instance mee: eigen DPP-id en productidentificatie, zelfde productgegevens en versies.
 async function loadPublicProduct(publicId) {
-  const product = await productsRepo.getProductByPublicId(publicId);
-  if (!product) throw new HttpError(404, "Niet gevonden");
-  return product;
+  const resolved = await instancesRepo.resolvePublicPassport(publicId);
+  if (!resolved) throw new HttpError(404, "Niet gevonden");
+  Object.defineProperty(resolved.product, "instance", { value: resolved.instance, enumerable: false });
+  return resolved.product;
 }
 
 function parseVersionNumber(value) {
@@ -94,7 +98,8 @@ async function sendArchivedVersion(req, res, product, version, format) {
   send(res, format, version.snapshot, {
     qrBaseUrl,
     version: versionMeta(version, latest?.versionNumber === version.versionNumber),
-    immutable: true
+    immutable: true,
+    instance: product.instance || null
   });
 }
 
@@ -134,7 +139,8 @@ async function readPassport(req, res, next) {
       qrBaseUrl: getQrBaseUrl(req),
       version: isCurrent ? versionMeta(latest, true) : null,
       immutable: false,
-      lastUpdated: product.updated_at
+      lastUpdated: product.updated_at,
+      instance: product.instance || null
     });
   } catch (error) {
     next(error);

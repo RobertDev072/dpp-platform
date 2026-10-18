@@ -1,4 +1,5 @@
 const express = require("express");
+const { z } = require("zod");
 const multer = require("multer");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateBody, validateQuery } = require("../middleware/validate");
@@ -696,7 +697,8 @@ router.get("/:id/batches", requireRole(...ALL_ROLES), async (req, res, next) => 
     }
     assertCompanyAccess(req.user, product.company_id);
 
-    res.json(await batchesRepo.listBatchesForProduct(id));
+    const batches = await batchesRepo.listBatchesForProduct(id);
+    res.json(batches.map((b) => ({ ...b, passportUrl: getPassportUrl(req, b.public_id) })));
   } catch (error) {
     next(error);
   }
@@ -1266,5 +1268,127 @@ router.delete("/:id/translations/:language", requireRole(...EDITOR_ROLES), async
     next(error);
   }
 });
+
+// --- exemplaren (itempaspoorten) en batch-QR ----------------------------------------------
+// Elk exemplaar heeft een eigen permanente paspoort-id (eigen QR-code); productgegevens
+// komen van het model. Openbaar zodra het model openbaar is.
+const instancesRepo = require("../repositories/instances.repository");
+const gs1 = require("../utils/gs1");
+
+const SERIAL_RULE = "Serienummer: 1–20 tekens, letters, cijfers en -._/ (GS1)";
+const createItemsSchema = z
+  .object({
+    serials: z.array(z.string().trim()).max(1000).optional(),
+    generate: z
+      .object({
+        count: z.number().int().min(1).max(1000),
+        prefix: z.string().trim().max(10).default(""),
+        start: z.number().int().min(0).max(1e9).default(1),
+        digits: z.number().int().min(1).max(10).default(5)
+      })
+      .optional(),
+    batchId: z.number().int().positive().nullable().optional()
+  })
+  .refine((d) => (d.serials?.length || 0) > 0 || d.generate, { message: "Geef serienummers op of laat ze genereren" });
+
+router.get("/:id/items", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = [25, 50, 100].includes(Number(req.query.pageSize)) ? Number(req.query.pageSize) : 25;
+    const result = await instancesRepo.listItems(product.id, { page, pageSize });
+    result.items = result.items.map((item) => ({ ...item, passportUrl: getPassportUrl(req, item.public_id) }));
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/items", requireRole(...EDITOR_ROLES), validateBody(createItemsSchema), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    let serials = req.body.serials || [];
+    if (req.body.generate) {
+      const { count, prefix, start, digits } = req.body.generate;
+      serials = Array.from({ length: count }, (_, i) => `${prefix}${String(start + i).padStart(digits, "0")}`);
+    }
+    serials = [...new Set(serials.filter(Boolean))];
+    const invalid = serials.filter((s) => !gs1.isValidAiValue(s));
+    if (invalid.length) throw new HttpError(400, `${SERIAL_RULE}. Ongeldig: ${invalid.slice(0, 5).join(", ")}`, undefined, "INVALID_SERIAL");
+    if (!serials.length) throw new HttpError(400, "Geen serienummers");
+    if (serials.length > 1000) throw new HttpError(400, "Maximaal 1000 exemplaren per keer");
+    let batchId = req.body.batchId ?? null;
+    if (batchId) {
+      const pool = await require("../config/db").getPool();
+      const ok = (await pool.query("SELECT 1 FROM dbo.productbatches WHERE id = $1 AND product_id = $2", [batchId, product.id])).rowCount;
+      if (!ok) throw new HttpError(400, "Onbekende batch voor dit product");
+    }
+    const result = await instancesRepo.createItems({ productId: product.id, companyId: product.company_id, batchId, serials });
+    await logAuditFromReq(req, {
+      companyId: product.company_id,
+      action: "create",
+      entityType: "ProductItem",
+      entityId: product.id,
+      metadata: { created: result.created.length, skipped: result.skipped.length }
+    });
+    // Verwijzingen voor de noodkopie aanmaken (best effort; het onderhoud haalt achterstand in).
+    await require("../services/edgeCache.service").queuePurgeSafely(result.created.map((r) => r.public_id));
+    res.status(201).json({ created: result.created.length, skipped: result.skipped });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/:id/items/:itemId", requireRole(...EDITOR_ROLES), validateBody(z.object({ status: z.enum(["active", "archived"]) })), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    const item = await instancesRepo.setItemStatus(product.id, Number(req.params.itemId), req.body.status);
+    if (!item) throw new HttpError(404, "Niet gevonden");
+    await logAuditFromReq(req, { companyId: product.company_id, action: "update", entityType: "ProductItem", entityId: item.id, metadata: { status: item.status } });
+    res.json(item);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// CSV voor drukkerij of etiketprinter: serienummer, paspoort-URL (inhoud van de QR-code)
+// en GS1 Digital Link als er een geldige GTIN is.
+router.get("/:id/items/export.csv", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    const rows = await instancesRepo.exportItems(product.id);
+    const esc = (v) => (v == null ? "" : /[",\n;]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const lines = ["serienummer;batch;status;paspoort_url;gs1_digital_link"];
+    for (const r of rows) {
+      lines.push(
+        [r.serial_number, r.batch_number, r.status, getPassportUrl(req, r.public_id), gs1.digitalLink({ gtin: product.gtin, lot: r.batch_number, serial: r.serial_number })]
+          .map(esc)
+          .join(";")
+      );
+    }
+    res.set("Content-Type", "text/csv; charset=utf-8");
+    res.attachment(`exemplaren-${qrFileStem(product)}.csv`);
+    res.send(`﻿${lines.join("\r\n")}\r\n`);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// QR-code van één exemplaar of batch (SVG; PNG met ?format=png).
+async function sendInstanceQr(req, res, table, idParam) {
+  const product = await loadOwnProduct(req);
+  const pool = await require("../config/db").getPool();
+  const row = (await pool.query(`SELECT public_id FROM dbo.${table} WHERE id = $1 AND product_id = $2`, [Number(req.params[idParam]), product.id])).rows[0];
+  if (!row) throw new HttpError(404, "Niet gevonden");
+  const url = getPassportUrl(req, row.public_id);
+  if (req.query.format === "png") {
+    res.set("Content-Type", "image/png").send(await generateQrPngBuffer(url, { width: 512 }));
+  } else {
+    res.set("Content-Type", "image/svg+xml").send(await generateQrSvgString(url));
+  }
+}
+
+router.get("/:id/items/:itemId/qr", requireRole(...ALL_ROLES), (req, res, next) => sendInstanceQr(req, res, "productitems", "itemId").catch(next));
+router.get("/:id/batches/:batchId/qr", requireRole(...ALL_ROLES), (req, res, next) => sendInstanceQr(req, res, "productbatches", "batchId").catch(next));
 
 module.exports = router;

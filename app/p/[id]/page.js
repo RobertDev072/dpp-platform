@@ -101,7 +101,11 @@ export default async function ProductPassportPage({ params }) {
     ["Fabrikant", product.manufacturer],
     ["Land van oorsprong", product.countryOfOrigin],
     ["SKU", product.sku],
-    ["GTIN / EAN", product.gtin]
+    ["GTIN / EAN", product.gtin],
+    // Batch- of itempaspoort: dit specifieke exemplaar of deze productiebatch.
+    ["Serienummer", product.instance?.serialNumber],
+    ["Batch / lot", product.instance?.lotNumber],
+    ["Productiedatum", product.instance?.productionDate ? new Date(product.instance.productionDate).toLocaleDateString("nl-NL") : null]
   ].filter(([, value]) => value);
 
   const hasSustainability = s && (s.co2_footprint_kg != null || s.recycled_material_pct != null || materials.length || s.expected_lifespan_years || s.epd_url);

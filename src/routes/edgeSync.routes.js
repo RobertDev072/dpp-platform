@@ -74,7 +74,8 @@ router.post(
           `INSERT INTO dbo.scanevents (product_id, scanned_at, user_agent, referrer)
            SELECT p.id, e.ts, e.ua, e.ref
            FROM unnest($1::uuid[], $2::timestamptz[], $3::text[], $4::text[]) AS e(public_id, ts, ua, ref)
-           JOIN dbo.products p ON p.public_id = e.public_id
+           JOIN dbo.passportids pi ON pi.public_id = e.public_id
+           JOIN dbo.products p ON p.id = pi.product_id
              AND (p.status = 'published' OR (p.status = 'archived' AND p.published_at IS NOT NULL))`,
           [
             events.map((e) => e.publicId.toLowerCase()),

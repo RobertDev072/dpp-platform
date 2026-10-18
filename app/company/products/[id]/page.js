@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import NumberField from "@/components/products/NumberField";
 import DocumentsTab from "@/components/products/DocumentsTab";
+import InstancesTab from "@/components/products/InstancesTab";
 import Select from "@/components/ui/Select";
 import TranslationsCard, { LANGUAGE_OPTIONS, parseSpecList } from "@/components/products/TranslationsCard";
 import ProductCompleteness from "@/components/products/ProductCompleteness";
@@ -40,6 +41,7 @@ const TABS = [
   { key: "sustainability", label: "Duurzaamheid" },
   { key: "compliance", label: "Compliance" },
   { key: "documents", label: "Documenten" },
+  { key: "instances", label: "Batches & exemplaren" },
   { key: "qr", label: "QR-code" }
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
@@ -260,6 +262,7 @@ function ProductEditor() {
           {tab === "sustainability" && <SustainabilityTab productId={id} onSaved={loadProduct} />}
           {tab === "compliance" && <ComplianceTab productId={id} onSaved={loadProduct} onOpenDocuments={() => goTo("documents")} />}
           {tab === "documents" && <DocumentsTab productId={id} onChanged={loadProduct} />}
+          {tab === "instances" && <InstancesTab product={product} />}
           {tab === "qr" && <QrTab product={product} onChanged={loadProduct} />}
         </div>
 
