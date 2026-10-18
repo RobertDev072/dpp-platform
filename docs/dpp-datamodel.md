@@ -41,3 +41,13 @@ hernoemd of verwijderd (oude versies verwijzen ernaar); bron: `lib/dppVocabulary
 Een wijziging van productvelden, vertalingen, of de naam/identificatie van het bedrijf
 legt een nieuwe archiefversie vast (alleen als de inhoud verandert). Interne snapshotversie:
 `SNAPSHOT_SCHEMA_VERSION` 2 (oude versies met versie 1 blijven leesbaar).
+
+## Gegevensdragers
+
+| Drager | Norm | Inhoud | Waar |
+|---|---|---|---|
+| QR-code | ISO/IEC 18004, foutcorrectie Q, vrije ruimte 4 modules | permanente paspoort-URL `qr.veripasso.com/p/{id}` | product (tab QR-code), batch, exemplaar, ZIP-export |
+| Data Matrix ECC 200 | ISO/IEC 16022, vrije ruimte 2 modules | dezelfde paspoort-URL, of (`?content=gs1`) een GS1 Digital Link op het QR-domein met GTIN, lot en serienummer | idem |
+
+Beide worden in de tests echt teruggelezen (jsQR, ZXing). De inhoud van eerder gedrukte
+QR-codes is ongewijzigd; alleen de witte rand in nieuwe downloads is breder.

@@ -23,6 +23,7 @@ function nl(n) {
 // van max. 500 (PNG) / 2.000 (SVG) per bestand.
 export default function QrExportDialog({ open, onClose, selection, count, initialFormat = "png", onDone }) {
   const [format, setFormat] = useState(initialFormat);
+  const [symbology, setSymbology] = useState("qr");
   const [generateMissing, setGenerateMissing] = useState(true);
   const [progress, setProgress] = useState(null); // { done, total, part, parts }
   const [result, setResult] = useState(null);
@@ -56,8 +57,8 @@ export default function QrExportDialog({ open, onClose, selection, count, initia
         if (cancelledRef.current) break;
         const chunk = ids.slice((part - 1) * size, part * size);
         const { blob, filename, headers } = await fetchBlob("/api/qr/codes.zip", {
-          body: { ids: chunk, format, generateMissing, part: parts > 1 ? part : undefined },
-          fallbackName: `qr-codes-${format}.zip`
+          body: { ids: chunk, format, symbology, generateMissing, part: parts > 1 ? part : undefined },
+          fallbackName: `${symbology === "datamatrix" ? "datamatrix" : "qr"}-codes-${format}.zip`
         });
         saveBlob(blob, filename);
         files += Number(headers.get("x-files-count") || chunk.length);
@@ -125,6 +126,22 @@ export default function QrExportDialog({ open, onClose, selection, count, initia
         </div>
       ) : (
         <div className="space-y-5">
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium text-slate-700">Soort code</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                { key: "qr", label: "QR-code", help: "Standaard; elke telefoon leest hem." },
+                { key: "datamatrix", label: "Data Matrix", help: "Kleiner; voor kleine onderdelen en directe markering." }
+              ].map((s) => (
+                <label key={s.key} className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${symbology === s.key ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500" : "border-slate-200 hover:border-slate-300"}`}>
+                  <input type="radio" name="export-symbology" value={s.key} checked={symbology === s.key} onChange={() => setSymbology(s.key)} className="sr-only" />
+                  <span className="block font-medium text-slate-900">{s.label}</span>
+                  <span className="block text-xs text-slate-500">{s.help}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
           <fieldset>
             <legend className="mb-2 text-sm font-medium text-slate-700">Formaat</legend>
             <div className="grid gap-2 sm:grid-cols-2">

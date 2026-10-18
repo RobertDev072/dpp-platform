@@ -5,7 +5,7 @@ const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateBody } = require("../middleware/validate");
 const { HttpError } = require("../middleware/errorHandler");
 const productsRepo = require("../repositories/products.repository");
-const { generateQrPngBuffer, generateQrSvgString } = require("../services/qrCode.service");
+const { generateQrPngBuffer, generateQrSvgString, generateDataMatrixPngBuffer, generateDataMatrixSvgString } = require("../services/qrCode.service");
 const { getPassportUrl } = require("../utils/baseUrl");
 const { logAuditFromReq } = require("../utils/auditLog");
 const { heavyWorkLimiter } = require("../middleware/rateLimit");
@@ -29,6 +29,8 @@ router.use(requireAuth, requireRole(...COMPANY_ROLES), (req, res, next) => {
 const zipSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(MAX_QR_PER_ZIP.svg),
   format: z.enum(["png", "svg"]).default("png"),
+  // QR-code (standaard) of Data Matrix (ISO/IEC 16022) met dezelfde paspoort-URL.
+  symbology: z.enum(["qr", "datamatrix"]).default("qr"),
   // 1200 px ≈ 10 cm op 300 DPI.
   sizePx: z.number().int().min(256).max(2400).default(1200),
   generateMissing: z.boolean().default(false),
@@ -58,8 +60,13 @@ router.post("/codes.zip", heavyWorkLimiter, validateBody(zipSchema), async (req,
       if (used.has(stem)) stem = `${stem}-${product.id}`;
       used.add(stem);
       const url = getPassportUrl(req, product.public_id);
-      files[`qr-${stem}.${format}`] =
-        format === "svg" ? Buffer.from(await generateQrSvgString(url)) : await generateQrPngBuffer(url, { width: sizePx });
+      const dm = req.body.symbology === "datamatrix";
+      files[`${dm ? "datamatrix" : "qr"}-${stem}.${format}`] =
+        format === "svg"
+          ? Buffer.from(dm ? generateDataMatrixSvgString(url) : await generateQrSvgString(url))
+          : dm
+            ? await generateDataMatrixPngBuffer(url, { width: sizePx })
+            : await generateQrPngBuffer(url, { width: sizePx });
     }
     // PNG is al gecomprimeerd; SVG comprimeert goed.
     const zip = zipSync(files, { level: format === "svg" ? 6 : 0 });
@@ -68,13 +75,13 @@ router.post("/codes.zip", heavyWorkLimiter, validateBody(zipSchema), async (req,
       companyId: req.user.companyId,
       action: "export_qr",
       entityType: "Product",
-      metadata: { count: products.length, format }
+      metadata: { count: products.length, format, symbology: req.body.symbology }
     });
 
     const suffix = req.body.part ? `-${String(req.body.part).padStart(3, "0")}` : "";
     res.set("Content-Type", "application/zip");
     res.set("X-Files-Count", String(products.length));
-    res.attachment(`qr-codes-${format}${suffix}.zip`);
+    res.attachment(`${req.body.symbology === "datamatrix" ? "datamatrix" : "qr"}-codes-${format}${suffix}.zip`);
     res.send(Buffer.from(zip));
   } catch (error) {
     next(error);

@@ -19,8 +19,8 @@ const documentsRepo = require("../repositories/documents.repository");
 const { assertCompanyAccess } = require("../utils/tenant");
 const { logAudit, logAuditFromReq } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
-const { getPassportUrl } = require("../utils/baseUrl");
-const { generateQrPngBuffer, generateQrSvgString } = require("../services/qrCode.service");
+const { getPassportUrl, getQrBaseUrl } = require("../utils/baseUrl");
+const { generateQrPngBuffer, generateQrSvgString, generateDataMatrixPngBuffer, generateDataMatrixSvgString } = require("../services/qrCode.service");
 const {
   processProductPhoto,
   getProductPhotoUrl,
@@ -1081,6 +1081,47 @@ router.get("/:id/qr.svg", requireRole(...ALL_ROLES), async (req, res, next) => {
   }
 });
 
+// --- Data Matrix (ISO/IEC 16022) ----------------------------------------------------------
+// Inhoud standaard: dezelfde permanente paspoort-URL als de QR-code. Met ?content=gs1 een
+// GS1 Digital Link op ons QR-domein (GTIN [+ lot] [+ serienummer]); die opent via de
+// resolver hetzelfde paspoort en is ook leesbaar voor GS1-systemen in de keten.
+function codeText(req, { product, publicId, lot = null, serial = null }) {
+  if (req.query.content === "gs1") {
+    const path = gs1.digitalLinkPath({ gtin: product.gtin, lot, serial });
+    if (!path) throw new HttpError(400, "Een GS1 Digital Link vraagt een geldige GTIN bij het product", undefined, "GS1_NEEDS_GTIN");
+    return `${getQrBaseUrl(req)}${path}`;
+  }
+  return getPassportUrl(req, publicId);
+}
+
+async function sendCode(req, res, { symbology, text, stem }) {
+  const png = req.query.format === "png";
+  const width = Math.min(2400, Math.max(128, Number.parseInt(req.query.size, 10) || 512));
+  const isDm = symbology === "datamatrix";
+  const body = png
+    ? isDm
+      ? await generateDataMatrixPngBuffer(text, { width })
+      : await generateQrPngBuffer(text, { width })
+    : isDm
+      ? generateDataMatrixSvgString(text)
+      : await generateQrSvgString(text);
+  res.set("Content-Type", png ? "image/png" : "image/svg+xml");
+  if (req.query.download) res.attachment(`${isDm ? "datamatrix" : "qr"}-${stem}.${png ? "png" : "svg"}`);
+  res.send(body);
+}
+
+router.get("/:id/datamatrix", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await productsRepo.getProductById(Number(req.params.id));
+    if (!product) throw new HttpError(404, "Niet gevonden");
+    assertCompanyAccess(req.user, product.company_id);
+    if (!product.public_id) throw new HttpError(404, "Product is nog niet gepubliceerd");
+    await sendCode(req, res, { symbology: "datamatrix", text: codeText(req, { product, publicId: product.public_id }), stem: qrFileStem(product) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Bestandsnaam voor downloads: SKU als die er is, anders het product-id.
 function qrFileStem(product) {
   const base = product.sku || String(product.id);
@@ -1374,18 +1415,21 @@ router.get("/:id/items/export.csv", requireRole(...ALL_ROLES), async (req, res, 
   }
 });
 
-// QR-code van één exemplaar of batch (SVG; PNG met ?format=png).
+// Code van één exemplaar of batch: QR (standaard) of ?type=datamatrix; SVG of ?format=png;
+// ?content=gs1 voor een GS1 Digital Link met lot en serienummer.
 async function sendInstanceQr(req, res, table, idParam) {
   const product = await loadOwnProduct(req);
   const pool = await require("../config/db").getPool();
-  const row = (await pool.query(`SELECT public_id FROM dbo.${table} WHERE id = $1 AND product_id = $2`, [Number(req.params[idParam]), product.id])).rows[0];
+  const row = (await pool.query(
+    table === "productitems"
+      ? "SELECT i.public_id, i.serial_number, b.batch_number FROM dbo.productitems i LEFT JOIN dbo.productbatches b ON b.id = i.batch_id WHERE i.id = $1 AND i.product_id = $2"
+      : "SELECT public_id, NULL AS serial_number, batch_number FROM dbo.productbatches WHERE id = $1 AND product_id = $2",
+    [Number(req.params[idParam]), product.id]
+  )).rows[0];
   if (!row) throw new HttpError(404, "Niet gevonden");
-  const url = getPassportUrl(req, row.public_id);
-  if (req.query.format === "png") {
-    res.set("Content-Type", "image/png").send(await generateQrPngBuffer(url, { width: 512 }));
-  } else {
-    res.set("Content-Type", "image/svg+xml").send(await generateQrSvgString(url));
-  }
+  const text = codeText(req, { product, publicId: row.public_id, lot: row.batch_number, serial: row.serial_number });
+  const stem = (row.serial_number || row.batch_number || String(row.public_id)).replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 60);
+  await sendCode(req, res, { symbology: req.query.type === "datamatrix" ? "datamatrix" : "qr", text, stem });
 }
 
 // --- EU DPP-register (RegisterProductDPP vanuit de applicatie) ---------------------------

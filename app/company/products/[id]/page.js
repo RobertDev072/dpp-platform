@@ -951,13 +951,45 @@ function QrTab({ product, onChanged }) {
           </div>
         </div>
       </Card>
+      <Card className="space-y-3">
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <img
+            src={`/api/products/${product.id}/datamatrix?format=png&size=256`}
+            alt={`Data Matrix-code voor ${product.name}`}
+            className="h-32 w-32 shrink-0 self-center rounded-xl border border-slate-200 bg-white p-2 sm:self-start"
+            style={{ imageRendering: "pixelated" }}
+          />
+          <div className="min-w-0 flex-1 space-y-2">
+            <h3 className="text-sm font-semibold text-slate-900">Data Matrix</h3>
+            <p className="text-sm text-slate-600">
+              Kleiner dan een QR-code, voor kleine onderdelen of directe markering (laser, inkjet). Bevat dezelfde
+              permanente paspoortlink; gangbare telefooncamera's lezen hem.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <ButtonLink href={`/api/products/${product.id}/datamatrix?format=png&size=1200&download=1`} size="sm" icon={DownloadIcon}>
+                PNG (print)
+              </ButtonLink>
+              <ButtonLink href={`/api/products/${product.id}/datamatrix?download=1`} size="sm" icon={DownloadIcon}>
+                SVG
+              </ButtonLink>
+              {product.gtin && (
+                <ButtonLink href={`/api/products/${product.id}/datamatrix?content=gs1&download=1`} size="sm" icon={DownloadIcon}>
+                  SVG met GS1 Digital Link
+                </ButtonLink>
+              )}
+            </div>
+          </div>
+        </div>
+      </Card>
       <Card className="text-sm text-slate-600">
         <h3 className="mb-1 text-sm font-semibold text-slate-900">Welk formaat kies ik?</h3>
         <ul className="list-disc space-y-0.5 pl-5">
           <li>Verpakking of professionele drukker → SVG (vector, altijd scherp)</li>
           <li>Zelf printen of stickers → PNG 1200 px (≈ 10 cm op 300 DPI)</li>
           <li>Website, e-mail of digitaal → PNG 512 px</li>
-          <li>Minimaal 2 × 2 cm drukken, met witte rand rondom; altijd een testscan doen vóór de oplage</li>
+          <li>QR minimaal 2 × 2 cm drukken; de witte rand (4 modules) zit al in het bestand: niet wegsnijden</li>
+          <li>Klein product of directe markering → Data Matrix (vanaf ca. 1 × 1 cm)</li>
+          <li>Altijd een testscan doen vóór de oplage</li>
         </ul>
         {product.qr_status === "active" && (
           <Link href={`${path}?src=app`} target="_blank" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline">

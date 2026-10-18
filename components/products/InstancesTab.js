@@ -130,9 +130,14 @@ export default function InstancesTab({ product }) {
                     {b.quantity ? ` · ${b.quantity} stuks` : ""} · <span className="font-mono">{b.passportUrl}</span>
                   </span>
                 </span>
-                <a className="text-xs font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/batches/${b.id}/qr`} target="_blank" rel="noreferrer">
-                  QR-code
-                </a>
+                <span className="flex gap-3">
+                  <a className="text-xs font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/batches/${b.id}/qr`} target="_blank" rel="noreferrer">
+                    QR-code
+                  </a>
+                  <a className="text-xs font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/batches/${b.id}/qr?type=datamatrix`} target="_blank" rel="noreferrer">
+                    Data Matrix
+                  </a>
+                </span>
               </li>
             ))}
           </ul>
@@ -210,6 +215,9 @@ export default function InstancesTab({ product }) {
                     {item.status === "archived" && <Badge variant="neutral">Gearchiveerd</Badge>}
                     <a className="text-xs font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/items/${item.id}/qr`} target="_blank" rel="noreferrer">
                       QR-code
+                    </a>
+                    <a className="text-xs font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/items/${item.id}/qr?type=datamatrix`} target="_blank" rel="noreferrer">
+                      Data Matrix
                     </a>
                     <button type="button" className="text-xs text-slate-500 hover:text-slate-800" onClick={() => toggleItem(item)}>
                       {item.status === "active" ? "Archiveren" : "Heractiveren"}
