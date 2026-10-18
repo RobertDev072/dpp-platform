@@ -22,6 +22,21 @@ function parsePeriod(value, fallback = "24h") {
   return PERIODS[value] ? value : fallback;
 }
 
+// Continuïteit: back-up-DPP-dienstverlener en EU-register (alleen tellingen, geen geheimen).
+router.get("/continuity", async (req, res, next) => {
+  try {
+    const svc = require("../services/dppContinuity.service");
+    const pool = await require("../config/db").getPool();
+    const reg = (await pool.query("SELECT status, COUNT(*)::int AS n FROM dbo.dppregistrations GROUP BY status")).rows;
+    res.json({
+      backupProvider: await svc.replicationStatus(),
+      registry: { enabled: Boolean(svc.config().registryUrl), byStatus: Object.fromEntries(reg.map((r) => [r.status, r.n])) }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/health", async (req, res, next) => {
   try {
     res.json(await runHealthChecks());

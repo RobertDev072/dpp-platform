@@ -20,6 +20,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import NumberField from "@/components/products/NumberField";
 import DocumentsTab from "@/components/products/DocumentsTab";
 import InstancesTab from "@/components/products/InstancesTab";
+import RegistryCard from "@/components/products/RegistryCard";
 import Select from "@/components/ui/Select";
 import TranslationsCard, { LANGUAGE_OPTIONS, parseSpecList } from "@/components/products/TranslationsCard";
 import ProductCompleteness from "@/components/products/ProductCompleteness";
@@ -263,7 +264,12 @@ function ProductEditor() {
           {tab === "compliance" && <ComplianceTab productId={id} onSaved={loadProduct} onOpenDocuments={() => goTo("documents")} />}
           {tab === "documents" && <DocumentsTab productId={id} onChanged={loadProduct} />}
           {tab === "instances" && <InstancesTab product={product} />}
-          {tab === "qr" && <QrTab product={product} onChanged={loadProduct} />}
+          {tab === "qr" && (
+            <div className="space-y-4">
+              <QrTab product={product} onChanged={loadProduct} />
+              <RegistryCard product={product} />
+            </div>
+          )}
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-4">

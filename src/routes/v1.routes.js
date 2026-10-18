@@ -361,6 +361,35 @@ router.put("/dpp/:dppId/elements/:elementId", validateBody(z.object({ value: z.u
   }
 });
 
+// RegisterProductDPP: aanmelden bij het EU DPP-register. Wordt in de wachtrij gezet en
+// verstuurd zodra het register (EU_DPP_REGISTRY_URL) is ingesteld; status opvraagbaar.
+const continuity = require("../services/dppContinuity.service");
+
+router.post("/dpp/:dppId/register", async (req, res, next) => {
+  try {
+    requireWrite(req);
+    const product = await loadOwnProductByDppId(req);
+    if (!product.published_at) throw new HttpError(409, "Publiceer het paspoort eerst", undefined, "NOT_PUBLISHED");
+    const registration = await continuity.queueRegistration(product);
+    await audit(req, "register_request", product.id);
+    res.status(202).json({ digitalProductPassportId: `urn:uuid:${String(product.public_id).toLowerCase()}`, ...registration });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/dpp/:dppId/registration", async (req, res, next) => {
+  try {
+    if (!req.apiClient) throw new HttpError(401, "API-sleutel ontbreekt", undefined, "API_KEY_MISSING");
+    const product = await loadOwnProductByDppId(req);
+    const registration = await continuity.getRegistration(product.public_id);
+    if (!registration) throw new HttpError(404, "Nog niet aangemeld");
+    res.json(registration);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete("/dpp/:dppId", async (req, res, next) => {
   try {
     requireWrite(req);

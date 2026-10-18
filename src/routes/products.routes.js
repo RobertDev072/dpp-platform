@@ -1388,6 +1388,30 @@ async function sendInstanceQr(req, res, table, idParam) {
   }
 }
 
+// --- EU DPP-register (RegisterProductDPP vanuit de applicatie) ---------------------------
+router.get("/:id/registration", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    const continuity = require("../services/dppContinuity.service");
+    const registration = product.public_id ? await continuity.getRegistration(product.public_id) : null;
+    res.json(registration || { status: "none", registryConfigured: Boolean(continuity.config().registryUrl) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/register", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    if (!product.public_id || !product.published_at) throw new HttpError(409, "Publiceer het paspoort eerst", undefined, "NOT_PUBLISHED");
+    const registration = await require("../services/dppContinuity.service").queueRegistration(product);
+    await logAuditFromReq(req, { companyId: product.company_id, action: "register_request", entityType: "Product", entityId: product.id });
+    res.status(202).json(registration);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/:id/items/:itemId/qr", requireRole(...ALL_ROLES), (req, res, next) => sendInstanceQr(req, res, "productitems", "itemId").catch(next));
 router.get("/:id/batches/:batchId/qr", requireRole(...ALL_ROLES), (req, res, next) => sendInstanceQr(req, res, "productbatches", "batchId").catch(next));
 

@@ -123,7 +123,21 @@ function startBackgroundJobs() {
       .catch((error) => logger.error("passport_snapshots_failed", { errorMessage: error.message }));
   const snapshotTimer = setInterval(snapshots, 2 * 60 * 1000);
 
-  timers = [flushTimer, firstRun, maintenanceTimer, snapshotTimer];
+  // Back-up-DPP-dienstverlener en EU-register (alleen actief als geconfigureerd): elke
+  // 5 minuten onder een lease.
+  const continuity = () =>
+    withLease("dpp-continuity", 10, async () => {
+      const svc = require("../services/dppContinuity.service");
+      return { replication: await svc.replicateVersions({ limit: 200 }), registry: await svc.processRegistrations({ limit: 50 }) };
+    })
+      .then((outcome) => {
+        const busy = outcome && ((outcome.replication?.sent || outcome.replication?.failed) || (outcome.registry?.registered || outcome.registry?.failed));
+        if (busy) logger.info("dpp_continuity", outcome);
+      })
+      .catch((error) => logger.error("dpp_continuity_failed", { errorMessage: error.message }));
+  const continuityTimer = setInterval(continuity, 5 * 60 * 1000);
+
+  timers = [flushTimer, firstRun, maintenanceTimer, snapshotTimer, continuityTimer];
   // Timers houden het proces niet in leven: een SIGTERM sluit netjes af.
   for (const timer of timers) timer.unref?.();
 }
