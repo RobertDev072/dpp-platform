@@ -6,11 +6,11 @@
 #
 # Het image bevat geen geheimen: die komen als omgevingsvariabelen (deploy/.env).
 
-# Basis-images via de AWS-spiegel van de officiële Docker Hub-images (zelfde inhoud):
-# Docker Hub begrenst anonieme downloads per IP.
+# Basis-image: officieel Node-image van Docker Hub (zelfde bron als postgres en caddy in
+# deploy/compose.yaml). De AWS-spiegel (public.ecr.aws) gaf in CI 429 "Data limit exceeded".
 
 # --- build ------------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/node:24-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -21,7 +21,7 @@ COPY . .
 RUN npm run build
 
 # --- runtime ----------------------------------------------------------------------
-FROM public.ecr.aws/docker/library/node:24-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 
 ARG GIT_SHA=unknown
