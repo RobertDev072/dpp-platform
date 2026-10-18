@@ -7,6 +7,7 @@ const documentsRepo = require("../repositories/documents.repository");
 const { logAuditFromReq } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const edgeCache = require("../services/edgeCache.service");
+const { SCHEMES: OPERATOR_SCHEMES, validateOperatorId, normalizeOperatorId } = require("../utils/operatorId");
 
 // Zelfbediening voor het EIGEN bedrijf (company_admin): bedrijfsprofiel + logo en
 // het documentenoverzicht. Bewust gescheiden van /api/admin/companies (Platform
@@ -25,9 +26,19 @@ const updateOwnCompanySchema = z
       .regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, "Logo moet een PNG, JPEG of WebP zijn")
       .max(280000, "Logo mag maximaal ~200KB zijn")
       .nullable()
-      .optional()
+      .optional(),
+    // Identificatie als marktdeelnemer op het paspoort (economicOperatorId). Beide
+    // velden samen; null wist ze.
+    economicOperatorIdScheme: z.enum(OPERATOR_SCHEMES).nullable().optional(),
+    economicOperatorId: z.string().max(100).nullable().optional()
   })
-  .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
+  .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" })
+  .superRefine((data, ctx) => {
+    if (data.economicOperatorId === undefined && data.economicOperatorIdScheme === undefined) return;
+    if (!data.economicOperatorId && !data.economicOperatorIdScheme) return;
+    const error = validateOperatorId(data.economicOperatorIdScheme, data.economicOperatorId);
+    if (error) ctx.addIssue({ code: "custom", path: ["economicOperatorId"], message: error });
+  });
 
 function requireOwnCompany(req, res, next) {
   if (req.user.companyId == null) {
@@ -53,6 +64,11 @@ router.get("/", requireRole("company_admin", "company_user"), requireOwnCompany,
 router.patch("/", requireRole("company_admin"), requireOwnCompany, validateBody(updateOwnCompanySchema), async (req, res, next) => {
   try {
     const fields = req.body.name !== undefined ? { name: req.body.name } : {};
+    if (req.body.economicOperatorId !== undefined || req.body.economicOperatorIdScheme !== undefined) {
+      const scheme = req.body.economicOperatorId ? req.body.economicOperatorIdScheme : null;
+      fields.economicOperatorIdScheme = scheme;
+      fields.economicOperatorId = scheme ? normalizeOperatorId(scheme, req.body.economicOperatorId) : null;
+    }
     let previousLogoBlob = null;
     if (req.body.logo !== undefined) {
       const { isStorageConfigured } = require("../config/storage");
@@ -87,6 +103,19 @@ router.patch("/", requireRole("company_admin"), requireOwnCompany, validateBody(
     });
     // Naam en logo staan op elk publiek paspoort van dit bedrijf.
     await edgeCache.queuePurgeForCompany(req.user.companyId);
+    // Naam en marktdeelnemer-id horen bij de paspoortinhoud: elk gepubliceerd paspoort
+    // krijgt een nieuwe archiefversie (alleen als de inhoud echt veranderd is). Het aantal
+    // producten is begrensd door het abonnement; archiveSafely logt fouten zelf.
+    if (fields.name !== undefined || fields.economicOperatorId !== undefined) {
+      const pool = await require("../config/db").getPool();
+      const ids = (await pool.query(
+        "SELECT id FROM dbo.products WHERE company_id = $1 AND public_id IS NOT NULL AND published_at IS NOT NULL",
+        [req.user.companyId]
+      )).rows.map((r) => r.id);
+      if (ids.length) {
+        await require("../services/passportArchive.service").archiveSafely(ids, { userId: req.user.id, reason: "update" });
+      }
+    }
 
     res.json(updated);
   } catch (error) {

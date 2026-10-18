@@ -5,7 +5,7 @@ const { calculateProductCompleteness } = require("../utils/completeness");
 const PUBLIC_COLUMNS = `
   id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
   manufacturer, country_of_origin, photo_url, photo_blob_name, photo_thumb_blob_name, status, highlights, public_id,
-  published_at, created_by, created_at, updated_at
+  published_at, created_by, created_at, updated_at, facility_id, content_specification_ids, language
 `;
 
 // Whitelist: voorkomt dat sort/order ooit rauw in de SQL belanden. De tweede kolom
@@ -427,7 +427,10 @@ const UPDATABLE_FIELDS = [
   "photoUrl",
   "photoBlobName",
   "photoThumbBlobName",
-  "status"
+  "status",
+  "facilityId",
+  "contentSpecificationIds",
+  "language"
 ];
 const FIELD_TO_COLUMN = {
   name: "name",
@@ -442,7 +445,10 @@ const FIELD_TO_COLUMN = {
   photoUrl: "photo_url",
   photoBlobName: "photo_blob_name",
   photoThumbBlobName: "photo_thumb_blob_name",
-  status: "status"
+  status: "status",
+  facilityId: "facility_id",
+  contentSpecificationIds: "content_specification_ids",
+  language: "language"
 };
 const FIELD_TO_SQL_TYPE = {
   name: () => sql.NVarChar(200),
@@ -457,7 +463,10 @@ const FIELD_TO_SQL_TYPE = {
   photoUrl: () => sql.NVarChar(1000),
   photoBlobName: () => sql.NVarChar(255),
   photoThumbBlobName: () => sql.NVarChar(300),
-  status: () => sql.NVarChar(20)
+  status: () => sql.NVarChar(20),
+  facilityId: () => sql.NVarChar(100),
+  contentSpecificationIds: () => sql.NVarChar(sql.MAX),
+  language: () => sql.NVarChar(12)
 };
 
 async function updateProduct(id, fields) {

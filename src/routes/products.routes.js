@@ -3,7 +3,7 @@ const multer = require("multer");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateBody, validateQuery } = require("../middleware/validate");
 const { listProductsQuerySchema } = require("../schemas/productsQuery.schema");
-const { createProductSchema, updateProductSchema } = require("../schemas/products.schema");
+const { createProductSchema, updateProductSchema, translationSchema, LANGUAGE_PATTERN } = require("../schemas/products.schema");
 const { createPartSchema } = require("../schemas/parts.schema");
 const { updateSustainabilitySchema } = require("../schemas/sustainability.schema");
 const { updateComplianceSchema } = require("../schemas/compliance.schema");
@@ -237,7 +237,12 @@ router.patch(
         return;
       }
 
-      const updated = await productsRepo.updateProduct(id, req.body);
+      const fields = { ...req.body };
+      if (fields.contentSpecificationIds !== undefined) {
+        fields.contentSpecificationIds = JSON.stringify(fields.contentSpecificationIds);
+      }
+      if (fields.facilityId === "") fields.facilityId = null;
+      const updated = await productsRepo.updateProduct(id, fields);
 
       await logAudit({
         companyId: existing.company_id,
@@ -1191,6 +1196,72 @@ router.get("/:id/versions/:version", requireRole(...ALL_ROLES), async (req, res,
     const version = await require("../services/passportArchive.service").getVersion(product.id, versionNumber);
     if (!version) throw new HttpError(404, "Versie niet gevonden");
     res.json(version);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// --- vertalingen (meertalige paspoortteksten) ------------------------------------------
+// Basistekst staat op het product (in products.language); hier extra talen. Een wijziging
+// archiveert het paspoort als nieuwe versie (middleware hierboven).
+async function loadOwnProduct(req) {
+  const product = await productsRepo.getProductById(Number(req.params.id));
+  if (!product) throw new HttpError(404, "Niet gevonden");
+  assertCompanyAccess(req.user, product.company_id);
+  return product;
+}
+
+function languageParam(req) {
+  const language = String(req.params.language || "");
+  if (!LANGUAGE_PATTERN.test(language)) throw new HttpError(400, "Ongeldige taalcode (bijv. en-GB of de)");
+  return language;
+}
+
+router.get("/:id/translations", requireRole(...ALL_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    const pool = await require("../config/db").getPool();
+    const rows = (await pool.query(
+      "SELECT language, name, description, updated_at FROM dbo.producttranslations WHERE product_id = $1 ORDER BY language",
+      [product.id]
+    )).rows;
+    res.json({ baseLanguage: product.language || "nl-NL", translations: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/:id/translations/:language", requireRole(...EDITOR_ROLES), validateBody(translationSchema), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    const language = languageParam(req);
+    if (language === (product.language || "nl-NL")) {
+      throw new HttpError(400, "Dit is de basistaal van het product; wijzig de teksten op het tabblad Basisinformatie.");
+    }
+    const pool = await require("../config/db").getPool();
+    const row = (await pool.query(
+      `INSERT INTO dbo.producttranslations (product_id, language, name, description)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (product_id, language) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, updated_at = now()
+       RETURNING language, name, description, updated_at`,
+      [product.id, language, req.body.name ?? null, req.body.description ?? null]
+    )).rows[0];
+    await logAuditFromReq(req, { companyId: product.company_id, action: "update", entityType: "Product", entityId: product.id, metadata: { translation: language } });
+    res.json(row);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:id/translations/:language", requireRole(...EDITOR_ROLES), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    const language = languageParam(req);
+    const pool = await require("../config/db").getPool();
+    const result = await pool.query("DELETE FROM dbo.producttranslations WHERE product_id = $1 AND language = $2", [product.id, language]);
+    if (!result.rowCount) throw new HttpError(404, "Niet gevonden");
+    await logAuditFromReq(req, { companyId: product.company_id, action: "update", entityType: "Product", entityId: product.id, metadata: { translationRemoved: language } });
+    res.json({ removed: language });
   } catch (error) {
     next(error);
   }

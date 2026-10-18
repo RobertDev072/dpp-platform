@@ -12,6 +12,9 @@
 
 const APP_PREFIXES = ["/login", "/admin", "/company", "/partner", "/activate", "/wachtwoord-vergeten"];
 const SHARED_PREFIXES = ["/api/", "/_next/", "/brand/"];
+// Op het QR-domein thuis: paspoorten, GS1 Digital Links (/01/{gtin}...) en de
+// DPP-vocabulaire waar dictionaryReference-links naar wijzen.
+const QR_PREFIXES = ["/p", "/01", "/vocab"];
 const SHARED_FILES = ["/favicon.ico", "/icon.png", "/robots.txt"];
 
 function readDomainConfig(env = process.env) {
@@ -44,7 +47,7 @@ function routeDomain({ host, path, search = "" }, config) {
   if (site && siteDomains.includes(h) && h !== site) return to(301, site, path);
 
   // Paspoorten horen op het QR-domein (gedrukte codes wijzen daar altijd al naar).
-  if (path.startsWith("/p/") && h !== qr) return to(301, qr, path);
+  if (startsWithAny(path, QR_PREFIXES) && h !== qr) return to(301, qr, path);
 
   if (site && h === site) {
     return startsWithAny(path, APP_PREFIXES) ? to(302, app, path) : null;
@@ -53,7 +56,7 @@ function routeDomain({ host, path, search = "" }, config) {
     return path === "/" ? to(302, app, "/login") : null;
   }
   if (h === qr) {
-    if (path.startsWith("/p/")) return null;
+    if (startsWithAny(path, QR_PREFIXES)) return null;
     if (startsWithAny(path, APP_PREFIXES)) return to(302, app, path);
     return to(302, home, path === "/" && home === app ? "/login" : path);
   }

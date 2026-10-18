@@ -244,7 +244,7 @@ async function writeSnapshot(publicId) {
   const snapshot = passport.snapshotFromData(product, data);
   const id = String(product.public_id).toUpperCase();
   const view = passport.toPublicPageView(snapshot, { urlPublicId: id });
-  const json = passport.toDppJson(snapshot, { qrBaseUrl: qrBaseUrl() });
+  const json = passport.toDppJson(snapshot, { qrBaseUrl: qrBaseUrl(), lastUpdated: product.updated_at });
   const photoKey = product.photo_thumb_blob_name || product.photo_blob_name || null;
   const companyRow = (await (await getPool()).query("SELECT logo, logo_blob_name FROM dbo.companies WHERE id = $1", [product.company_id])).rows[0];
 

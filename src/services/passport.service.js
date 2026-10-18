@@ -10,11 +10,18 @@
 
 const crypto = require("crypto");
 const { getPool } = require("../config/db");
+const gs1 = require("../utils/gs1");
 
-const SNAPSHOT_SCHEMA_VERSION = 1;
+// 2: marktdeelnemer-id, vestiging, inhoudsspecificaties, taal en vertalingen.
+const SNAPSHOT_SCHEMA_VERSION = 2;
+
+// Versie van de machineleesbare DPP-structuur (header + dataElements), los van de
+// interne snapshotversie. Beschreven in docs/dpp-datamodel.md en /api/v1/schema/dpp.json.
+const DPP_SCHEMA_VERSION = "1.0.0";
 
 const PRODUCT_COLUMNS = `id, company_id, name, brand, model, sku, gtin, category_label, description,
-  manufacturer, country_of_origin, photo_url, photo_blob_name, status, highlights, public_id, published_at`;
+  manufacturer, country_of_origin, photo_url, photo_blob_name, status, highlights, public_id, published_at,
+  facility_id, content_specification_ids, language`;
 
 // Alle reads voor één snapshot lopen via één executor (query(text, values)): een
 // transactie-client tijdens het archiveren, anders de pool. Zo houdt het archiveren
@@ -35,9 +42,12 @@ async function loadPassportData(product, db) {
   const documents = await one(`SELECT id, type, title, language, storage_url, blob_name, file_size, mime_type,
       is_public, category, valid_until, version
     FROM dbo.documents WHERE product_id = $1 ORDER BY id`);
-  const company = (await executor.query("SELECT name, (logo IS NOT NULL OR logo_blob_name IS NOT NULL) AS has_logo, left(md5(COALESCE(logo_blob_name, logo, '')), 10) AS logo_version FROM dbo.companies WHERE id = $1", [product.company_id]))
+  const translations = await one(
+    "SELECT language, name, description FROM dbo.producttranslations WHERE product_id = $1 ORDER BY language"
+  );
+  const company = (await executor.query("SELECT name, economic_operator_id, economic_operator_id_scheme, (logo IS NOT NULL OR logo_blob_name IS NOT NULL) AS has_logo, left(md5(COALESCE(logo_blob_name, logo, '')), 10) AS logo_version FROM dbo.companies WHERE id = $1", [product.company_id]))
     .rows[0] || null;
-  return { sustainability, compliance, parts, documents, company };
+  return { sustainability, compliance, parts, documents, company, translations };
 }
 
 async function loadProduct(productId, db) {
@@ -75,13 +85,17 @@ async function buildSnapshot(product, db) {
   return snapshotFromData(product, await loadPassportData(product, db));
 }
 
-function snapshotFromData(product, { sustainability, compliance, parts, documents, company }) {
+function snapshotFromData(product, { sustainability, compliance, parts, documents, company, translations = [] }) {
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     publicId: String(product.public_id).toLowerCase(),
     status: product.status,
     publishedAt: isoOrNull(product.published_at),
-    issuer: { name: company ? company.name : null },
+    issuer: {
+      name: company ? company.name : null,
+      economicOperatorId: company?.economic_operator_id ?? null,
+      economicOperatorIdScheme: company?.economic_operator_id_scheme ?? null
+    },
     product: {
       name: product.name,
       brand: product.brand ?? null,
@@ -93,6 +107,10 @@ function snapshotFromData(product, { sustainability, compliance, parts, document
       manufacturer: product.manufacturer ?? null,
       countryOfOrigin: product.country_of_origin ?? null,
       highlights: parseJsonArray(product.highlights),
+      language: product.language || "nl-NL",
+      facilityId: product.facility_id ?? null,
+      contentSpecificationIds: parseJsonArray(product.content_specification_ids),
+      translations: translations.map((t) => ({ language: t.language, name: t.name ?? null, description: t.description ?? null })),
       photo: product.photo_blob_name
         ? { objectName: product.photo_blob_name }
         : product.photo_url
@@ -242,20 +260,121 @@ function toPublicPageView(snapshot, { urlPublicId, issuerLogo = null, photoUrl =
 
 // Machineleesbare DPP-representatie (JSON). Alleen openbare gegevens; interne id's
 // (bedrijf, gebruiker, objectnamen in de opslag) komen er nooit in.
-function toDppJson(snapshot, { qrBaseUrl, version = null }) {
+// Woordenboekverwijzingen per dataveld: schema.org of GS1 waar die eenduidig zijn,
+// anders de gepubliceerde VeriPasso-vocabulaire (/vocab/dpp). Units volgens UN/CEFACT
+// Rec. 20 waar van toepassing.
+const DATA_ELEMENTS = [
+  { id: "product.name", ref: "https://schema.org/name", get: (s) => s.product.name, multi: "name" },
+  { id: "product.description", ref: "https://schema.org/description", get: (s) => s.product.description, multi: "description" },
+  { id: "product.brand", ref: "https://schema.org/brand", get: (s) => s.product.brand },
+  { id: "product.model", ref: "https://schema.org/model", get: (s) => s.product.model },
+  { id: "product.category", ref: "https://schema.org/category", get: (s) => s.product.categoryLabel },
+  { id: "product.manufacturer", ref: "https://schema.org/manufacturer", get: (s) => s.product.manufacturer },
+  { id: "product.countryOfOrigin", ref: "https://schema.org/countryOfOrigin", get: (s) => s.product.countryOfOrigin },
+  { id: "product.gtin", ref: "https://gs1.org/voc/gtin", get: (s) => s.product.gtin },
+  { id: "product.sku", ref: "https://schema.org/sku", get: (s) => s.product.sku },
+  { id: "sustainability.co2FootprintKg", vocab: "co2FootprintKg", unit: "KGM", get: (s) => s.sustainability?.co2FootprintKg },
+  { id: "sustainability.co2ReductionPct", vocab: "co2ReductionPct", unit: "P1", get: (s) => s.sustainability?.co2ReductionPct },
+  { id: "sustainability.recycledMaterialPct", vocab: "recycledMaterialPct", unit: "P1", get: (s) => s.sustainability?.recycledMaterialPct },
+  { id: "sustainability.materials", vocab: "materials", get: (s) => s.sustainability?.materials },
+  { id: "sustainability.recyclable", vocab: "recyclable", get: (s) => s.sustainability?.recyclable },
+  { id: "sustainability.reachConform", vocab: "reachConform", get: (s) => s.sustainability?.reachConform },
+  { id: "sustainability.rohsConform", vocab: "rohsConform", get: (s) => s.sustainability?.rohsConform },
+  { id: "sustainability.expectedLifespanYears", vocab: "expectedLifespanYears", unit: "ANN", get: (s) => s.sustainability?.expectedLifespanYears },
+  { id: "sustainability.epdUrl", vocab: "epdUrl", get: (s) => s.sustainability?.epdUrl },
+  { id: "compliance.ceMarked", vocab: "ceMarked", get: (s) => s.compliance?.ceMarked },
+  { id: "compliance.applicableRegulations", vocab: "applicableRegulations", get: (s) => s.compliance?.applicableRegulations }
+];
+
+function isEmpty(value) {
+  return value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
+}
+
+// Meertalige waarde: de basistekst in de taal van het product plus alle vertalingen.
+function multiLanguage(snapshot, field) {
+  const p = snapshot.product;
+  const values = [];
+  if (!isEmpty(p[field])) values.push({ language: p.language || "nl-NL", value: p[field] });
+  for (const t of p.translations || []) {
+    if (!isEmpty(t[field]) && t.language !== (p.language || "nl-NL")) values.push({ language: t.language, value: t[field] });
+  }
+  return values;
+}
+
+function dataElements(snapshot, qrBaseUrl) {
+  const out = [];
+  for (const el of DATA_ELEMENTS) {
+    const value = el.get(snapshot);
+    if (isEmpty(value)) continue;
+    const element = {
+      elementId: el.id,
+      dictionaryReference: el.ref || `${qrBaseUrl}/vocab/dpp#${el.vocab}`
+    };
+    if (el.multi && (snapshot.product.translations || []).length) {
+      element.type = "MultiLanguageDataElement";
+      element.value = multiLanguage(snapshot, el.multi);
+    } else {
+      element.type = "DataElement";
+      element.value = value;
+    }
+    if (el.unit) element.unitCode = el.unit;
+    out.push(element);
+  }
+  return out;
+}
+
+const DPP_STATUS = { published: "Active", archived: "Archived" };
+
+// Header met de identificatie van het paspoort. `instance` = een batch- of
+// itempaspoort (zelfde productgegevens, eigen DPP-id en eigen productidentificatie).
+function dppHeader(snapshot, { qrBaseUrl, lastUpdated = null, instance = null }) {
+  const p = snapshot.product;
+  const dppId = instance?.publicId || snapshot.publicId;
+  const granularity = instance?.granularity || "model";
+  const link = gs1.digitalLink({ gtin: p.gtin, lot: instance?.lotNumber, serial: instance?.serialNumber });
+  return {
+    digitalProductPassportId: `urn:uuid:${dppId}`,
+    uniqueProductIdentifier: link || `urn:uuid:${dppId}`,
+    granularity,
+    dppSchemaVersion: DPP_SCHEMA_VERSION,
+    dppStatus: DPP_STATUS[snapshot.status] || "Active",
+    lastUpdated: isoOrNull(lastUpdated) || snapshot.publishedAt,
+    economicOperatorId: snapshot.issuer?.economicOperatorId ?? null,
+    economicOperatorIdScheme: snapshot.issuer?.economicOperatorIdScheme ?? null,
+    facilityId: p.facilityId ?? null,
+    contentSpecificationIds: p.contentSpecificationIds || [],
+    language: p.language || "nl-NL"
+  };
+}
+
+function toDppJson(snapshot, { qrBaseUrl, version = null, lastUpdated = null, instance = null }) {
   const publicId = snapshot.publicId;
-  const passportUrl = passportBaseUrl(qrBaseUrl, publicId);
+  const dppPublicId = instance?.publicId || publicId;
+  const passportUrl = passportBaseUrl(qrBaseUrl, dppPublicId);
   const p = snapshot.product;
   const absolute = (url) => (url && url.startsWith("/") ? `${qrBaseUrl}${url}` : url);
+  const gs1Path = gs1.digitalLinkPath({ gtin: p.gtin, lot: instance?.lotNumber, serial: instance?.serialNumber });
+  const publicDocuments = snapshot.documents.filter((d) => d.isPublic);
+  const docUrl = (d) => absolute(documentUrl(publicId, d, version && !version.isCurrent ? version.versionNumber : null));
   return {
+    ...dppHeader(snapshot, { qrBaseUrl, lastUpdated: lastUpdated || version?.createdAt, instance }),
     id: passportUrl,
     identifiers: {
-      passportId: publicId,
-      urn: `urn:uuid:${publicId}`,
+      passportId: dppPublicId,
+      urn: `urn:uuid:${dppPublicId}`,
       gtin: p.gtin,
-      sku: p.sku
+      sku: p.sku,
+      gs1DigitalLink: gs1Path ? `https://id.gs1.org${gs1Path}` : null,
+      ...(instance
+        ? {
+            modelPassportId: publicId,
+            modelPassport: passportBaseUrl(qrBaseUrl, publicId),
+            lotNumber: instance.lotNumber ?? null,
+            serialNumber: instance.serialNumber ?? null
+          }
+        : {})
     },
-    passportGranularity: "model",
+    passportGranularity: instance?.granularity || "model",
     status: snapshot.status,
     publishedAt: snapshot.publishedAt,
     version: version
@@ -267,7 +386,11 @@ function toDppJson(snapshot, { qrBaseUrl, version = null }) {
           history: `${qrBaseUrl}/api/dpp/${publicId}/versions`
         }
       : null,
-    issuer: { name: snapshot.issuer?.name ?? null },
+    issuer: {
+      name: snapshot.issuer?.name ?? null,
+      economicOperatorId: snapshot.issuer?.economicOperatorId ?? null,
+      economicOperatorIdScheme: snapshot.issuer?.economicOperatorIdScheme ?? null
+    },
     product: {
       name: p.name,
       brand: p.brand,
@@ -277,24 +400,35 @@ function toDppJson(snapshot, { qrBaseUrl, version = null }) {
       manufacturer: p.manufacturer,
       countryOfOrigin: p.countryOfOrigin,
       highlights: p.highlights,
-      image: p.photo ? `${qrBaseUrl}/api/public/products/${publicId}/photo` : null
+      image: p.photo ? `${qrBaseUrl}/api/public/products/${publicId}/photo` : null,
+      language: p.language || "nl-NL",
+      nameMultiLanguage: multiLanguage(snapshot, "name"),
+      descriptionMultiLanguage: multiLanguage(snapshot, "description")
     },
     sustainability: snapshot.sustainability,
     compliance: snapshot.compliance,
     parts: snapshot.parts.map(({ id, ...rest }) => ({ ...rest })),
-    documents: snapshot.documents
-      .filter((d) => d.isPublic)
-      .map((d) => ({
-        title: d.title,
-        type: d.type,
-        category: d.category,
-        language: d.language,
-        mimeType: d.mimeType,
-        fileSize: d.fileSize,
-        validUntil: d.validUntil,
-        version: d.version,
-        url: absolute(documentUrl(publicId, d, version && !version.isCurrent ? version.versionNumber : null))
-      }))
+    documents: publicDocuments.map((d) => ({
+      title: d.title,
+      type: d.type,
+      category: d.category,
+      language: d.language,
+      mimeType: d.mimeType,
+      fileSize: d.fileSize,
+      validUntil: d.validUntil,
+      version: d.version,
+      url: docUrl(d)
+    })),
+    // Zelfde documenten in de vorm RelatedResource (titel, soort, MIME-type, download-URL).
+    relatedResources: publicDocuments.map((d) => ({
+      resourceType: d.category || d.type || "document",
+      title: d.title,
+      mimeType: d.mimeType,
+      language: d.language,
+      url: docUrl(d),
+      validUntil: d.validUntil
+    })),
+    dataElements: dataElements(snapshot, qrBaseUrl)
   };
 }
 
@@ -370,6 +504,8 @@ function toDppXml(snapshot, options) {
 
 module.exports = {
   SNAPSHOT_SCHEMA_VERSION,
+  DPP_SCHEMA_VERSION,
+  DATA_ELEMENTS,
   loadProduct,
   loadPassportData,
   buildSnapshot,

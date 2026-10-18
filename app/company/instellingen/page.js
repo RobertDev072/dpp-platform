@@ -9,6 +9,7 @@ import SubmitButton from "@/components/ui/SubmitButton";
 import FormError from "@/components/ui/FormError";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
+import OperatorIdCard from "@/components/company/OperatorIdCard";
 
 // De backend accepteert een data-URI van max ~200KB; na verkleinen naar 256px
 // past vrijwel elk logo daar ruim binnen.
@@ -271,6 +272,8 @@ export default function InstellingenPage() {
           <SubmitButton loading={saving}>Opslaan</SubmitButton>
         </form>
       </Card>
+
+      {company && <OperatorIdCard company={company} />}
     </div>
   );
 }

@@ -19,6 +19,8 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import NumberField from "@/components/products/NumberField";
 import DocumentsTab from "@/components/products/DocumentsTab";
+import Select from "@/components/ui/Select";
+import TranslationsCard, { LANGUAGE_OPTIONS, parseSpecList } from "@/components/products/TranslationsCard";
 import ProductCompleteness from "@/components/products/ProductCompleteness";
 import { missingItems } from "@/lib/completeness";
 import {
@@ -314,7 +316,10 @@ function BasisTab({ product, onSaved }) {
       manufacturer: product.manufacturer || "",
       countryOfOrigin: product.country_of_origin || "",
       description: product.description || "",
-      photoUrl: product.photo_url || ""
+      photoUrl: product.photo_url || "",
+      language: product.language || "nl-NL",
+      facilityId: product.facility_id || "",
+      contentSpecificationIds: parseSpecList(product.content_specification_ids).join("\n")
     },
     validators: {
       name: (value) => (String(value || "").trim() ? null : "Vul een productnaam in"),
@@ -334,8 +339,16 @@ function BasisTab({ product, onSaved }) {
     if (!form.validateAll()) return;
     setSaving(true);
     try {
-      const { gtin, ...rest } = form.values;
-      await api.patch(`/api/products/${product.id}`, { ...rest, gtin: gtin.replace(/[\s-]/g, "") });
+      const { gtin, contentSpecificationIds, facilityId, ...rest } = form.values;
+      await api.patch(`/api/products/${product.id}`, {
+        ...rest,
+        gtin: gtin.replace(/[\s-]/g, ""),
+        facilityId: facilityId.trim() || null,
+        contentSpecificationIds: contentSpecificationIds
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+      });
       toast.success("Gegevens opgeslagen");
       await onSaved();
     } catch (err) {
@@ -407,8 +420,43 @@ function BasisTab({ product, onSaved }) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {field("manufacturer", "Fabrikant", { maxLength: 200 })}
           {field("countryOfOrigin", "Land van oorsprong", { maxLength: 100 })}
+          {field("facilityId", "Productielocatie (bijv. GLN)", { maxLength: 100, placeholder: "Optioneel" })}
         </div>
       </Card>
+
+      <Card className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Paspoortgegevens (EU)</h2>
+          <p className="text-xs text-slate-500">
+            Taal van de teksten hierboven en de wetgeving of normen waarvoor dit paspoort is opgesteld.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Select
+            label="Taal van de basisteksten"
+            name="language"
+            options={LANGUAGE_OPTIONS}
+            value={form.values.language}
+            onChange={(e) => form.setValue("language", e.target.value)}
+          />
+          <div className="sm:col-span-2">
+            <label htmlFor="contentSpecificationIds" className="block text-sm font-medium text-slate-700">
+              Toepasselijke wetgeving en normen
+            </label>
+            <textarea
+              id="contentSpecificationIds"
+              name="contentSpecificationIds"
+              value={form.values.contentSpecificationIds}
+              onChange={(e) => form.setValue("contentSpecificationIds", e.target.value)}
+              rows={3}
+              placeholder={"Eén per regel, bijv.\nVerordening (EU) 2024/1781\nEN 18223:2026"}
+              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+            />
+          </div>
+        </div>
+      </Card>
+
+      <TranslationsCard productId={product.id} baseLanguage={product.language || "nl-NL"} onSaved={onSaved} />
 
       <Card>
         <ProductPhotoField

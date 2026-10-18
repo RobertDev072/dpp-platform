@@ -44,8 +44,8 @@ function negotiate(req) {
   return "json";
 }
 
-function send(res, format, snapshot, { qrBaseUrl, version, immutable }) {
-  const options = { qrBaseUrl, version };
+function send(res, format, snapshot, { qrBaseUrl, version, immutable, lastUpdated = null, instance = null }) {
+  const options = { qrBaseUrl, version, lastUpdated, instance };
   res.vary("Accept");
   res.set("Cache-Control", immutable ? "public, max-age=86400, immutable" : "public, max-age=60");
   res.set("Link", `<${qrBaseUrl}/p/${snapshot.publicId.toUpperCase()}>; rel="canonical"`);
@@ -133,7 +133,8 @@ router.get("/:publicId", async (req, res, next) => {
     send(res, format, snapshot, {
       qrBaseUrl: getQrBaseUrl(req),
       version: isCurrent ? versionMeta(latest, true) : null,
-      immutable: false
+      immutable: false,
+      lastUpdated: product.updated_at
     });
   } catch (error) {
     next(error);
