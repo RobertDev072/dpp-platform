@@ -94,6 +94,49 @@ export default function InstancesTab({ product }) {
 
   return (
     <div className="space-y-4">
+      <details className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
+        <summary className="cursor-pointer font-semibold text-slate-900">Hoe werken batches en exemplaren?</summary>
+        <div className="mt-3 space-y-3">
+          <p>
+            Dit product heeft al één paspoort met één QR-code: het <b>modelpaspoort</b>. Dat geldt voor álle exemplaren van dit
+            product. Soms wil je specifieker zijn:
+          </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              <b>Batch</b>: een productieronde (lot), bijv. alles wat op 15 oktober is gemaakt. Handig bij terugroepacties,
+              kwaliteitscontrole of als materialen per productieronde verschillen.
+            </li>
+            <li>
+              <b>Exemplaar</b>: één individueel product met een eigen serienummer. Handig voor garantie, reparatie,
+              onderhoudshistorie, tweedehands verkoop of dure producten (fietsen, machines, accu's).
+            </li>
+          </ul>
+          <p>
+            Elke batch en elk exemplaar krijgt een <b>eigen QR-code</b> die nooit verandert. Wie die scant, ziet hetzelfde paspoort
+            als het model, plus het serienummer, het lotnummer en de productiedatum. Wijzig je het product, dan zijn alle
+            batches en exemplaren automatisch bijgewerkt.
+          </p>
+          <p className="font-medium text-slate-900">Zo gebruik je het:</p>
+          <ol className="list-decimal space-y-1 pl-5">
+            <li>Publiceer het product (anders werken de codes nog niet).</li>
+            <li>Voeg eventueel een batch toe met lotnummer, productiedatum en aantal.</li>
+            <li>
+              Maak exemplaren aan: laat VeriPasso nummeren (bijv. voorvoegsel <code>SN-</code>, beginnen bij 1 → SN-00001,
+              SN-00002 …) of plak je eigen serienummers. Koppel ze aan een batch als dat van toepassing is.
+            </li>
+            <li>
+              Klik <b>Exporteren (CSV voor drukwerk)</b>: per regel het serienummer en de link voor de QR-code. Die geef je aan je
+              drukker of etiketprinter, die per exemplaar een unieke code print. Of download losse codes via “QR-code”.
+            </li>
+            <li>Plak of graveer de code op het juiste exemplaar.</li>
+          </ol>
+          <p className="text-xs text-slate-500">
+            Een exemplaar archiveren (bijv. gesloopt of teruggenomen) laat het paspoort raadpleegbaar; het krijgt de status
+            gearchiveerd. Serienummers zijn uniek per product: hetzelfde nummer twee keer aanmaken wordt overgeslagen.
+          </p>
+        </div>
+      </details>
+
       {notPublished && (
         <Card className="border-amber-200 bg-amber-50 text-sm text-amber-800">
           De QR-codes van batches en exemplaren werken pas als dit product gepubliceerd is.
