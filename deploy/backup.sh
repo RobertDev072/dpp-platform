@@ -8,6 +8,8 @@
 # Vereist: /root/.veripasso-backup-pass (wachtzin, chmod 600). Zonder die wachtzin
 # is een back-up niet terug te zetten: bewaar hem ook buiten de server.
 # Optioneel: rclone-remote "r2" (rclone config) en RCLONE_TARGET, bijv. r2:veripasso-backups/db
+# Optioneel: rclone-remote "hetzner" (Hetzner Storage Box, SFTP poort 23) voor de derde kopie,
+# volledig los van STRATO en Cloudflare. Zie docs/noodplan.md.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -42,11 +44,41 @@ fi
 
 find "$TARGET_DIR" -name 'veripasso-*.dump.gpg' -mtime +7 -delete
 
+# --- derde kopie: Hetzner Storage Box (andere partij, ander land) ---------------------------
+# Database-dump, versleutelde configuratie en ALLE bestanden uit R2 (foto's, documenten).
+# Alleen "copy" (nooit "sync"): wat in R2 verdwijnt, blijft op de Storage Box staan.
+# Daarnaast maakt Hetzner zelf dagelijkse snapshots die vanaf deze server niet te wissen zijn.
+THIRD=null
+THIRD_TARGET=${THIRD_TARGET:-hetzner:veripasso}
+# Elke stap expliciet met || return: "set -e" geldt niet binnen een if-voorwaarde.
+third_copy() {
+  local envfile="$TARGET_DIR/env-$STAMP.gpg" bucket
+  rclone copy "$FILE" "$THIRD_TARGET/db" || return 1
+  gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file "$PASSFILE" -o "$envfile" .env || return 1
+  rclone copy "$envfile" "$THIRD_TARGET/config" || { rm -f "$envfile"; return 1; }
+  rm -f "$envfile"
+  for bucket in ${THIRD_BUCKETS:-veripasso-images veripasso-documents}; do
+    rclone copy "r2:$bucket" "$THIRD_TARGET/files/$bucket" --transfers 8 || return 1
+  done
+  # Database-dumps en configuratie 30 dagen bewaren; bestanden blijven altijd staan.
+  rclone delete --min-age 30d "$THIRD_TARGET/db" || return 1
+  rclone delete --min-age 30d "$THIRD_TARGET/config" || return 1
+}
+if command -v rclone >/dev/null && rclone listremotes | grep -q "^${THIRD_TARGET%%:*}:"; then
+  if third_copy; then
+    THIRD=true
+    echo "$(date -u +%FT%TZ) derde kopie bijgewerkt: $THIRD_TARGET"
+  else
+    THIRD=false
+    echo "FOUT: derde kopie naar $THIRD_TARGET mislukt"
+  fi
+fi
+
 # Status voor de monitoring in de app (deploy/compose.yaml koppelt deze map alleen-lezen).
 STATUS_DIR=/var/lib/veripasso-status
 mkdir -p "$STATUS_DIR"
-printf '{"at":"%s","file":"%s","bytes":%s,"offsite":%s,"offsiteTarget":"%s","offsiteTotalBytes":%s}\n' \
-  "$(date -u +%FT%TZ)" "$(basename "$FILE")" "$(stat -c %s "$FILE")" "$OFFSITE" "$RCLONE_TARGET" "${OFFSITE_BYTES:-0}" \
+printf '{"at":"%s","file":"%s","bytes":%s,"offsite":%s,"offsiteTarget":"%s","offsiteTotalBytes":%s,"thirdCopy":%s,"thirdCopyTarget":"%s"}\n' \
+  "$(date -u +%FT%TZ)" "$(basename "$FILE")" "$(stat -c %s "$FILE")" "$OFFSITE" "$RCLONE_TARGET" "${OFFSITE_BYTES:-0}" "$THIRD" "$THIRD_TARGET" \
   > "$STATUS_DIR/last-backup.json.tmp"
 mv "$STATUS_DIR/last-backup.json.tmp" "$STATUS_DIR/last-backup.json"
 chmod 644 "$STATUS_DIR/last-backup.json"

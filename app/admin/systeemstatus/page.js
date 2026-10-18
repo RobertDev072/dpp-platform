@@ -1820,7 +1820,9 @@ export default function SysteemstatusPage() {
                   value={backup.ageHours != null ? `${formatNumber(backup.ageHours)} u` : null}
                   sub={
                     backup.at
-                      ? `${formatDateTime(backup.at)} · ${formatBytes(backup.sizeBytes)} · ${backup.offsite ? "kopie in R2" : "ALLEEN op de server"}`
+                      ? `${formatDateTime(backup.at)} · ${formatBytes(backup.sizeBytes)} · ${backup.offsite ? "kopie in R2" : "ALLEEN op de server"}${
+                          backup.thirdCopy === true ? " + Hetzner (incl. bestanden)" : backup.thirdCopy === false ? " · Hetzner-kopie MISLUKT" : ""
+                        }`
                       : null
                   }
                 />

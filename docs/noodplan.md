@@ -10,6 +10,7 @@ Wachtwoorden en sleutels staan **niet** hier, maar in het beveiligde gegevensdoc
 |---|---|---|
 | Database-back-ups | server: `/var/backups/veripasso/*.dump.gpg` | 7 dagen |
 | Database-back-ups (kopie) | Cloudflare R2: bucket `veripasso-backups`, map `db/` | onbeperkt (handmatig opruimen) |
+| **Derde kopie (alles)** | Hetzner Storage Box `u694623.your-storagebox.de` (Helsinki, SFTP poort 23), map `veripasso/`: `db/` (dumps), `config/` (versleutelde .env), `files/veripasso-images`, `files/veripasso-documents` | dumps en config 30 dagen; bestanden onbeperkt; plus 10 dagelijkse Hetzner-snapshots (niet te wissen vanaf de server) |
 | Status laatste back-up | server: `/var/lib/veripasso-status/last-backup.json` | — |
 | Back-uplog | server: `/var/log/veripasso-backup.log` | — |
 | Foto's en documenten | Cloudflare R2: `veripasso-images`, `veripasso-documents` | onbeperkt; staan niet op de server |
@@ -100,9 +101,30 @@ Bij een **hack**: daarnaast alle geheimen vervangen (databasewachtwoord, `COOKIE
 — iedereen moet opnieuw inloggen —, R2-sleutels, Cloudflare-tokens, SSH-sleutel). Let op:
 `MFA_ENCRYPTION_KEY` vervangen betekent dat iedereen MFA opnieuw moet instellen.
 
+### 5b. STRATO én Cloudflare kwijt (of het Cloudflare-account gekaapt)
+Alles staat ook op de Hetzner Storage Box. Herstel op een nieuwe server:
+1. Nieuwe VPS zoals in scenario 5, stap 1–2.
+2. SSH-sleutel voor de Storage Box: de oude staat op de oude server; maak anders een nieuwe
+   (`ssh-keygen -t ed25519 -f /root/.ssh/veripasso_backup_ed25519`) en voeg de publieke sleutel
+   toe in de Hetzner-console (Storage Box → SSH keys). Daarna:
+   `rclone config create hetzner sftp host=u694623.your-storagebox.de port=23 user=u694623 key_file=/root/.ssh/veripasso_backup_ed25519`
+3. Configuratie: `rclone copy hetzner:veripasso/config /tmp/cfg`, ontsleutelen met de wachtzin
+   (`gpg -d …`) naar `deploy/.env`.
+4. Database: laatste dump uit `hetzner:veripasso/db` en terugzetten (scenario 4, stap 3).
+5. Bestanden: nieuwe objectopslag (nieuw Cloudflare-account of andere S3-aanbieder),
+   `rclone copy hetzner:veripasso/files/veripasso-images <nieuw>:veripasso-images` (idem documenten),
+   en `S3_*` in `deploy/.env` aanpassen.
+6. DNS bij de nieuwe DNS-aanbieder naar het nieuwe IP; QR-domein `qr.veripasso.com` moet blijven
+   bestaan (gedrukte codes).
+Is de Storage Box zelf geleegd (hack): Hetzner-console → Snapshots → laatste goede snapshot
+terugzetten.
+
+Hersteltest vanaf Hetzner uitgevoerd op 2026-10-18: dump teruggezet in een tijdelijke database,
+alle tellingen gelijk aan live; configuratie identiek; bestanden gelijk aan R2.
+
 ### 6. Cloudflare R2 onbereikbaar
 De site werkt verder; alleen uploads, downloads en de back-upkopie falen tijdelijk.
-Back-ups blijven lokaal 7 dagen bewaard. Status: <https://www.cloudflarestatus.com>.
+Back-ups blijven lokaal 7 dagen bewaard en op de Hetzner Storage Box. Status: <https://www.cloudflarestatus.com>.
 
 ### 7. Certificaat verloopt of HTTPS-fout
 Caddy verlengt automatisch (poort 80 en 443 moeten open staan, DNS moet kloppen).

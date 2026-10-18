@@ -69,6 +69,8 @@ function checkBackup(file = process.env.BACKUP_STATUS_FILE) {
     let level = levelFor(ageHours, THRESHOLDS.backupAgeHours);
     // Een back-up die alleen op de server staat, beschermt niet tegen verlies van de server.
     if (level === "ok" && status.offsite === false) level = "warn";
+    // Derde kopie (Hetzner) ingesteld maar mislukt: waarschuwen.
+    if (level === "ok" && status.thirdCopy === false) level = "warn";
     return {
       level,
       at: at.toISOString(),
@@ -76,7 +78,9 @@ function checkBackup(file = process.env.BACKUP_STATUS_FILE) {
       sizeBytes: Number(status.bytes) || null,
       offsite: status.offsite === true,
       offsiteTarget: status.offsiteTarget || null,
-      offsiteTotalBytes: Number(status.offsiteTotalBytes) || null
+      offsiteTotalBytes: Number(status.offsiteTotalBytes) || null,
+      thirdCopy: status.thirdCopy === true ? true : status.thirdCopy === false ? false : null,
+      thirdCopyTarget: status.thirdCopyTarget || null
     };
   } catch (error) {
     return { level: "crit", reason: error.code === "ENOENT" ? "nog geen back-up gevonden" : error.message };
