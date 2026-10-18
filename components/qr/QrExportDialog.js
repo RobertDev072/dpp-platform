@@ -131,7 +131,7 @@ export default function QrExportDialog({ open, onClose, selection, count, initia
             <div className="grid gap-2 sm:grid-cols-2">
               {[
                 { key: "qr", label: "QR-code", help: "Standaard; elke telefoon leest hem." },
-                { key: "datamatrix", label: "Data Matrix", help: "Kleiner; voor kleine onderdelen en directe markering." }
+                { key: "datamatrix", label: "Data Matrix", help: "Kleiner; voor zakelijke scanners. Telefooncamera's openen hem meestal niet." }
               ].map((s) => (
                 <label key={s.key} className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${symbology === s.key ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500" : "border-slate-200 hover:border-slate-300"}`}>
                   <input type="radio" name="export-symbology" value={s.key} checked={symbology === s.key} onChange={() => setSymbology(s.key)} className="sr-only" />

@@ -963,7 +963,8 @@ function QrTab({ product, onChanged }) {
             <h3 className="text-sm font-semibold text-slate-900">Data Matrix</h3>
             <p className="text-sm text-slate-600">
               Kleiner dan een QR-code, voor kleine onderdelen of directe markering (laser, inkjet). Bevat dezelfde
-              permanente paspoortlink; gangbare telefooncamera's lezen hem.
+              permanente paspoortlink, maar is bedoeld voor zakelijke scanners: de gewone telefooncamera opent hem
+              meestal niet. Voor consumenten altijd de QR-code gebruiken.
             </p>
             <div className="flex flex-wrap gap-2">
               <ButtonLink href={`/api/products/${product.id}/datamatrix?format=png&size=1200&download=1`} size="sm" icon={DownloadIcon}>
@@ -988,7 +989,7 @@ function QrTab({ product, onChanged }) {
           <li>Zelf printen of stickers → PNG 1200 px (≈ 10 cm op 300 DPI)</li>
           <li>Website, e-mail of digitaal → PNG 512 px</li>
           <li>QR minimaal 2 × 2 cm drukken; de witte rand (4 modules) zit al in het bestand: niet wegsnijden</li>
-          <li>Klein product of directe markering → Data Matrix (vanaf ca. 1 × 1 cm)</li>
+          <li>Klein onderdeel of directe markering, gelezen met een zakelijke scanner → Data Matrix (vanaf ca. 1 × 1 cm); voor consumenten altijd QR</li>
           <li>Altijd een testscan doen vóór de oplage</li>
         </ul>
         {product.qr_status === "active" && (
