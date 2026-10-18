@@ -6,9 +6,9 @@ geïsoleerde omgeving; consumenten scannen een QR-code en zien het publieke
 productpaspoort zonder account. Systemen kunnen hetzelfde paspoort op dezelfde URL
 machineleesbaar opvragen (JSON, JSON-LD, XML).
 
-Laatst bijgewerkt: 2026-10-13. **Status: klaar voor één Linux-server (STRATO VPS
-Linux M, zie §7).** AWS, Supabase, Azure en Vercel worden niet meer gebruikt. De laatste
-versie met AWS-infrastructuur staat onder de git-tag `aws-laatste-versie`.
+Laatst bijgewerkt: 2026-10-18. **Status: live op één Linux-server (STRATO VPS Linux M,
+zie §7)**, met Cloudflare (DNS, Worker, R2) en een derde back-up bij Hetzner. AWS, Supabase,
+Azure en Vercel worden niet meer gebruikt (laatste AWS-versie: git-tag `aws-laatste-versie`).
 
 Domeinen (DNS bij Cloudflare):
 
@@ -18,7 +18,8 @@ Domeinen (DNS bij Cloudflare):
 | https://app.veripasso.com | de SaaS-applicatie (inloggen, dashboards, beheer) |
 | https://qr.veripasso.com | QR-scans en publieke productpaspoorten (permanent: staat op elke gedrukte code) |
 
-Infrastructuur en beheer: **[docs/hosting-strato.md](docs/hosting-strato.md)**, bij storingen **[docs/noodplan.md](docs/noodplan.md)**.
+**Hoe alles in elkaar zit: [docs/infrastructuur.md](docs/infrastructuur.md)**. Serverbeheer: [docs/hosting-strato.md](docs/hosting-strato.md), bij storingen **[docs/noodplan.md](docs/noodplan.md)**.
+DPP-datamodel: [docs/dpp-datamodel.md](docs/dpp-datamodel.md) · B2B-API: [docs/api-v1.md](docs/api-v1.md) · back-up-dienstverlener en EU-register: [docs/eu-register-en-backup.md](docs/eu-register-en-backup.md).
 Rollen en accounts: [docs/accounts.md](docs/accounts.md); QR-scans: [docs/scans.md](docs/scans.md); wettelijke compliance: [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md) (live op een
 STRATO-server sinds 2026-10-13). Verder: [compliance-matrix](docs/compliance/requirements-matrix.md),
 [Cloudflare vóór qr.veripasso.com](docs/cloudflare.md) (paspoortcache en gebundelde scans).
@@ -83,7 +84,7 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 - Producten per tenant met duurzaamheid, compliance, onderdelen, batches en documenten;
   compleetheid op 7 criteria; bulkacties en QR-downloads (PNG/SVG/ZIP). Importeren (Excel/CSV) en
   labels printen zijn verwijderd (2026-10-14); importeren komt eventueel terug in versie 2.
-- **Uploads** (foto's JPEG/PNG/WEBP/GIF ≤ 5 MB; documenten PDF/JPEG/PNG/SVG/WEBP ≤ 10 MB)
+- **Uploads** (foto's ≤ 15 MB, verkleind opgeslagen; documenten PDF/JPEG/PNG/SVG/WEBP ≤ 25 MB)
   gaan rechtstreeks van de browser naar **privé buckets in S3-compatibele opslag**
   (lokaal bijv. MinIO, later bijv. Cloudflare R2; zonder ingestelde opslag staan uploads uit):
   1. `POST /api/products/:id/{photo|documents}/upload-url`: rol, tenant, type en grootte
@@ -97,7 +98,10 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   versioning aan als tweede slot).
 - **QR**: formaat `{QR_BASE_URL}/p/{PUBLIC_ID}` met `QR_BASE_URL=https://qr.veripasso.com`.
   De GUID staat in **hoofdletters** (zo gedrukt in de Azure-tijd); opzoeken werkt
-  hoofdletterongevoelig. Elke QR identificeert een **productmodel**.
+  hoofdletterongevoelig. Een QR identificeert een **productmodel**, een **batch** of een
+  **exemplaar** (serienummer); elk heeft een eigen permanente id (tabblad "Batches &
+  exemplaren"). Vrije ruimte 4 modules (ISO/IEC 18004); ook **Data Matrix** (ISO/IEC 16022) en
+  **GS1 Digital Link** (`qr.veripasso.com/01/{GTIN}/10/{lot}/21/{serie}`, met resolver).
   `qr.veripasso.com` nooit weghalen of laten verlopen.
 - **Persistentie**: gepubliceerde paspoorten blijven publiek, ook na archiveren (met
   melding) en ongeacht licentie- of bedrijfsstatus. Een gepubliceerd paspoort kan niet
@@ -117,6 +121,14 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 - **Export voor replicatie/back-up-dienstverlener (EN 18221 §4.5)**:
   `GET /api/products/passports/export` (Company Admin; owner met `?companyId=`) levert
   NDJSON met alle paspoorten, de actuele stand en alle versies incl. hashes.
+- **DPP-header en interoperabiliteit**: `digitalProductPassportId`, `uniqueProductIdentifier`,
+  `granularity`, `dppSchemaVersion`, `dppStatus`, `lastUpdated`, `economicOperatorId` (LEI/GLN/
+  KvK/btw, per bedrijf), `facilityId`, `contentSpecificationIds`, meertalige naam/omschrijving,
+  `dataElements` met `dictionaryReference`, `relatedResources`. Zie docs/dpp-datamodel.md.
+- **B2B-API `/api/v1`** met API-sleutels per bedrijf (ReadDPPById, ReadDPPByProductId,
+  ReadDPPIdsByProductIds, CreateDPP, UpdateDPPById, DeleteDPPById, Read/UpdateDataElement,
+  RegisterProductDPP); OpenAPI op `/api/v1/openapi.json`. Zie docs/api-v1.md.
+- **Back-up-dienstverlener en EU-register**: gebouwd, staan uit tot er een partij/register is.
 - **Scans**: alleen echte QR-scans tellen (niet vanuit de app, geen refresh, geen bots;
   1× per apparaat per paspoort per 30 minuten; geen IP, niets op het apparaat). Zie docs/scans.md.
 
@@ -185,7 +197,9 @@ root-CA-bestand (`scripts/export-zscaler-ca.ps1`).
 
 **Live** sinds 2026-10-13. De app draait in Docker op één Linux-server: app +
 PostgreSQL 17 + Caddy (HTTPS, Let's Encrypt), zie [`deploy/`](deploy/). Bestanden in
-Cloudflare R2 (EU), back-ups elke nacht versleuteld naar R2, DNS bij Cloudflare. Alles over
+Cloudflare R2 (EU), DNS bij Cloudflare. Back-ups elke nacht versleuteld naar de server, R2 én
+een **Hetzner Storage Box** (Helsinki; database, configuratie en alle bestanden; met snapshots).
+Overzicht: **[docs/infrastructuur.md](docs/infrastructuur.md)**. Alles over
 de server, geheimen, beheer en herstel: **[docs/hosting-strato.md](docs/hosting-strato.md)**.
 
 - **Uitrollen**: `deploy/update.sh` op de server (code ophalen, image bouwen, herstarten;
@@ -270,11 +284,15 @@ docs/                     cloudflare, compliance-matrix, verificatie
 - [x] Platform Owner: MFA gekoppeld; back-up-wachtzin in de wachtwoordmanager.
 - [x] Capaciteitsmonitoring (schijf, geheugen, back-up, certificaten, R2) en noodplan (docs/noodplan.md).
 - [x] Zuinig op schaal: foto's verkleind (origineel niet bewaard), logo/profielfoto in R2, scans 1× per apparaat per 30 min en na 90 dagen alleen dagtotalen, noodkopie van elk paspoort in R2, Cloudflare Worker voor qr (docs/cloudflare.md). Labels printen verwijderd (QR-codes blijven downloadbaar als PNG/SVG/ZIP).
+- [x] Derde back-up bij Hetzner (database, configuratie, alle bestanden), hersteltest geslaagd (2026-10-18).
+- [x] TLS 1.0/1.1 uitgeschakeld op alle domeinen (2026-10-18).
 - [ ] Externe monitor (UptimeRobot) op /api/health en /api/health/capacity.
+- [ ] Back-up-dienstverlener voor paspoorten contracteren (koppeling klaar).
 - [ ] Loadtest.
 
 ### Product / later
-- [ ] Item-niveau-paspoorten (serienummers) als de productgroep dat vereist.
+- [x] Batch- en itempaspoorten, GS1 Digital Link, Data Matrix (2026-10-18).
+- [ ] NFC/RFID-export, IEC 61406-kader, meertaligheid voor alle tekstvelden.
 - [ ] Content-Security-Policy; aparte database-applicatierol met minimale rechten.
 - [ ] Scan-aggregatie per dag + bewaartermijn voor ruwe scans (na besluit over bewaren).
 - [ ] E-mailverzending voor uitnodigingen/wachtwoordherstel (eerst overleg).
