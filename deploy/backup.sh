@@ -67,9 +67,19 @@ third_copy() {
   gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file "$PASSFILE" -o "$envfile" .env || return 1
   rclone copy "$envfile" "$THIRD_TARGET/config" || { rm -f "$envfile"; return 1; }
   rm -f "$envfile"
+  # Bestanden versleuteld (rclone crypt; bestandsnamen ook): ook niet-openbare documenten
+  # zijn op de Storage Box onleesbaar. Sleutel = de back-up-wachtzin (geen extra geheim).
+  if ! rclone listremotes | grep -q "^hetzner-crypt:"; then
+    rclone config create hetzner-crypt crypt remote="$THIRD_TARGET/files-enc" \
+      password="$(rclone obscure "$(head -n1 "$PASSFILE")")" filename_encryption=standard directory_name_encryption=true >/dev/null || return 1
+  fi
   for bucket in ${THIRD_BUCKETS:-veripasso-images veripasso-documents}; do
-    rclone copy "r2:$bucket" "$THIRD_TARGET/files/$bucket" --transfers 8 || return 1
+    rclone copy "r2:$bucket" "hetzner-crypt:$bucket" --transfers 8 || return 1
   done
+  # Oude onversleutelde kopie (vóór 2026-10-19) opruimen zodra de versleutelde compleet is.
+  if rclone lsf "$THIRD_TARGET/files" >/dev/null 2>&1; then
+    rclone purge "$THIRD_TARGET/files" || return 1
+  fi
   # Database-dumps en configuratie 30 dagen bewaren; bestanden blijven altijd staan.
   rclone delete --min-age 30d "$THIRD_TARGET/db" || return 1
   rclone delete --min-age 30d "$THIRD_TARGET/config" || return 1

@@ -4,6 +4,43 @@ Wat te doen als iets misgaat. Server en beheer: [hosting-strato.md](hosting-stra
 Wachtwoorden en sleutels staan **niet** hier, maar in het beveiligde gegevensdocument
 (buiten deze repository).
 
+## Snel: wat ligt eruit en wat doe ik?
+
+Je krijgt een pushmelding (ntfy-app, kanaal uit het gegevensdocument) met de naam van wat
+eruit ligt. Daarnaast: <https://www.cloudflarestatus.com> en <https://www.strato-status.de>.
+
+| Melding / symptoom | Wat ligt eruit | QR-codes? | Wat doe je |
+|---|---|---|---|
+| "STORING: App" + "Website" | STRATO-server of de app | **werken** (noodkopie) | 15–30 min afwachten (vaak herstart of onderhoud). Inloggen kan? → scenario 1. Server/console onbereikbaar en STRATO-status meldt een storing, of na 1 uur nog plat → **noodherstel met één commando** (hieronder) |
+| "STORING: Database" (app wel) | database | werken (noodkopie) | scenario 4 |
+| "Capaciteit en back-ups" | schijf vol, back-up mislukt, certificaat | werken | Systeemstatus in de app; scenario 2 of back-uplog |
+| "BACK-UP MISLUKT" / "Derde back-up MISLUKT" | back-up (rest werkt) | werken | `/var/log/veripasso-backup.log`; morgen opnieuw controleren |
+| QR toont "tijdelijk niet beschikbaar" | server én Cloudflare R2 | **werken niet** | Cloudflare-status; bij langdurige R2-storing scenario 6 |
+| Hele domein onbereikbaar, geen meldingen | Cloudflare (DNS) | werken niet | <https://www.cloudflarestatus.com>; afwachten (zeldzaam, meestal kort) |
+| Data blijkt beschadigd of gewist | database | werken (oude versie) | scenario 4 (terugzetten van vóór het probleem) |
+
+### Noodherstel met één commando (STRATO onbereikbaar, ook de console)
+
+Op je eigen pc (Node en ssh nodig; bestanden uit het gegevensdocument in je gebruikersmap:
+`hetzner-token.txt`, `veripasso-storagebox.key`, `veripasso-backup-pass.txt` en voor de DNS
+`cloudflare-dns-token.txt`):
+
+```bash
+cd dpp-platform
+node scripts/noodherstel.mjs --live --switch-dns
+```
+
+Dat maakt een nieuwe server bij Hetzner Cloud (Helsinki, ca. € 7/maand), zet configuratie,
+database en app terug vanuit de Hetzner Storage Box, controleert alles (tellingen, hashketen,
+bestanden, een echt paspoort), schakelt HTTPS en de nachtelijke back-up in en zet de DNS van
+veripasso.com om. Duur: ca. 5–10 minuten; daarna nog enkele minuten voor DNS en certificaat.
+Foto's en documenten blijven uit Cloudflare R2 komen (die liggen niet op STRATO).
+Proef zonder gevolgen: `node scripts/noodherstel.mjs --test` (maakt, controleert en verwijdert
+een testserver). Getest: [verification/hersteltest-2026-10-19.md](verification/hersteltest-2026-10-19.md).
+
+Later terug naar STRATO (als die weer werkt): de nieuwste back-up van de Hetzner-server
+terugzetten op STRATO (scenario 4) en de DNS terugzetten.
+
 ## Waar staat wat
 
 | Wat | Waar | Bewaard |

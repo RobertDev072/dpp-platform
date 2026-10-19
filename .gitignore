@@ -13,3 +13,6 @@ manifest*.csv
 
 # Lokale ontwikkeldatabase (npm run db:local)
 .localdb/
+
+# Lokale verslagen van noodherstel (scripts/noodherstel.mjs)
+herstel-verslag-*.txt

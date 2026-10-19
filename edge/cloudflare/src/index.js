@@ -274,13 +274,29 @@ async function probe(check) {
   }
 }
 
+// JSON-publicatie (UTF-8-veilig, geen headerbeperkingen). Elke mislukte aflevering wordt
+// gelogd (Cloudflare-logboek), zodat een stille fout opvalt.
+const PRIORITY = { min: 1, low: 2, default: 3, high: 4, urgent: 5 };
 async function notify(env, { title, message, priority = "default", tags = "" }) {
-  if (!env.NTFY_TOPIC) return;
-  await fetch(`https://ntfy.sh/${env.NTFY_TOPIC}`, {
-    method: "POST",
-    headers: { Title: title, Priority: priority, Tags: tags },
-    body: message
-  }).catch(() => {});
+  if (!env.NTFY_TOPIC) {
+    console.error(JSON.stringify({ msg: "notify_skipped", reason: "NTFY_TOPIC ontbreekt", title }));
+    return false;
+  }
+  try {
+    const res = await fetch("https://ntfy.sh/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: env.NTFY_TOPIC, title, message, priority: PRIORITY[priority] || 3, tags: tags ? tags.split(",") : [] })
+    });
+    if (!res.ok) {
+      console.error(JSON.stringify({ msg: "notify_failed", status: res.status, body: (await res.text()).slice(0, 200), title }));
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ msg: "notify_failed", error: error.message, title }));
+    return false;
+  }
 }
 
 async function monitor(env, now = new Date()) {

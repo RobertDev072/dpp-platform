@@ -68,15 +68,18 @@ Geen e-mail, betalingen of analytics van derden. De paspoortpagina zet geen cook
 |---|---|---|---|
 | 1 | database (versleuteld, AES-256) | server `/var/backups/veripasso` | 7 dagen |
 | 2 | database (versleuteld) | Cloudflare R2 `veripasso-backups/db` | onbeperkt |
-| 3 | database + configuratie (beide versleuteld) + **alle foto's en documenten** | Hetzner Storage Box, Helsinki (SFTP poort 23, map `veripasso/`) | dumps en configuratie 30 dagen; bestanden onbeperkt; plus 10 dagelijkse snapshots |
+| 3 | database + configuratie + **alle foto's en documenten** (alles versleuteld; bestanden met rclone crypt, sleutel = back-up-wachtzin) | Hetzner Storage Box, Helsinki (SFTP poort 23, map `veripasso/`) | dumps en configuratie 30 dagen; bestanden onbeperkt; plus 10 dagelijkse snapshots |
 
 - Elke nacht 03:15 UTC (05:15 NL), ook vlak vóór elke uitrol.
 - Bestanden naar Hetzner met `rclone copy`: wat in R2 verdwijnt, blijft op Hetzner staan.
 - Hetzner-snapshots zijn vanaf de server **niet** te wissen: bescherming tegen een hack.
+- De back-up gebruikt een **beperkte R2-sleutel**: lezen van foto's/documenten, schrijven alleen in de back-upbucket.
+- **Bewaking**: Cloudflare Worker controleert elke 5 min app, database, website, noodkopieën en capaciteit; pushmelding via ntfy. backup.sh meldt elke fout ook direct.
+- **Noodherstel met één commando**: `node scripts/noodherstel.mjs --live --switch-dns` (nieuwe server bij Hetzner Cloud, alles terug uit de Storage Box, DNS om). Proef: `--test`.
 - Status in **Systeemstatus** (tegel "Laatste back-up"; waarschuwing als een kopie mislukt).
 - **Nodig om te herstellen**: de back-up-wachtzin (gegevensdocument) en toegang tot de opslag.
-- **Hersteltests**: 2026-10-13 (vanaf de server) en 2026-10-18 (vanaf Hetzner, alle tellingen
-  gelijk aan live). Elk kwartaal herhalen.
+- **Hersteltests**: 2026-10-13 (vanaf de server), 2026-10-18 (vanaf Hetzner) en **2026-10-19: volledig
+  op een nieuwe server zonder STRATO, in 3 minuten, alles gelijk aan live** ([verslag](verification/hersteltest-2026-10-19.md)). Elk kwartaal herhalen.
 - Maximaal dataverlies (RPO): 1 dag. Hersteltijd (RTO): enkele uren op een nieuwe server.
   (Nog vast te leggen als afspraak met klanten.)
 
@@ -113,7 +116,7 @@ Scenario's (server weg, database kapot, STRATO én Cloudflare weg, hack): [noodp
 
 ## 8. Wat nog ontbreekt (infra)
 
-- Externe uptime-monitor met melding (bijv. UptimeRobot) op `/api/health`.
+- Pushmeldingen betrouwbaar maken: ntfy-account met token (zonder account weigert ntfy berichten vanaf Cloudflare).
 - Afspraken RPO/RTO vastleggen; hersteltest elk kwartaal inplannen.
 - Back-up-dienstverlener voor paspoorten (gebouwd, staat uit tot er een partij is; zie
   [eu-register-en-backup.md](eu-register-en-backup.md)).

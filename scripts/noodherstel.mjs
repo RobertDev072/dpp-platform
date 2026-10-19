@@ -128,9 +128,20 @@ async function main() {
       say(`DNS omgezet naar ${ip} (IPv6-records van de oude server verwijderd). Binnen enkele minuten actief.`);
     }
     if (MODE === "test" && !KEEP) {
-      say("Testserver verwijderen");
+      say("Testserver verwijderen (inclusief IP-adressen)");
+      const ipIds = [created.server.public_net.ipv4?.id, created.server.public_net.ipv6?.id].filter(Boolean);
       await hcloud("DELETE", `/servers/${serverId}`);
       serverId = null;
+      // IP-adressen komen kort na het verwijderen vrij; blijven ze staan, dan alsnog weg
+      // (anders kosten ze een paar cent per dag).
+      for (let i = 0; i < 12 && ipIds.length; i += 1) {
+        await new Promise((r) => setTimeout(r, 5000));
+        for (const id of [...ipIds]) {
+          const res = await fetch(`https://api.hetzner.cloud/v1/primary_ips/${id}`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+          if (res.status === 404) ipIds.splice(ipIds.indexOf(id), 1);
+          else if ((await res.json()).primary_ip?.assignee_id == null) await hcloud("DELETE", `/primary_ips/${id}`).catch(() => {});
+        }
+      }
     } else {
       // Beheersleutel bewaren: zonder deze kun je niet inloggen op de nieuwe server.
       const keep = path.join(home, `${name}.key`);

@@ -41,6 +41,9 @@ systemctl enable --now docker >/dev/null
 log "2/7 Verbinding met de Hetzner Storage Box"
 rclone config create hetzner sftp host="${STORAGEBOX#*@}" port=23 user="${STORAGEBOX%@*}" key_file="$KEY" >/dev/null
 rclone lsf hetzner:veripasso/ >/dev/null
+# Versleutelde bestanden (foto's, documenten): zelfde sleutel als de back-ups.
+rclone config create hetzner-crypt crypt remote=hetzner:veripasso/files-enc \
+  password="$(rclone obscure "$(head -n1 "$PASSFILE")")" filename_encryption=standard directory_name_encryption=true >/dev/null
 
 log "3/7 Code ophalen ($REPO)"
 rm -rf "$DIR" && git clone -q --depth 1 "$REPO" "$DIR"
@@ -88,9 +91,15 @@ console.log('    hashketen: '+(ids.length-bad)+' van '+ids.length+' paspoorten g
 LIST=$(mktemp)
 SQL "SELECT 'veripasso-images/'||photo_blob_name FROM dbo.products WHERE photo_blob_name IS NOT NULL UNION ALL SELECT 'veripasso-images/'||photo_thumb_blob_name FROM dbo.products WHERE photo_thumb_blob_name IS NOT NULL UNION ALL SELECT 'veripasso-documents/'||blob_name FROM dbo.documents WHERE blob_name IS NOT NULL" > "$LIST"
 TOTAL=$(grep -c . "$LIST" || true); MISSING=0
-while read -r f; do [ -n "$f" ] || continue; rclone lsf "hetzner:veripasso/files/$f" >/dev/null 2>&1 && [ -n "$(rclone lsf "hetzner:veripasso/files/$f")" ] || MISSING=$((MISSING+1)); done < "$LIST"
+while read -r f; do [ -n "$f" ] || continue; [ -n "$(rclone lsf "hetzner-crypt:$f" 2>/dev/null)" ] || MISSING=$((MISSING+1)); done < "$LIST"
 rm -f "$LIST"
 log "    bestanden: $((TOTAL-MISSING)) van $TOTAL waar de database naar verwijst staan op Hetzner"
+# Een echt paspoort opvragen bij de herstelde app (zoals een scanner of extern systeem).
+PID=$(SQL "SELECT public_id FROM dbo.products WHERE status='published' ORDER BY id LIMIT 1")
+if [ -n "$PID" ]; then
+  OUT=$(docker compose exec -T app node -e "fetch('http://127.0.0.1:3000/api/dpp/$PID',{headers:{Accept:'application/json'}}).then(r=>r.json()).then(j=>console.log(j.digitalProductPassportId+' · '+j.product.name+' · '+j.dataElements.length+' velden'))" 2>/dev/null || echo "MISLUKT")
+  log "    paspoort opgevraagd: $OUT"
+fi
 
 if [ "$MODE" = live ]; then
   log "Nachtelijke back-up en HTTPS inschakelen"
