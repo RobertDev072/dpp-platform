@@ -3,9 +3,10 @@
 // waarin je alleen nog dubbelklikt. Bevat Node.js (portable), de herstelscripts en .bat-bestanden.
 //
 //   node scripts/maak-noodpakket.mjs --node <pad naar node.exe> --out <map>
-//   node scripts/maak-noodpakket.mjs ... --met-sleutels    kopieert ook de sleutelbestanden uit je
-//                                                           gebruikersmap (draai dit ZELF; het resultaat
-//                                                           is zo geheim als het gegevensdocument)
+//   node scripts/maak-noodpakket.mjs ... --met-sleutels [--sleutels <map>]
+//        kopieert ook de sleutelbestanden: uit <map> (bijv. de map "sleutels" van een uitgepakt
+//        noodpakket) of anders uit je gebruikersmap. Het resultaat is zo geheim als het gegevensdocument.
+// Standaard komt het pakket in DocumentsVeriPasso (één vaste plek voor alle VeriPasso-documenten).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,7 +16,8 @@ import { fileURLToPath } from "node:url";
 const args = process.argv.slice(2);
 const opt = (n, f) => (args.includes(n) ? args[args.indexOf(n) + 1] : f);
 const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const out = opt("--out", path.join(os.homedir(), "Documents", "VeriPasso-Noodpakket"));
+const out = opt("--out", path.join(os.homedir(), "Documents", "VeriPasso", "VeriPasso-Noodpakket"));
+const keySource = opt("--sleutels", null);
 const nodeExe = opt("--node", process.execPath);
 const KEY_FILES = [
   ["strato_ed25519", ".ssh/id_ed25519", "SSH-sleutel van de STRATO-server (gegevensdocument hoofdstuk 3)"],
@@ -95,7 +97,8 @@ fs.writeFileSync(path.join(out, "LEES-MIJ.txt"), readme.replace(/\r?\n/g, "\r\n"
 let copied = 0;
 if (args.includes("--met-sleutels")) {
   for (const [name, source] of KEY_FILES) {
-    const src = path.join(os.homedir(), source);
+    // In een sleutelmap van een noodpakket heten de bestanden zoals in het pakket.
+    const src = keySource ? path.join(keySource, name) : path.join(os.homedir(), source);
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, path.join(out, "sleutels", name));
       copied += 1;
