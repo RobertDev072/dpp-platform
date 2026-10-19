@@ -273,7 +273,7 @@ docs/                     cloudflare, compliance-matrix, verificatie
 ## 10. Openstaand
 
 ### Organisatie en wet (geen code; zie [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md))
-- [ ] Privacyverklaring publiceren (concept: docs/privacy-verklaring-concept.md).
+- [ ] Privacyverklaring publiceren (concepten van alle juridische documenten: docs/juridisch/).
 - [ ] Verwerkersovereenkomsten: met klanten, en met STRATO, Cloudflare en Hetzner (subverwerkers).
 - [ ] Verwerkingsregister, bewaartermijnen (accounts, auditlog, back-ups) en datalekprocedure.
 - [ ] Algemene voorwaarden / SaaS-overeenkomst en partnerovereenkomst.
