@@ -28,9 +28,13 @@ const opt = (name, fallback) => {
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : fallback;
 };
 const home = os.homedir();
-const file = (name) => path.join(home, name);
+// Sleutelmap: VERIPASSO_KEYS (noodpakket: de map "sleutels" naast de .bat-bestanden), anders je gebruikersmap.
+const KEYS = process.env.VERIPASSO_KEYS || home;
+const file = (name) => path.join(KEYS, name);
+// Laatst gemaakte noodserver (voor --switch-dns zonder IP).
+const LAST_SERVER = path.join(process.env.VERIPASSO_STATE || process.cwd(), "laatste-nieuwe-server.txt");
 const here = path.dirname(fileURLToPath(import.meta.url));
-const recoverScript = path.join(here, "..", "deploy", "recover.sh");
+const recoverScript = [path.join(here, "..", "deploy", "recover.sh"), path.join(here, "recover.sh")].find((f) => fs.existsSync(f));
 const STRATO_IP = opt("--strato-ip", "87.106.4.92");
 const started = Date.now();
 const say = (msg) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
@@ -83,8 +87,12 @@ function portOpen(host, port) {
   });
 }
 
-const stratoSsh = (command) =>
-  spawnSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", `root@${STRATO_IP}`, command], { encoding: "utf8" });
+// STRATO-sleutel: "strato_ed25519" in de sleutelmap (noodpakket), anders de standaardsleutel van deze pc.
+const stratoSsh = (command) => {
+  const key = file("strato_ed25519");
+  const keyArgs = fs.existsSync(key) ? ["-i", key, "-o", "IdentitiesOnly=yes"] : [];
+  return spawnSync("ssh", [...keyArgs, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10", `root@${STRATO_IP}`, command], { encoding: "utf8" });
+};
 
 // --- 1. diagnose ---------------------------------------------------------------------------
 async function diagnose() {
@@ -221,6 +229,8 @@ async function newServer({ test }) {
       }
     } else {
       const keep = file(`${name}.key`);
+      fs.writeFileSync(LAST_SERVER, `${ip}
+`);
       fs.copyFileSync(adminKey, keep);
       fs.chmodSync(keep, 0o600);
       console.log(`
@@ -278,7 +288,10 @@ async function switchDns(ip) {
 const main = async () => {
   if (flag("--test")) return newServer({ test: true });
   if (flag("--new-server") || flag("--live")) return newServer({ test: false });
-  if (flag("--switch-dns")) return switchDns(opt("--switch-dns"));
+  if (flag("--switch-dns")) {
+    const ip = opt("--switch-dns") || (fs.existsSync(LAST_SERVER) ? fs.readFileSync(LAST_SERVER, "utf8").trim() : "");
+    return switchDns(ip);
+  }
   if (flag("--repair")) return repair();
   return diagnose();
 };
