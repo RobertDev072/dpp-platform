@@ -6,9 +6,10 @@ geïsoleerde omgeving; consumenten scannen een QR-code en zien het publieke
 productpaspoort zonder account. Systemen kunnen hetzelfde paspoort op dezelfde URL
 machineleesbaar opvragen (JSON, JSON-LD, XML).
 
-Laatst bijgewerkt: 2026-10-18. **Status: live op één Linux-server (STRATO VPS Linux M,
-zie §7)**, met Cloudflare (DNS, Worker, R2) en een derde back-up bij Hetzner. AWS, Supabase,
-Azure en Vercel worden niet meer gebruikt (laatste AWS-versie: git-tag `aws-laatste-versie`).
+Laatst bijgewerkt: 2026-10-19. **Status: live.** Applicatie en database op een eigen Linux-server
+(STRATO, Duitsland), bestanden en QR-rand bij Cloudflare (EU), derde back-up bij Hetzner (Finland).
+Bewaking met pushmeldingen en een geteste noodherstelprocedure: zie §7. AWS, Supabase, Azure en
+Vercel worden niet meer gebruikt (laatste AWS-versie: git-tag `aws-laatste-versie`).
 
 Domeinen (DNS bij Cloudflare):
 
@@ -193,34 +194,34 @@ root-CA-bestand (`scripts/export-zscaler-ca.ps1`).
 
 ---
 
-## 7. Hosting: één Linux-server (STRATO VPS Linux M)
+## 7. Infrastructuur, back-ups en noodherstel
 
-**Live** sinds 2026-10-13. De app draait in Docker op één Linux-server: app +
-PostgreSQL 17 + Caddy (HTTPS, Let's Encrypt), zie [`deploy/`](deploy/). Bestanden in
-Cloudflare R2 (EU), DNS bij Cloudflare. Back-ups elke nacht versleuteld naar de server, R2 én
-een **Hetzner Storage Box** (Helsinki; database, configuratie en alle bestanden; met snapshots).
-Overzicht: **[docs/infrastructuur.md](docs/infrastructuur.md)**. Alles over
-de server, geheimen, beheer en herstel: **[docs/hosting-strato.md](docs/hosting-strato.md)**.
+Volledig overzicht: **[docs/infrastructuur.md](docs/infrastructuur.md)** · bij storingen:
+**[docs/noodplan.md](docs/noodplan.md)** · serverbeheer: [docs/hosting-strato.md](docs/hosting-strato.md).
 
-- **Uitrollen**: `deploy/update.sh` op de server (code ophalen, image bouwen, herstarten;
-  migraties draaien automatisch bij het starten).
-- **CI** bouwt bij elke push het image en start app + database echt (rooktest).
+```
+  Scanner / extern systeem ─► Cloudflare (DNS · QR-rand: cache + noodkopie · R2-bestanden, EU)
+  Gebruiker (browser) ──────► STRATO-server (Docker: Caddy HTTPS → app → PostgreSQL 17)
+                                    │ elke nacht, versleuteld
+                                    ▼
+                    server · Cloudflare R2 · Hetzner Storage Box (+ snapshots)
+```
 
-Het werkt ook op elke andere Linux-host met Docker. Aandachtspunten bij elke host:
-- **Database**: PostgreSQL 17 met back-ups; `DATABASE_URL` (of `DB_*`) als geheime variabele.
-- **Migraties**: `npm run migrate` bij elke uitrol (vóór of direct na de nieuwe code;
-  migraties zijn altijd additief).
-- **Geheimen**: `COOKIE_SECRET`, `MFA_ENCRYPTION_KEY`, databasewachtwoord en eventueel
-  `EDGE_SYNC_TOKEN` en `S3_*` als geheime variabelen van de host, nooit in de repository.
-- **Domeinverdeling**: elk domein heeft één rol (zie de tabel bovenaan); de app regelt
-  dat zelf (`proxy.js` + `src/utils/domainRouting.js`) zodra `SITE_DOMAINS`, `APP_DOMAIN`
-  en `QR_DOMAIN` gezet zijn. `/api/*`, `/_next/*`, `/brand/*` werken op elk domein.
-- **Cloudflare vóór `qr.veripasso.com`**: zie [docs/cloudflare.md](docs/cloudflare.md).
-- **Valkuilen**: route-volgorde in Express (letterlijke routes vóór `/:id`); Postgres vouwt
-  ongequote namen naar kleine letters (camelCase-aliassen quoten); `QR_BASE_URL` en de
-  DNS van `qr.veripasso.com` nooit wijzigen of verwijderen.
+| Onderdeel | Hoe het werkt |
+|---|---|
+| **App en database** | Eén Linux-server met Docker (app, PostgreSQL 17, Caddy voor HTTPS). Alleen poort 22/80/443 open, inloggen alleen met sleutel. Uitrollen met `deploy/update.sh` (maakt eerst een back-up); migraties draaien automatisch. |
+| **Bestanden** | Foto's en documenten in Cloudflare R2 (EU), privé; downloads via de app met toegangscontrole. |
+| **QR-codes** | `qr.veripasso.com` loopt via een Cloudflare Worker: paspoortpagina in de cache, en bij serveruitval een **noodkopie** (ook voor batch- en itemcodes en machineleesbare JSON). Getest: QR-codes blijven werken als de server plat ligt. |
+| **Beveiliging** | TLS 1.2+ op alle domeinen, HSTS, rollen en bedrijfsscheiding server-side (getest), MFA beschikbaar, rate limits, auditlog. |
+| **Back-ups** | Elke nacht: database versleuteld naar de server, R2 en een **Hetzner Storage Box**; daar ook de configuratie en **alle bestanden, versleuteld**, plus dagelijkse snapshots die vanaf de server niet te wissen zijn. De back-up gebruikt een beperkte sleutel. Een server die na een noodherstel niet meer de actieve is, uploadt geen back-ups meer. |
+| **Bewaking** | Cloudflare controleert elke 5 minuten app, database, website, noodkopieën en capaciteit (los van de server); het back-upscript meldt elke fout. Pushmeldingen naar de telefoon; Systeemstatus in de app. |
+| **Noodherstel** | In stappen, niets automatisch: diagnose → STRATO herstarten → (alleen als het echt nodig is) nieuwe server bij Hetzner Cloud met alle gegevens uit de back-up → DNS omzetten. Via `scripts/noodherstel.mjs` of het **noodpakket** (ZIP met klikbestanden, buiten git bewaard). Hersteltest 2026-10-19: alles terug in ca. 3 minuten, alle gegevens gelijk aan live ([verslag](docs/verification/hersteltest-2026-10-19.md)). |
+| **Code en CI** | GitHub; elke push: tests op PostgreSQL 17, build, beveiligingscontrole, container-rooktest. Reservekopie van de code op de Storage Box. |
 
-De oude AWS-opzet (CDK, workflows, Lambda) staat onder de git-tag `aws-laatste-versie`.
+Geheimen (wachtwoorden, sleutels, tokens) staan nooit in de repository, alleen op de server
+(`deploy/.env`, rechten 600), in het beveiligde gegevensdocument en het noodpakket.
+Valkuilen: `QR_BASE_URL` en de DNS van `qr.veripasso.com` nooit wijzigen of verwijderen (staan op
+elke gedrukte code); migraties altijd additief.
 
 ---
 
@@ -271,28 +272,32 @@ docs/                     cloudflare, compliance-matrix, verificatie
 
 ## 10. Openstaand
 
-### Compliance (zie [docs/compliance/requirements-matrix.md](docs/compliance/requirements-matrix.md))
-- [ ] Oordeel van de certificeerder over de geblokkeerde punten: EN 18219/18220/18222/18223
-      (niet door AI beoordeeld i.v.m. de EVS-licentie), back-up-dienstverlener, DPP-levensduur
-      per productgroep, model- vs. item-paspoort, HTTP/1.1, digitale handtekeningen (EN 18246).
-- [ ] Toegankelijkheidsaudit van de publieke paspoortpagina (EN 301 549 / WCAG 2.1 AA).
+### Organisatie en wet (geen code; zie [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md))
+- [ ] Privacyverklaring publiceren (concept: docs/privacy-verklaring-concept.md).
+- [ ] Verwerkersovereenkomsten: met klanten, en met STRATO, Cloudflare en Hetzner (subverwerkers).
+- [ ] Verwerkingsregister, bewaartermijnen (accounts, auditlog, back-ups) en datalekprocedure.
+- [ ] Algemene voorwaarden / SaaS-overeenkomst en partnerovereenkomst.
+- [ ] Back-up-dienstverlener voor paspoorten contracteren (koppeling gebouwd, staat uit).
+- [ ] Per klant: productgroep en toepasselijke gedelegeerde handeling (ESPR) vaststellen.
+- [ ] Certificeerder: toetsing tegen EN 18216–18223 (normteksten niet door AI gelezen i.v.m. de
+      EVS-licentie), levensduur paspoort per productgroep, digitale handtekeningen (EN 18246).
+- [ ] RPO/RTO als afspraak met klanten vastleggen (nu: max. 1 dag dataverlies, herstel binnen uren).
 
-### Beheer
-- [ ] AWS-account 707191185248 opruimen: back-up maken en de omgeving afbreken met de CDK-
-      code uit de tag `aws-laatste-versie` (of het account sluiten).
-- [x] STRATO-server ingericht, R2 en back-ups actief, restore getest (2026-10-13).
-- [x] Platform Owner: MFA gekoppeld; back-up-wachtzin in de wachtwoordmanager.
-- [x] Capaciteitsmonitoring (schijf, geheugen, back-up, certificaten, R2) en noodplan (docs/noodplan.md).
-- [x] Zuinig op schaal: foto's verkleind (origineel niet bewaard), logo/profielfoto in R2, scans 1× per apparaat per 30 min en na 90 dagen alleen dagtotalen, noodkopie van elk paspoort in R2, Cloudflare Worker voor qr (docs/cloudflare.md). Labels printen verwijderd (QR-codes blijven downloadbaar als PNG/SVG/ZIP).
-- [x] Derde back-up bij Hetzner (database, configuratie, alle bestanden), hersteltest geslaagd (2026-10-18).
-- [x] TLS 1.0/1.1 uitgeschakeld op alle domeinen (2026-10-18).
-- [ ] Externe monitor (UptimeRobot) op /api/health en /api/health/capacity.
-- [ ] Back-up-dienstverlener voor paspoorten contracteren (koppeling klaar).
-- [ ] Loadtest.
-
-### Product / later
-- [x] Batch- en itempaspoorten, GS1 Digital Link, Data Matrix (2026-10-18).
+### Techniek
+- [ ] Storingsmeldingen vanuit Cloudflare via Telegram (ntfy weigert gedeelde Cloudflare-IP's;
+      meldingen vanaf de server werken wel).
+- [ ] Eén keer de echte omschakeling oefenen (nieuwe server + DNS en terug).
+- [ ] Hersteltest elk kwartaal (volgende: 2027-01).
+- [ ] Toegankelijkheidsaudit van de publieke paspoortpagina (WCAG 2.1 AA / EN 301 549).
 - [ ] NFC/RFID-export, IEC 61406-kader, meertaligheid voor alle tekstvelden.
-- [ ] Content-Security-Policy; aparte database-applicatierol met minimale rechten.
-- [ ] Scan-aggregatie per dag + bewaartermijn voor ruwe scans (na besluit over bewaren).
+- [ ] Content-Security-Policy, aparte database-rol met minimale rechten, loadtest.
+- [ ] Oud AWS-account opruimen (CDK-code onder tag `aws-laatste-versie`).
 - [ ] E-mailverzending voor uitnodigingen/wachtwoordherstel (eerst overleg).
+
+### Afgerond (oktober 2026)
+- [x] STRATO-server, R2, nachtelijke versleutelde back-ups, capaciteitsbewaking en noodplan.
+- [x] DPP-header en interoperabiliteit (EN 18223-richting), B2B-API `/api/v1` met API-sleutels.
+- [x] Batch- en itempaspoorten, GS1 Digital Link, Data Matrix, QR met 4 modules vrije ruimte.
+- [x] TLS 1.0/1.1 uit; derde back-up bij Hetzner (versleuteld, met snapshots); beperkte back-upsleutel.
+- [x] Bewaking vanuit Cloudflare, meldingen vanaf de server, noodherstel in stappen + noodpakket.
+- [x] Storings- en hersteltest: QR blijft werken, volledig herstel zonder STRATO in ca. 3 minuten.
