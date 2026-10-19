@@ -285,7 +285,9 @@ async function notify(env, { title, message, priority = "default", tags = "" }) 
   try {
     const res = await fetch("https://ntfy.sh/", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // Met NTFY_TOKEN (eigen ntfy-account) telt het quotum per account i.p.v. per
+      // (gedeeld) Cloudflare-IP; zonder token weigert ntfy.sh vaak.
+      headers: { "Content-Type": "application/json", ...(env.NTFY_TOKEN ? { Authorization: `Bearer ${env.NTFY_TOKEN}` } : {}) },
       body: JSON.stringify({ topic: env.NTFY_TOPIC, title, message, priority: PRIORITY[priority] || 3, tags: tags ? tags.split(",") : [] })
     });
     if (!res.ok) {
@@ -340,6 +342,12 @@ async function monitor(env, now = new Date()) {
       await stub.setMeta(`mon:${r.check.key}`, "ok");
       const minutes = Math.round((now.getTime() - since) / 60000);
       await notify(env, { title: `Hersteld: ${r.check.label}`, message: `Weer bereikbaar na ongeveer ${minutes} minuten.`, tags: "white_check_mark" });
+    }
+  }
+  // Eenmalige proefmelding via exact dezelfde weg als een storing (MONITOR_TEST_ID wijzigen = opnieuw).
+  if (env.MONITOR_TEST_ID && (await stub.getMeta("mon:test", "")) !== env.MONITOR_TEST_ID) {
+    if (await notify(env, { title: "VeriPasso: proef van de storingsmelding", message: "Deze melding komt van de bewaking in Cloudflare (los van STRATO). Bij een echte storing krijg je hier bericht met wat eruit ligt.", priority: "high", tags: "bell" })) {
+      await stub.setMeta("mon:test", env.MONITOR_TEST_ID);
     }
   }
   // Dagelijkse bevestiging om 06:00 UTC (08:00 NL zomertijd): de bewaking leeft.

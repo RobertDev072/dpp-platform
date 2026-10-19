@@ -1,63 +1,57 @@
 #!/usr/bin/env node
-// Noodherstel met één commando, vanaf je eigen pc (Windows, macOS of Linux met Node en ssh):
-// maakt een nieuwe server bij Hetzner Cloud, zet VeriPasso daarop volledig terug vanuit de
-// Hetzner Storage Box (deploy/recover.sh) en zet desgewenst de DNS om.
+// Noodherstel VeriPasso, vanaf je eigen pc (PowerShell, macOS of Linux; Node en ssh nodig).
+// Werkt in stappen; niets gebeurt zonder dat jij het kiest:
 //
-//   node scripts/noodherstel.mjs --test          hersteltest; server wordt daarna verwijderd
-//   node scripts/noodherstel.mjs --live          echt herstel (server blijft draaien)
-//   node scripts/noodherstel.mjs --live --switch-dns   + DNS van veripasso.com naar de nieuwe server
+//   node scripts/noodherstel.mjs                  1. DIAGNOSE (standaard): wat ligt eruit? Maakt niets aan.
+//   node scripts/noodherstel.mjs --repair         2. STRATO repareren: app opnieuw starten (server moet bereikbaar zijn)
+//   node scripts/noodherstel.mjs --new-server     3. nieuwe server bij Hetzner Cloud + alles terug uit de back-up
+//                                                    (vraagt eerst om "JA"; DNS blijft nog naar STRATO wijzen)
+//   node scripts/noodherstel.mjs --switch-dns IP  4. DNS van veripasso.com omzetten naar IP (vraagt om "JA")
+//   node scripts/noodherstel.mjs --test           proef: herstel op een tijdelijke server, daarna verwijderd
 //
-// Benodigde bestanden (uit het gegevensdocument; nooit in git):
-//   --hetzner-token  pad  (standaard ~/hetzner-token.txt)          Hetzner Cloud API-token (Read & Write)
-//   --storagebox-key pad  (standaard ~/veripasso-storagebox.key)    privé SSH-sleutel Storage Box (hoofdstuk 8b)
-//   --passphrase     pad  (standaard ~/veripasso-backup-pass.txt)   back-up-wachtzin (hoofdstuk 4)
-//   --cf-token       pad  (standaard ~/cloudflare-dns-token.txt)    alleen voor --switch-dns
+// Bestanden in je gebruikersmap (uit het gegevensdocument; nooit in git):
+//   hetzner-token.txt, veripasso-storagebox.key, veripasso-backup-pass.txt, cloudflare-dns-token.txt,
+//   optioneel ntfy-token.txt en ntfy-topic.txt (meldingen op de nieuwe server).
 import { spawnSync } from "node:child_process";
+import dns from "node:dns/promises";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const opt = (name, fallback) => {
   const i = args.indexOf(name);
-  return i >= 0 ? args[i + 1] : fallback;
+  return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : fallback;
 };
 const home = os.homedir();
-const MODE = flag("--live") ? "live" : "test";
-const SWITCH_DNS = flag("--switch-dns");
-const KEEP = flag("--keep");
-const files = {
-  token: opt("--hetzner-token", path.join(home, "hetzner-token.txt")),
-  key: opt("--storagebox-key", path.join(home, "veripasso-storagebox.key")),
-  pass: opt("--passphrase", path.join(home, "veripasso-backup-pass.txt")),
-  cf: opt("--cf-token", path.join(home, "cloudflare-dns-token.txt"))
-};
+const file = (name) => path.join(home, name);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const recoverScript = path.join(here, "..", "deploy", "recover.sh");
-const work = fs.mkdtempSync(path.join(os.tmpdir(), "noodherstel-"));
+const STRATO_IP = opt("--strato-ip", "87.106.4.92");
 const started = Date.now();
 const say = (msg) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
+const NUL = process.platform === "win32" ? "NUL" : "/dev/null";
 
-for (const [name, file] of Object.entries({ token: files.token, key: files.key, pass: files.pass })) {
-  if (!fs.existsSync(file)) {
-    console.error(`Bestand ontbreekt (${name}): ${file}. Zie het gegevensdocument.`);
+function need(name) {
+  if (!fs.existsSync(file(name))) {
+    console.error(`Bestand ontbreekt: ${file(name)} (zie het gegevensdocument).`);
     process.exit(1);
   }
+  return fs.readFileSync(file(name), "utf8").trim();
 }
-const TOKEN = fs.readFileSync(files.token, "utf8").trim();
 
-async function hcloud(method, url, body) {
-  const res = await fetch(`https://api.hetzner.cloud/v1${url}`, {
-    method,
-    headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const text = await res.text();
-  const json = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(`Hetzner ${method} ${url}: ${json.error?.message || res.status}`);
-  return json;
+async function confirm(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = (await rl.question(`${question}\nTyp JA om door te gaan: `)).trim();
+  rl.close();
+  if (answer !== "JA") {
+    console.log("Afgebroken; er is niets gewijzigd.");
+    process.exit(0);
+  }
 }
 
 function run(cmd, cmdArgs, { input, quiet = false } = {}) {
@@ -66,74 +60,157 @@ function run(cmd, cmdArgs, { input, quiet = false } = {}) {
   return r.stdout;
 }
 
-async function main() {
-  say(`Noodherstel VeriPasso, modus: ${MODE}${SWITCH_DNS ? " + DNS omzetten" : ""}`);
-  // Tijdelijke SSH-sleutel om de nieuwe server te beheren (alleen voor deze sessie).
+async function httpStatus(url) {
+  try {
+    const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10000) });
+    return res.status;
+  } catch {
+    return 0;
+  }
+}
+
+function portOpen(host, port) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port, timeout: 5000 }, () => {
+      socket.end();
+      resolve(true);
+    });
+    socket.on("error", () => resolve(false));
+    socket.on("timeout", () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+const stratoSsh = (command) =>
+  spawnSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", `root@${STRATO_IP}`, command], { encoding: "utf8" });
+
+// --- 1. diagnose ---------------------------------------------------------------------------
+async function diagnose() {
+  say("DIAGNOSE (maakt niets aan, wijzigt niets)");
+  const appIp = await dns.resolve4("app.veripasso.com").catch(() => []);
+  const checks = {
+    app: await httpStatus("https://app.veripasso.com/api/health"),
+    database: await httpStatus("https://app.veripasso.com/api/health/ready"),
+    qr: await httpStatus("https://qr.veripasso.com/p/00000000-0000-4000-8000-000000000000"),
+    ssh: await portOpen(STRATO_IP, 22),
+    https: await portOpen(STRATO_IP, 443)
+  };
+  console.log(`
+  DNS app.veripasso.com     → ${appIp.join(", ") || "NIET OP TE ZOEKEN"} ${appIp.includes(STRATO_IP) ? "(STRATO)" : "(niet STRATO)"}
+  App                       → ${checks.app === 200 ? "OK" : `PLAT (${checks.app || "geen antwoord"})`}
+  Database                  → ${checks.database === 200 ? "OK" : `PLAT (${checks.database || "geen antwoord"})`}
+  QR-domein (via Cloudflare)→ ${checks.qr ? `antwoordt (${checks.qr})` : "geen antwoord"}
+  STRATO poort 22 (SSH)     → ${checks.ssh ? "open" : "DICHT / onbereikbaar"}
+  STRATO poort 443 (HTTPS)  → ${checks.https ? "open" : "DICHT / onbereikbaar"}`);
+
+  if (checks.ssh) {
+    const r = stratoSsh(
+      "cd /opt/veripasso/deploy && docker compose ps --format '{{.Name}}: {{.Status}}'; df -h / | tail -1 | awk '{print \"schijf: \"$5\" vol\"}'; free -m | awk 'NR==2{print \"geheugen vrij: \"$7\" MB\"}'; uptime -p; docker compose logs --since 30m app 2>&1 | grep -ciE 'error' | xargs echo 'fouten in app-log (30 min):'"
+    );
+    console.log(`\n  STRATO-server (via SSH):\n${(r.stdout || r.stderr || "").replace(/^/gm, "    ")}`);
+  }
+
+  console.log("\n  ADVIES:");
+  if (checks.app === 200 && checks.database === 200) {
+    console.log("  Alles werkt. Niets te doen.");
+  } else if (checks.ssh) {
+    console.log("  De STRATO-server is bereikbaar; de app of database werkt niet.");
+    console.log("  → Probeer eerst:  node scripts/noodherstel.mjs --repair");
+  } else {
+    console.log("  De STRATO-server is onbereikbaar.");
+    console.log("  1. Kijk op https://www.strato-status.de en in je STRATO-account (server-login of VNC-console).");
+    console.log("     Is het onderhoud of een storing: 30–60 minuten afwachten. QR-codes werken intussen via de noodkopie.");
+    console.log("  2. Lukt herstarten via STRATO niet en blijft het plat (of meldt STRATO een langdurig probleem):");
+    console.log("     node scripts/noodherstel.mjs --new-server      (nieuwe server; DNS nog niet om)");
+    console.log("     node scripts/noodherstel.mjs --switch-dns IP   (pas daarna, als de nieuwe server goed is)");
+  }
+}
+
+// --- 2. STRATO repareren ----------------------------------------------------------------------
+async function repair() {
+  say("STRATO repareren: containers opnieuw starten");
+  const r = stratoSsh("cd /opt/veripasso/deploy && docker compose up -d 2>&1 | tail -3; sleep 25; docker compose ps --format '{{.Name}}: {{.Status}}'");
+  if (r.status !== 0 && !r.stdout) {
+    console.log("Kan niet inloggen op STRATO. Gebruik de STRATO-console (herstart/VNC) of ga naar --new-server.");
+    process.exit(1);
+  }
+  console.log(r.stdout);
+  const ok = (await httpStatus("https://app.veripasso.com/api/health/ready")) === 200;
+  say(ok ? "Hersteld: de app werkt weer." : "Nog niet hersteld. Bekijk de logs (docker compose logs app) of ga naar --new-server.");
+}
+
+// --- 3. nieuwe server ---------------------------------------------------------------------------
+async function newServer({ test }) {
+  const TOKEN = need("hetzner-token.txt");
+  const storageKey = need("veripasso-storagebox.key");
+  const passphrase = need("veripasso-backup-pass.txt");
+  const hcloud = async (method, url, body) => {
+    const res = await fetch(`https://api.hetzner.cloud/v1${url}`, {
+      method,
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const text = await res.text();
+    const json = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new Error(`Hetzner ${method} ${url}: ${json.error?.message || res.status}`);
+    return json;
+  };
+  if (!test) {
+    await confirm(
+      "Er wordt een NIEUWE server aangemaakt bij Hetzner Cloud (ca. € 7 per maand zolang hij draait) en VeriPasso\n" +
+        "wordt daarop teruggezet uit de laatste back-up. De DNS blijft voorlopig naar STRATO wijzen."
+    );
+  }
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "noodherstel-"));
   const adminKey = path.join(work, "admin_ed25519");
   run("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", adminKey], { quiet: true });
   const name = `veripasso-herstel-${Date.now().toString(36)}`;
   const { ssh_key: sshKey } = await hcloud("POST", "/ssh_keys", { name, public_key: fs.readFileSync(`${adminKey}.pub`, "utf8").trim() });
   let serverId = null;
+  let created = null;
   try {
     say("Server aanmaken bij Hetzner Cloud (Helsinki, 2 vCPU, 4 GB)");
-    const created = await hcloud("POST", "/servers", {
+    created = await hcloud("POST", "/servers", {
       name,
       server_type: opt("--type", "cx23"),
       image: "ubuntu-24.04",
       location: opt("--location", "hel1"),
       ssh_keys: [sshKey.id],
-      labels: { purpose: "veripasso-herstel", mode: MODE }
+      labels: { purpose: "veripasso-herstel", mode: test ? "test" : "live" }
     });
     serverId = created.server.id;
     const ip = created.server.public_net.ipv4.ip;
     say(`Server ${name} → ${ip}; wachten tot hij opgestart is`);
     for (let i = 0; i < 60; i += 1) {
-      const { server } = await hcloud("GET", `/servers/${serverId}`);
-      if (server.status === "running") break;
+      if ((await hcloud("GET", `/servers/${serverId}`)).server.status === "running") break;
       await new Promise((r) => setTimeout(r, 5000));
     }
-    const sshArgs = ["-i", adminKey, "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10"];
+    const sshArgs = ["-i", adminKey, "-o", "StrictHostKeyChecking=no", "-o", `UserKnownHostsFile=${NUL}`, "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10"];
     for (let i = 0; i < 36; i += 1) {
-      const r = spawnSync("ssh", [...sshArgs, `root@${ip}`, "true"], { encoding: "utf8" });
-      if (r.status === 0) break;
-      await new Promise((r2) => setTimeout(r2, 5000));
+      if (spawnSync("ssh", [...sshArgs, `root@${ip}`, "true"]).status === 0) break;
+      await new Promise((r) => setTimeout(r, 5000));
     }
     say("Herstelscript en sleutels overzetten (alleen naar /root, rechten 600)");
     run("scp", [...sshArgs, recoverScript, `root@${ip}:/root/recover.sh`], { quiet: true });
-    run("ssh", [...sshArgs, `root@${ip}`, "mkdir -p /root/.ssh && umask 077 && cat > /root/.ssh/veripasso_backup_ed25519"], { input: fs.readFileSync(files.key, "utf8").replace(/\r\n/g, "\n").trim() + "\n", quiet: true });
-    run("ssh", [...sshArgs, `root@${ip}`, "umask 077 && cat > /root/.veripasso-backup-pass"], { input: fs.readFileSync(files.pass, "utf8").trim(), quiet: true });
+    const put = (target, content) => run("ssh", [...sshArgs, `root@${ip}`, `mkdir -p /root/.ssh && umask 077 && cat > ${target}`], { input: content, quiet: true });
+    put("/root/.ssh/veripasso_backup_ed25519", storageKey.replace(/\r\n/g, "\n") + "\n");
+    put("/root/.veripasso-backup-pass", passphrase);
+    if (fs.existsSync(file("ntfy-topic.txt"))) put("/root/.veripasso-ntfy", need("ntfy-topic.txt"));
+    if (fs.existsSync(file("ntfy-token.txt"))) put("/root/.veripasso-ntfy-token", need("ntfy-token.txt"));
     say("Herstel uitvoeren op de nieuwe server");
-    run("ssh", [...sshArgs, `root@${ip}`, `bash /root/recover.sh ${MODE === "test" ? "--test" : ""}`]);
+    run("ssh", [...sshArgs, `root@${ip}`, `bash /root/recover.sh ${test ? "--test" : ""}`]);
     const report = run("ssh", [...sshArgs, `root@${ip}`, "cat /root/herstel-verslag.txt"], { quiet: true });
     const reportFile = path.join(process.cwd(), `herstel-verslag-${new Date().toISOString().slice(0, 10)}.txt`);
     fs.writeFileSync(reportFile, `${report}\nServer: ${name} (${ip}), totale duur ${Math.round((Date.now() - started) / 60000)} min\n`);
     say(`Verslag opgeslagen: ${reportFile}`);
 
-    if (SWITCH_DNS) {
-      if (!fs.existsSync(files.cf)) throw new Error(`Cloudflare-token ontbreekt: ${files.cf}`);
-      const cf = fs.readFileSync(files.cf, "utf8").trim();
-      const cfApi = async (method, url, body) => {
-        const res = await fetch(`https://api.cloudflare.com/client/v4${url}`, { method, headers: { Authorization: `Bearer ${cf}`, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-        const json = await res.json();
-        if (!json.success) throw new Error(`Cloudflare ${url}: ${json.errors?.[0]?.message}`);
-        return json.result;
-      };
-      const [zone] = await cfApi("GET", "/zones?name=veripasso.com");
-      for (const host of ["veripasso.com", "www.veripasso.com", "app.veripasso.com", "qr.veripasso.com"]) {
-        for (const rec of await cfApi("GET", `/zones/${zone.id}/dns_records?name=${host}`)) {
-          if (rec.type === "A") await cfApi("PATCH", `/zones/${zone.id}/dns_records/${rec.id}`, { content: ip });
-          if (rec.type === "AAAA") await cfApi("DELETE", `/zones/${zone.id}/dns_records/${rec.id}`);
-        }
-      }
-      say(`DNS omgezet naar ${ip} (IPv6-records van de oude server verwijderd). Binnen enkele minuten actief.`);
-    }
-    if (MODE === "test" && !KEEP) {
+    if (test && !flag("--keep")) {
       say("Testserver verwijderen (inclusief IP-adressen)");
       const ipIds = [created.server.public_net.ipv4?.id, created.server.public_net.ipv6?.id].filter(Boolean);
       await hcloud("DELETE", `/servers/${serverId}`);
       serverId = null;
-      // IP-adressen komen kort na het verwijderen vrij; blijven ze staan, dan alsnog weg
-      // (anders kosten ze een paar cent per dag).
       for (let i = 0; i < 12 && ipIds.length; i += 1) {
         await new Promise((r) => setTimeout(r, 5000));
         for (const id of [...ipIds]) {
@@ -143,21 +220,72 @@ async function main() {
         }
       }
     } else {
-      // Beheersleutel bewaren: zonder deze kun je niet inloggen op de nieuwe server.
-      const keep = path.join(home, `${name}.key`);
+      const keep = file(`${name}.key`);
       fs.copyFileSync(adminKey, keep);
       fs.chmodSync(keep, 0o600);
-      say(`Server blijft draaien: ${ip}. Inloggen: ssh -i ${keep} root@${ip}  (bewaar deze sleutel bij het gegevensdocument)`);
+      console.log(`
+  De nieuwe server draait: ${ip}
+  Inloggen:            ssh -i ${keep} root@${ip}   (bewaar deze sleutel bij het gegevensdocument)
+  Controleren:         het verslag hierboven (tellingen, hashketen, bestanden, paspoort).
+  Pas als alles klopt: node scripts/noodherstel.mjs --switch-dns ${ip}
+  Bedacht? Verwijder de server in de Hetzner-console (project veripasso-herstel).`);
     }
   } finally {
-    if (serverId && MODE === "test" && !KEEP) await hcloud("DELETE", `/servers/${serverId}`).catch(() => {});
+    if (serverId && test && !flag("--keep")) await hcloud("DELETE", `/servers/${serverId}`).catch(() => {});
     await hcloud("DELETE", `/ssh_keys/${sshKey.id}`).catch(() => {});
     fs.rmSync(work, { recursive: true, force: true });
   }
-  say(`Klaar in ${Math.round((Date.now() - started) / 60000)} min.`);
 }
 
-main().catch((error) => {
-  console.error(`MISLUKT: ${error.message}`);
-  process.exit(1);
-});
+// --- 4. DNS omzetten -----------------------------------------------------------------------------
+async function switchDns(ip) {
+  if (!net.isIPv4(ip || "")) {
+    console.error("Gebruik: node scripts/noodherstel.mjs --switch-dns <IPv4-adres van de nieuwe server>");
+    process.exit(1);
+  }
+  const cf = need("cloudflare-dns-token.txt");
+  const cfApi = async (method, url, body) => {
+    const res = await fetch(`https://api.cloudflare.com/client/v4${url}`, { method, headers: { Authorization: `Bearer ${cf}`, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    const json = await res.json();
+    if (!json.success) throw new Error(`Cloudflare ${url}: ${json.errors?.[0]?.message}`);
+    return json.result;
+  };
+  const health = await httpStatus(`http://${ip}/api/health`);
+  await confirm(
+    `De DNS van veripasso.com, www, app en qr wordt omgezet naar ${ip}.\n` +
+      `Bezoekers en QR-scans gaan daarna naar de nieuwe server (de nieuwe server antwoordt nu: ${health || "geen antwoord"}).\n` +
+      "STRATO krijgt geen verkeer meer; zet STRATO later pas terug na het overzetten van de nieuwste gegevens (noodplan)."
+  );
+  const [zone] = await cfApi("GET", "/zones?name=veripasso.com");
+  const old = [];
+  for (const host of ["veripasso.com", "www.veripasso.com", "app.veripasso.com", "qr.veripasso.com"]) {
+    for (const rec of await cfApi("GET", `/zones/${zone.id}/dns_records?name=${host}`)) {
+      if (rec.type === "A") {
+        old.push(`${host} A ${rec.content}`);
+        await cfApi("PATCH", `/zones/${zone.id}/dns_records/${rec.id}`, { content: ip });
+      }
+      if (rec.type === "AAAA") {
+        old.push(`${host} AAAA ${rec.content}`);
+        await cfApi("DELETE", `/zones/${zone.id}/dns_records/${rec.id}`);
+      }
+    }
+  }
+  const backup = path.join(process.cwd(), `dns-voor-omschakeling-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.txt`);
+  fs.writeFileSync(backup, `${old.join("\n")}\n`);
+  say(`DNS omgezet naar ${ip}. Oude records bewaard in ${backup}. Binnen enkele minuten actief; HTTPS-certificaten volgen automatisch.`);
+}
+
+const main = async () => {
+  if (flag("--test")) return newServer({ test: true });
+  if (flag("--new-server") || flag("--live")) return newServer({ test: false });
+  if (flag("--switch-dns")) return switchDns(opt("--switch-dns"));
+  if (flag("--repair")) return repair();
+  return diagnose();
+};
+
+main()
+  .then(() => say(`Klaar (${Math.round((Date.now() - started) / 1000)} s).`))
+  .catch((error) => {
+    console.error(`MISLUKT: ${error.message}`);
+    process.exit(1);
+  });

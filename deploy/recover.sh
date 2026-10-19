@@ -46,7 +46,13 @@ rclone config create hetzner-crypt crypt remote=hetzner:veripasso/files-enc \
   password="$(rclone obscure "$(head -n1 "$PASSFILE")")" filename_encryption=standard directory_name_encryption=true >/dev/null
 
 log "3/7 Code ophalen ($REPO)"
-rm -rf "$DIR" && git clone -q --depth 1 "$REPO" "$DIR"
+rm -rf "$DIR"
+if ! git clone -q --depth 1 "$REPO" "$DIR" 2>/dev/null; then
+  # GitHub onbereikbaar: de reservekopie van de code op de Storage Box (backup.sh, elke nacht).
+  log "    GitHub onbereikbaar; code uit de reservekopie op Hetzner"
+  mkdir -p "$DIR" && rclone cat hetzner:veripasso/code/veripasso-code.tar.gz | tar -xz -C "$DIR"
+  git -C "$DIR" init -q && git -C "$DIR" add -A && git -C "$DIR" -c user.email=herstel@veripasso -c user.name=herstel commit -qm "reservekopie" || true
+fi
 cd "$DIR/deploy"
 
 log "4/7 Configuratie (.env) uit Hetzner ontsleutelen"
@@ -102,10 +108,23 @@ if [ -n "$PID" ]; then
 fi
 
 if [ "$MODE" = live ]; then
-  log "Nachtelijke back-up en HTTPS inschakelen"
-  cp "$DIR/deploy/backup.sh" /opt/veripasso/deploy/backup.sh 2>/dev/null || true
+  log "Beveiliging: firewall (alleen 22/80/443), fail2ban, automatische updates"
+  apt-get install -y -qq ufw fail2ban unattended-upgrades >/dev/null
+  ufw --force reset >/dev/null; ufw default deny incoming >/dev/null; ufw allow OpenSSH >/dev/null
+  ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null; ufw allow 443/udp >/dev/null; ufw --force enable >/dev/null
+  sed -i -E 's/^#?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && systemctl reload ssh || true
+  systemctl enable --now fail2ban unattended-upgrades >/dev/null 2>&1 || true
+
+  log "Back-up inrichten (R2-koppeling met de opslagsleutel uit .env, nachtelijke cron)"
+  set -a; . ./.env; set +a
+  rclone config create r2 s3 provider=Cloudflare access_key_id="$S3_ACCESS_KEY_ID" secret_access_key="$S3_SECRET_ACCESS_KEY" \
+    endpoint="$S3_ENDPOINT" no_check_bucket=true >/dev/null
   echo "15 3 * * * root /opt/veripasso/deploy/backup.sh >> /var/log/veripasso-backup.log 2>&1" > /etc/cron.d/veripasso-backup
+  # Deze server wordt de actieve: een oude server (STRATO) uploadt daarna geen back-ups meer.
+  cat /etc/machine-id | rclone rcat hetzner:veripasso/ACTIVE_SERVER
+  log "    deze server is nu de actieve back-upserver (veripasso/ACTIVE_SERVER)"
+
   docker compose up -d caddy >/dev/null 2>&1 || true
-  log "Zet nu de DNS om naar dit IP (scripts/noodherstel.mjs --switch-dns doet dat automatisch)."
+  log "Nog niet gedaan: DNS. Controleer dit verslag; daarna op je pc: node scripts/noodherstel.mjs --switch-dns <IP>"
 fi
 log "Klaar in $(( ($(date +%s) - START) / 60 )) min $(( ($(date +%s) - START) % 60 )) s. Verslag: $REPORT"

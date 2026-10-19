@@ -16,6 +16,8 @@ crons = ["* * * * *"]
 
 [vars]
 QR_HOST = "qr.veripasso.com"
+# Wijzigen = de bewaking stuurt één proefmelding (controle van de meldingsketen).
+MONITOR_TEST_ID = "2026-10-19-a"
 SYNC_URL = "https://app.veripasso.com/api/edge/sync"
 CF_ZONE_ID = "11c92cfca6d159264303f4395e177cf7"
 

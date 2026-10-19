@@ -75,7 +75,7 @@ Geen e-mail, betalingen of analytics van derden. De paspoortpagina zet geen cook
 - Hetzner-snapshots zijn vanaf de server **niet** te wissen: bescherming tegen een hack.
 - De back-up gebruikt een **beperkte R2-sleutel**: lezen van foto's/documenten, schrijven alleen in de back-upbucket.
 - **Bewaking**: Cloudflare Worker controleert elke 5 min app, database, website, noodkopieën en capaciteit; pushmelding via ntfy. backup.sh meldt elke fout ook direct.
-- **Noodherstel met één commando**: `node scripts/noodherstel.mjs --live --switch-dns` (nieuwe server bij Hetzner Cloud, alles terug uit de Storage Box, DNS om). Proef: `--test`.
+- **Noodherstel in stappen** (niets automatisch): `node scripts/noodherstel.mjs` (diagnose) → `--repair` (STRATO herstarten) → `--new-server` → `--switch-dns <IP>`, elk met bevestiging; zie noodplan. Proef: `--test`.
 - Status in **Systeemstatus** (tegel "Laatste back-up"; waarschuwing als een kopie mislukt).
 - **Nodig om te herstellen**: de back-up-wachtzin (gegevensdocument) en toegang tot de opslag.
 - **Hersteltests**: 2026-10-13 (vanaf de server), 2026-10-18 (vanaf Hetzner) en **2026-10-19: volledig

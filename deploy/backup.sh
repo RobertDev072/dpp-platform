@@ -17,10 +17,13 @@ cd "$(dirname "$0")"
 # Pushmelding via ntfy (geheim onderwerp in /root/.veripasso-ntfy; zelfde kanaal als de
 # Cloudflare-bewaking). Elke fout in dit script levert direct een melding op.
 notify() {
-  local topic
+  local topic token
   topic=$(cat /root/.veripasso-ntfy 2>/dev/null || true)
+  token=$(cat /root/.veripasso-ntfy-token 2>/dev/null || true)
   [ -n "$topic" ] || return 0
-  curl -s -m 15 -H "Title: $1" -H "Priority: ${3:-high}" -H "Tags: ${4:-rotating_light}" -d "$2" "https://ntfy.sh/$topic" >/dev/null || true
+  local auth=()
+  [ -n "$token" ] && auth=(-H "Authorization: Bearer $token")
+  curl -s -m 15 "${auth[@]}" -H "Title: $1" -H "Priority: ${3:-high}" -H "Tags: ${4:-rotating_light}" -d "$2" "https://ntfy.sh/$topic" >/dev/null || true
 }
 trap 'notify "BACK-UP MISLUKT" "deploy/backup.sh stopte met een fout (regel $LINENO). Zie /var/log/veripasso-backup.log en noodplan."' ERR
 PASSFILE=/root/.veripasso-backup-pass
@@ -41,9 +44,27 @@ docker compose exec -T db pg_dump -U veripasso -d veripasso -Fc \
 [ "$(stat -c %s "$FILE")" -gt 1024 ] || { echo "Back-up te klein: $FILE"; exit 1; }
 echo "$(date -u +%FT%TZ) back-up gemaakt: $FILE ($(du -h "$FILE" | cut -f1))"
 
+# Welke server is de actieve? Na een noodherstel naar een nieuwe server mag een oude server
+# (bijv. STRATO die weer opduikt) de back-ups NOOIT overschrijven met verouderde gegevens.
+# Markering op de Hetzner Storage Box: veripasso/ACTIVE_SERVER = machine-id van de actieve server.
+SERVER_ID=$(cat /etc/machine-id 2>/dev/null || hostname)
+PASSIVE=false
+if command -v rclone >/dev/null && rclone listremotes | grep -q "^hetzner:"; then
+  ACTIVE=$(rclone cat hetzner:veripasso/ACTIVE_SERVER 2>/dev/null | head -n1 || true)
+  if [ -z "$ACTIVE" ]; then
+    echo "$SERVER_ID" | rclone rcat hetzner:veripasso/ACTIVE_SERVER
+  elif [ "$ACTIVE" != "$SERVER_ID" ]; then
+    PASSIVE=true
+    echo "LET OP: deze server is niet (meer) de actieve server; back-up blijft alleen lokaal."
+    notify "Oude server maakt back-up" "Server $(hostname) is niet meer de actieve VeriPasso-server (na een noodherstel). De back-up is NIET geüpload, zodat de nieuwste gegevens niet overschreven worden. Zie noodplan: terug naar STRATO." default warning
+  fi
+fi
+
 OFFSITE=false
 OFFSITE_BYTES=0
-if command -v rclone >/dev/null && rclone listremotes | grep -q "^${RCLONE_TARGET%%:*}:"; then
+if [ "$PASSIVE" = true ]; then
+  :
+elif command -v rclone >/dev/null && rclone listremotes | grep -q "^${RCLONE_TARGET%%:*}:"; then
   rclone copy "$FILE" "$RCLONE_TARGET"
   echo "$(date -u +%FT%TZ) gekopieerd naar $RCLONE_TARGET"
   OFFSITE=true
@@ -84,7 +105,9 @@ third_copy() {
   rclone delete --min-age 30d "$THIRD_TARGET/db" || return 1
   rclone delete --min-age 30d "$THIRD_TARGET/config" || return 1
 }
-if command -v rclone >/dev/null && rclone listremotes | grep -q "^${THIRD_TARGET%%:*}:"; then
+if [ "$PASSIVE" != true ] && command -v rclone >/dev/null && rclone listremotes | grep -q "^${THIRD_TARGET%%:*}:"; then
+  # Code als reserve voor als GitHub onbereikbaar is (recover.sh valt hierop terug).
+  git -C /opt/veripasso archive --format=tar.gz HEAD 2>/dev/null | rclone rcat "$THIRD_TARGET/code/veripasso-code.tar.gz" 2>/dev/null || true
   if third_copy; then
     THIRD=true
     echo "$(date -u +%FT%TZ) derde kopie bijgewerkt: $THIRD_TARGET"
