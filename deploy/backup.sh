@@ -10,9 +10,19 @@
 # Optioneel: rclone-remote "r2" (rclone config) en RCLONE_TARGET, bijv. r2:veripasso-backups/db
 # Optioneel: rclone-remote "hetzner" (Hetzner Storage Box, SFTP poort 23) voor de derde kopie,
 # volledig los van STRATO en Cloudflare. Zie docs/noodplan.md.
-set -euo pipefail
+set -Eeuo pipefail
 
 cd "$(dirname "$0")"
+
+# Pushmelding via ntfy (geheim onderwerp in /root/.veripasso-ntfy; zelfde kanaal als de
+# Cloudflare-bewaking). Elke fout in dit script levert direct een melding op.
+notify() {
+  local topic
+  topic=$(cat /root/.veripasso-ntfy 2>/dev/null || true)
+  [ -n "$topic" ] || return 0
+  curl -s -m 15 -H "Title: $1" -H "Priority: ${3:-high}" -H "Tags: ${4:-rotating_light}" -d "$2" "https://ntfy.sh/$topic" >/dev/null || true
+}
+trap 'notify "BACK-UP MISLUKT" "deploy/backup.sh stopte met een fout (regel $LINENO). Zie /var/log/veripasso-backup.log en noodplan."' ERR
 PASSFILE=/root/.veripasso-backup-pass
 TARGET_DIR=/var/backups/veripasso
 RCLONE_TARGET=${RCLONE_TARGET:-r2:veripasso-backups/db}
@@ -71,7 +81,10 @@ if command -v rclone >/dev/null && rclone listremotes | grep -q "^${THIRD_TARGET
   else
     THIRD=false
     echo "FOUT: derde kopie naar $THIRD_TARGET mislukt"
+    notify "Derde back-up (Hetzner) MISLUKT" "De database-back-up staat op de server en in R2, maar de kopie naar Hetzner is mislukt. Zie /var/log/veripasso-backup.log."
   fi
+  # Het back-uplog zelf ook buiten de server bewaren (bewijs van de werking).
+  rclone copyto /var/log/veripasso-backup.log "$THIRD_TARGET/logs/veripasso-backup.log" 2>/dev/null || true
 fi
 
 # Status voor de monitoring in de app (deploy/compose.yaml koppelt deze map alleen-lezen).

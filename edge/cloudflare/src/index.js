@@ -227,6 +227,118 @@ async function serveSnapshot(env, publicId, machine) {
   );
 }
 
+// --- bewaking (draait op Cloudflare, dus ook als STRATO volledig plat ligt) ------------------
+// Elke 5 minuten: app, database, website, noodkopieën en capaciteit/back-ups. Bij een
+// verandering (storing of herstel) een pushbericht via ntfy (geheim onderwerp NTFY_TOPIC,
+// als Worker-geheim); zolang een storing duurt elk uur een herinnering; elke ochtend om
+// 08:00 (NL) een korte "alles in orde". Zonder NTFY_TOPIC wordt alleen gelogd.
+const APP = "https://app.veripasso.com";
+const CHECKS = [
+  {
+    key: "app",
+    label: "App (app.veripasso.com)",
+    url: `${APP}/api/health`,
+    advice: "STRATO-server of de app ligt eruit. QR-paspoorten werken via de noodkopie. Zie noodplan scenario 1; bij langer dan 1 uur: scenario 5b (herstel op Hetzner)."
+  },
+  {
+    key: "database",
+    label: "Database",
+    url: `${APP}/api/health/ready`,
+    advice: "De app draait maar de database reageert niet. Zie noodplan scenario 4 (data kwijt of beschadigd)."
+  },
+  {
+    key: "website",
+    label: "Website (www.veripasso.com)",
+    url: "https://www.veripasso.com/",
+    advice: "De landingspagina is onbereikbaar (zelfde server als de app)."
+  },
+  {
+    key: "capacity",
+    label: "Capaciteit en back-ups",
+    url: `${APP}/api/health/capacity`,
+    advice: "Schijf, geheugen, certificaat of back-up vraagt aandacht. Bekijk Systeemstatus in de app."
+  }
+];
+
+async function probe(check) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(check.url, { signal: controller.signal, redirect: "manual", headers: { "User-Agent": "VeriPasso-monitor" }, cf: { cacheTtl: 0 } });
+    const body = (await res.text()).slice(0, 200);
+    return res.status < 400 || res.status === 301 || res.status === 302 ? { ok: true } : { ok: false, detail: `HTTP ${res.status} ${body}`.trim() };
+  } catch (error) {
+    return { ok: false, detail: error.name === "AbortError" ? "geen antwoord binnen 10 s" : error.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function notify(env, { title, message, priority = "default", tags = "" }) {
+  if (!env.NTFY_TOPIC) return;
+  await fetch(`https://ntfy.sh/${env.NTFY_TOPIC}`, {
+    method: "POST",
+    headers: { Title: title, Priority: priority, Tags: tags },
+    body: message
+  }).catch(() => {});
+}
+
+async function monitor(env, now = new Date()) {
+  const stub = buffer(env);
+  const results = [];
+  for (const check of CHECKS) results.push({ check, ...(await probe(check)) });
+  // Noodkopieën: staan er paspoortkopieën in R2 (zonder die kan de QR-terugval niets tonen)?
+  let snapshotsOk = true;
+  try {
+    const list = await env.PASSPORTS.list({ prefix: "passport-snapshots/", limit: 1 });
+    snapshotsOk = list.objects.length > 0;
+  } catch {
+    snapshotsOk = false;
+  }
+  results.push({
+    check: { key: "snapshots", label: "Noodkopieën QR-paspoorten (R2)", advice: "Bij een serverstoring kunnen QR-codes niets tonen. Controleer Cloudflare R2." },
+    ok: snapshotsOk,
+    detail: snapshotsOk ? "" : "geen noodkopieën gevonden"
+  });
+
+  const down = results.filter((r) => !r.ok);
+  for (const r of results) {
+    const before = await stub.getMeta(`mon:${r.check.key}`, "ok");
+    const since = Number(await stub.getMeta(`mon:${r.check.key}:since`, "0"));
+    const lastAlert = Number(await stub.getMeta(`mon:${r.check.key}:alert`, "0"));
+    if (!r.ok && before === "ok") {
+      await stub.setMeta(`mon:${r.check.key}`, "down");
+      await stub.setMeta(`mon:${r.check.key}:since`, String(now.getTime()));
+      await stub.setMeta(`mon:${r.check.key}:alert`, String(now.getTime()));
+      await notify(env, {
+        title: `STORING: ${r.check.label}`,
+        message: `${r.detail}\n\nWat nu: ${r.check.advice}`,
+        priority: r.check.key === "capacity" ? "high" : "urgent",
+        tags: "rotating_light"
+      });
+    } else if (!r.ok && now.getTime() - lastAlert > 60 * 60 * 1000) {
+      await stub.setMeta(`mon:${r.check.key}:alert`, String(now.getTime()));
+      const minutes = Math.round((now.getTime() - since) / 60000);
+      await notify(env, { title: `Nog steeds storing (${minutes} min): ${r.check.label}`, message: `${r.detail}\n\nWat nu: ${r.check.advice}`, priority: "high", tags: "warning" });
+    } else if (r.ok && before === "down") {
+      await stub.setMeta(`mon:${r.check.key}`, "ok");
+      const minutes = Math.round((now.getTime() - since) / 60000);
+      await notify(env, { title: `Hersteld: ${r.check.label}`, message: `Weer bereikbaar na ongeveer ${minutes} minuten.`, tags: "white_check_mark" });
+    }
+  }
+  // Dagelijkse bevestiging om 06:00 UTC (08:00 NL zomertijd): de bewaking leeft.
+  const today = now.toISOString().slice(0, 10);
+  if (now.getUTCHours() === 6 && (await stub.getMeta("mon:daily", "")) !== today) {
+    await stub.setMeta("mon:daily", today);
+    await notify(env, {
+      title: down.length ? `VeriPasso: ${down.length} probleem/problemen` : "VeriPasso: alles in orde",
+      message: down.length ? down.map((r) => `• ${r.check.label}: ${r.detail}`).join("\n") : "App, database, website, noodkopieën en back-ups: OK.",
+      tags: down.length ? "warning" : "white_check_mark"
+    });
+  }
+  return results.map((r) => ({ key: r.check.key, ok: r.ok, detail: r.detail || "" }));
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -247,5 +359,13 @@ export default {
         .then((summary) => console.log(JSON.stringify({ msg: "edge_sync", ...summary })))
         .catch((error) => console.error(JSON.stringify({ msg: "edge_sync_failed", error: error.message })))
     );
+    const now = new Date(event.scheduledTime || Date.now());
+    if (now.getUTCMinutes() % 5 === 0) {
+      ctx.waitUntil(
+        monitor(env, now)
+          .then((results) => console.log(JSON.stringify({ msg: "monitor", results })))
+          .catch((error) => console.error(JSON.stringify({ msg: "monitor_failed", error: error.message })))
+      );
+    }
   }
 };

@@ -8,7 +8,9 @@ import dbModule from "./src/config/db";
 const scheduler = schedulerModule;
 const { close } = dbModule;
 
-scheduler.startBackgroundJobs();
+// BACKGROUND_JOBS=off: bijv. op een herstel-testserver, die niets naar de gedeelde opslag
+// (noodkopieën in R2) of externe partijen mag schrijven.
+if (String(process.env.BACKGROUND_JOBS || "").toLowerCase() !== "off") scheduler.startBackgroundJobs();
 
 let stopping = false;
 async function shutdown() {
