@@ -101,7 +101,7 @@ async function diagnose() {
   DNS app.veripasso.com     → ${appIp.join(", ") || "NIET OP TE ZOEKEN"} ${appIp.includes(STRATO_IP) ? "(STRATO)" : "(niet STRATO)"}
   App                       → ${checks.app === 200 ? "OK" : `PLAT (${checks.app || "geen antwoord"})`}
   Database                  → ${checks.database === 200 ? "OK" : `PLAT (${checks.database || "geen antwoord"})`}
-  QR-domein (via Cloudflare)→ ${checks.qr ? `antwoordt (${checks.qr})` : "geen antwoord"}
+  QR-domein (via Cloudflare)→ ${checks.qr && checks.qr < 500 ? "OK (bereikbaar)" : checks.qr ? `storing (${checks.qr}); QR-codes tonen de noodkopie` : "geen antwoord"}
   STRATO poort 22 (SSH)     → ${checks.ssh ? "open" : "DICHT / onbereikbaar"}
   STRATO poort 443 (HTTPS)  → ${checks.https ? "open" : "DICHT / onbereikbaar"}`);
 
