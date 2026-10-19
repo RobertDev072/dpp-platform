@@ -163,6 +163,25 @@ export default function ProfileForm() {
       </Card>
 
       <MfaSettings role={me.role} />
+
+      <Card>
+        <h2 className="mb-2 text-sm font-semibold text-slate-900">Mijn gegevens</h2>
+        <p className="text-sm text-slate-600">
+          Download alle persoonsgegevens die VeriPasso over jouw account bewaart (naam, e-mail, rol, sessies en je
+          activiteit) als bestand. Wil je je account laten verwijderen of iets laten corrigeren dat je hier niet zelf kunt
+          aanpassen? Vraag het je beheerder of neem contact op met VeriPasso.
+        </p>
+        {me.impersonator ? (
+          <p className="mt-3 text-xs text-slate-400">Niet beschikbaar tijdens "inloggen als".</p>
+        ) : (
+          <a
+            href="/api/auth/me/export"
+            className="mt-3 inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Mijn gegevens downloaden
+          </a>
+        )}
+      </Card>
     </div>
   );
 }

@@ -330,6 +330,46 @@ router.get("/me", requireAuth, (req, res) => {
   res.json(req.user);
 });
 
+// AVG art. 15 en 20 (inzage, overdraagbaarheid): alle persoonsgegevens van de ingelogde
+// gebruiker als JSON-download. Nooit geheimen: geen wachtwoordhash, MFA-geheim,
+// herstelcodes of sessietokens. Tijdens "inloggen als" niet beschikbaar (dat is iemand anders).
+router.get("/me/export", requireAuth, async (req, res, next) => {
+  try {
+    if (req.user.impersonator) throw new HttpError(403, "Niet beschikbaar tijdens 'inloggen als'");
+    const pool = await require("../config/db").getPool();
+    const user = (await pool.query(
+      `SELECT u.id, u.email, u.first_name, u.last_name, u.role, u.status, u.created_at, u.updated_at,
+              (u.mfa_enabled_at IS NOT NULL) AS mfa_enabled, u.mfa_enabled_at,
+              (u.avatar_blob_name IS NOT NULL) AS has_profile_photo,
+              c.name AS company_name, c.kind AS company_kind
+       FROM dbo.users u LEFT JOIN dbo.companies c ON c.id = u.company_id WHERE u.id = $1`,
+      [req.user.id]
+    )).rows[0];
+    const sessions = (await pool.query(
+      "SELECT created_at, expires_at, (impersonator_user_id IS NOT NULL) AS via_inloggen_als FROM dbo.sessions WHERE user_id = $1 ORDER BY created_at DESC",
+      [req.user.id]
+    )).rows;
+    const activity = (await pool.query(
+      `SELECT timestamp, action, entity_type, entity_id, (impersonator_user_id IS NOT NULL) AS via_inloggen_als
+       FROM dbo.auditlogs WHERE user_id = $1 ORDER BY timestamp DESC LIMIT 10000`,
+      [req.user.id]
+    )).rows;
+    await logAudit({ companyId: req.user.companyId, userId: req.user.id, action: "export_own_data", entityType: "User", entityId: req.user.id });
+    res.set("Cache-Control", "no-store");
+    res.attachment(`veripasso-mijn-gegevens-${new Date().toISOString().slice(0, 10)}.json`);
+    res.json({
+      toelichting:
+        "Alle persoonsgegevens die VeriPasso over jouw account bewaart (AVG art. 15 en 20). Productgegevens van je bedrijf vallen onder het bedrijf en zijn via de export van de Bedrijfsbeheerder op te vragen.",
+      gemaaktOp: new Date().toISOString(),
+      account: user,
+      sessies: sessions,
+      activiteit: activity
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Eigen profiel bijwerken: alleen naamvelden (schema dwingt dat af).
 router.patch("/me", requireAuth, validateBody(updateMeSchema), async (req, res, next) => {
   try {
