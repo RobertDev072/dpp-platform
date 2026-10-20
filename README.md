@@ -284,8 +284,9 @@ docs/                     cloudflare, compliance-matrix, verificatie
 - [ ] RPO/RTO als afspraak met klanten vastleggen (nu: max. 1 dag dataverlies, herstel binnen uren).
 
 ### Techniek
-- [ ] Storingsmeldingen vanuit Cloudflare via Telegram (ntfy weigert gedeelde Cloudflare-IP's;
-      meldingen vanaf de server werken wel).
+- [ ] Storingsmeldingen vanuit Cloudflare via Telegram (ntfy heeft een dagquotum voor gedeelde Cloudflare-IP's:
+      een proef op 2026-10-20 kort na middernacht UTC kwam door, eerder op de dag niet;
+      meldingen vanaf de server werken altijd).
 - [ ] Eén keer de echte omschakeling oefenen (nieuwe server + DNS en terug).
 - [ ] Hersteltest elk kwartaal (volgende: 2027-01).
 - [ ] Toegankelijkheidsaudit van de publieke paspoortpagina (WCAG 2.1 AA / EN 301 549).
