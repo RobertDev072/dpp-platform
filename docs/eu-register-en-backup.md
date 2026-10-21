@@ -1,6 +1,6 @@
 # Back-up-DPP-dienstverlener en EU-register
 
-Stand: 2026-10-18. Beide koppelingen zijn **gebouwd en getest, maar staan uit** tot er een
+Stand: 2026-10-21. Beide koppelingen zijn **gebouwd en getest, maar staan uit** tot er een
 partij en endpoint is. Inschakelen = omgevingsvariabelen zetten in `deploy/.env` en
 `update.sh` draaien; er is geen codewijziging nodig (behalve bij afwijkende API's).
 
@@ -25,16 +25,20 @@ bovenstaande, dan is alleen `src/services/dppContinuity.service.js` aan te passe
 
 ## 2. EU DPP-register (RegisterProductDPP)
 
-- In de app: product → tabblad **QR-code** → **Aanmelden bij EU-register**.
+- In de app: product → tabblad **QR-code** → **Klaarzetten voor EU-register** (indienen doet de klant zelf, zie hieronder).
 - Via de API: `POST /api/v1/dpp/{dppId}/register` (sleutel met schrijfrecht), status via
   `GET /api/v1/dpp/{dppId}/registration`.
 - Aanmeldingen wachten in `dbo.dppregistrations`. Met `EU_DPP_REGISTRY_URL` (en eventueel
   `EU_DPP_REGISTRY_TOKEN`) worden ze verstuurd als `POST {url}/registrations` met
   `digitalProductPassportId`, `uniqueProductIdentifier`, `granularity`,
   `economicOperatorId(+Scheme)`, `facilityId`, `contentSpecificationIds`, `passportUrl`.
-- Het register bestaat nog niet en de officiële API is nog niet gepubliceerd. Zodra de
-  Europese Commissie de specificatie publiceert, moet het verzoek daarop worden aangepast.
-  Dit is een generiek koppelpunt, geen implementatie van een bestaande API.
+- **Stand 2026-10-21:** het EU-register is open sinds juli 2026 (eerst batterijen). Indienen
+  doet de klant zelf: verificatie met EU Login en een gekwalificeerd elektronisch zegel, daarna
+  per formulier of met een JSON/XML-bestand (max. 100 paspoorten) volgens het sjabloon van het
+  register. Een openbare API voor dienstverleners is er (nog) niet; de koppeling hierboven is
+  een generiek koppelpunt, geen implementatie van een bestaande API, en staat daarom uit.
+- Nog te bouwen: export volgens het officiële sjabloon, UPI als https-URL, import van de
+  resultaten uit het register (registratie-ID, status, foutcode). Zie README §10.
 
 ## Variabelen
 

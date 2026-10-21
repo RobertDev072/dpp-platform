@@ -9,13 +9,14 @@ import { useToast } from "@/components/ui/Toast";
 
 const STATUS = {
   none: ["neutral", "Niet aangemeld"],
-  queued: ["info", "In de wachtrij"],
+  queued: ["info", "Klaargezet"],
   registered: ["success", "Geregistreerd"],
   failed: ["warning", "Nieuwe poging gepland"]
 };
 
-// Aanmelden bij het EU DPP-register (RegisterProductDPP). Het register is nog niet
-// operationeel: aanmeldingen wachten en worden automatisch verstuurd zodra het er is.
+// EU DPP-register. Het register is open (sinds juli 2026), maar indienen doet de klant zelf
+// (EU Login + gekwalificeerd elektronisch zegel). VeriPasso verstuurt alleen iets als er een
+// koppeling is ingesteld (registryConfigured); anders wordt het paspoort alleen klaargezet.
 export default function RegistryCard({ product }) {
   const toast = useToast();
   const [reg, setReg] = useState(null);
@@ -29,7 +30,7 @@ export default function RegistryCard({ product }) {
     setBusy(true);
     try {
       setReg(await api.post(`/api/products/${product.id}/register`));
-      toast.success("Aanmelding voor het EU-register opgeslagen");
+      toast.success("Klaargezet voor het EU-register");
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -46,13 +47,13 @@ export default function RegistryCard({ product }) {
       </div>
       <p className="text-sm text-slate-600">
         {reg?.registryConfigured
-          ? "Aanmeldingen worden automatisch naar het Europese register gestuurd."
-          : "Het Europese register is nog niet in gebruik. Meld het paspoort nu aan; VeriPasso verstuurt de aanmelding automatisch zodra het register beschikbaar is."}
+          ? "Aanmeldingen worden via de ingestelde koppeling naar het Europese register gestuurd."
+          : "VeriPasso meldt paspoorten nog niet zelf aan bij het Europese register. Je bedrijf dient de registratie zelf in, in het EU-register, nadat het daar geverifieerd is (EU Login en een gekwalificeerd elektronisch zegel). Hier zet je het paspoort alvast klaar; een exportbestand voor het register volgt."}
       </p>
       {reg?.registered_at && <p className="text-xs text-slate-500">Geregistreerd op {new Date(reg.registered_at).toLocaleString("nl-NL")}</p>}
       {reg?.status !== "registered" && (
         <Button type="button" variant="outline" loading={busy} disabled={!product.published_at} onClick={register}>
-          {reg?.status && reg.status !== "none" ? "Opnieuw aanmelden" : "Aanmelden bij EU-register"}
+          {reg?.status && reg.status !== "none" ? "Opnieuw klaarzetten" : "Klaarzetten voor EU-register"}
         </Button>
       )}
       {!product.published_at && <p className="text-xs text-slate-400">Publiceer het paspoort eerst.</p>}
