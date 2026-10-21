@@ -36,6 +36,10 @@ Bron: *DPP Registry User Guide for Economic Operators* v1.03 (Europese Commissie
 - **VeriPasso** host de volledige paspoortgegevens, houdt ze actueel en *altijd bereikbaar*,
   bewaart elke versie onveranderlijk (nooit verwijderen; elke versie blijft als JSON, JSON-LD en
   XML op te vragen) en levert de registratiegegevens.
+- **Bewaarplicht:** paspoorten en alle versies blijven beschikbaar voor de periode die de
+  productregels voorschrijven (per productgroep, vaak 10 jaar of langer), **ook als de klant
+  stopt of VeriPasso failliet gaat**. Dat laatste vraagt een onafhankelijke back-up-
+  dienstverlener (§1) en afspraken in de klantvoorwaarden (algemene voorwaarden art. 12).
 
 **Wat het register vraagt per paspoort:** granulariteit (voor batterijen alleen *item*), de
 **UPI** (https-URL volgens JTC 24, max. 2000 tekens, moet naar het paspoort leiden) en
@@ -43,11 +47,17 @@ optioneel model-ID en batch-ID. Het register geeft een correlation ID en bij suc
 registratie-ID (URI). Eén fout in een bestand keurt het hele bestand af.
 
 **In VeriPasso** (product → tabblad QR-code → kaart *EU DPP-register*):
-- UPI, model-ID en granulariteit om over te nemen; per batch en exemplaar als CSV, in delen van
-  max. 100 (`GET /api/products/{id}/registration/records?granularity=item|batch|model`).
-- Controles vooraf zoals het register: alleen https, geen afwijkende poort, unieke UPI's,
-  toegestane bestandsnaam; *UPI controleren* opent de UPI zoals het register (max. één
-  doorverwijzing, nooit naar http, eindigt op 200).
+- UPI, model-ID en granulariteit om over te nemen. **UPI per exemplaar:** elk exemplaar heeft
+  een eigen paspoort en een eigen UPI met het serienummer (`…/01/{GTIN}[/10/{lot}]/21/{serie}`);
+  de UPI zonder serienummer is die van het model (alleen model-informatie). Batterijen worden
+  per exemplaar geregistreerd.
+- *Overzicht voor handmatige invoer*: een CSV-werklijst per model, batch of exemplaar, in delen
+  van max. 100 (`GET /api/products/{id}/registration/records?granularity=item|batch|model`).
+  **Niet uploadbaar** in het register: dat accepteert alleen JSON of XML volgens zijn sjabloon.
+- Vooraf controleren volgens de eisen uit de handleiding: alleen https, geen afwijkende poort,
+  unieke UPI's, toegestane bestandsnaam; *UPI vooraf controleren* opent de UPI (hooguit één
+  doorverwijzing, nooit naar http, eindigt op 200). De handleiding noemt geen exact maximum aan
+  doorverwijzingen; het register doet zelf de definitieve controle.
 - Uitkomst vastleggen: status (ingediend / geregistreerd / afgewezen), URI, correlation ID,
   foutcode; de paspoortversie van dat moment wordt mee bewaard.
 - Stand register (gids v1.03): registratie van batterijpaspoorten lukt nog niet, omdat de
@@ -56,6 +66,10 @@ registratie-ID (URI). Eén fout in een bestand keurt het hele bestand af.
 **Nog niet:** het officiële bestandssjabloon (alleen te downloaden na inloggen in het register;
 zodra we het hebben, komt de bestandsopbouw in `src/services/registryRecord.service.js`) en een
 API voor dienstverleners (bestaat niet). De oude koppeling hieronder blijft daarom uit.
+URI's legt de klant nu met de hand vast (de CSV-export van het Activity Dashboard bevat volgens
+de handleiding alleen fouten). Te controleren zodra er toegang is: exporteert het detailscherm
+van een geslaagde registratie ook de URI's? Dan een import toevoegen (100 URI's overtypen is
+foutgevoelig).
 
 ### Oude generieke koppeling (staat uit)
 

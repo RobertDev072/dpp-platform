@@ -109,6 +109,7 @@ async function sendArchivedVersion(req, res, product, version, format) {
     instance: product.instance || null,
     accessLevel: dppAccess.levelFor(req, product.company_id)
   });
+  dppAccess.logAccess(req, product, { resource: "version" });
 }
 
 async function readPassport(req, res, next) {
@@ -151,6 +152,7 @@ async function readPassport(req, res, next) {
       instance: product.instance || null,
       accessLevel: dppAccess.levelFor(req, product.company_id)
     });
+    dppAccess.logAccess(req, product, { resource: "passport" });
   } catch (error) {
     next(error);
   }
@@ -201,6 +203,7 @@ router.get("/:publicId/versions/:version/documents/:documentId/file", async (req
     const version = await archive.getVersion(product.id, parseVersionNumber(req.params.version));
     const doc = version?.snapshot?.documents?.find((d) => String(d.id) === String(req.params.documentId));
     if (!doc || !dppAccess.canSeeDocument(doc, dppAccess.levelFor(req, product.company_id))) throw new HttpError(404, "Niet gevonden");
+    if (!doc.isPublic) dppAccess.logAccess(req, product, { resource: "document", documentId: doc.id });
     if (doc.objectName) {
       res.set("Cache-Control", doc.isPublic ? "public, max-age=60" : "private, no-store");
       res.redirect(302, await getProductDocumentUrl(doc.objectName));
@@ -225,6 +228,7 @@ router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
     const doc = snapshot.documents.find((d) => String(d.id) === String(req.params.documentId));
     if (!doc || !dppAccess.canSeeDocument(doc, dppAccess.levelFor(req, product.company_id))) throw new HttpError(404, "Niet gevonden");
     res.set("Cache-Control", doc.isPublic ? "public, max-age=60" : "private, no-store");
+    if (!doc.isPublic) dppAccess.logAccess(req, product, { resource: "document", documentId: doc.id });
     if (doc.objectName) {
       res.redirect(302, await getProductDocumentUrl(doc.objectName));
       return;

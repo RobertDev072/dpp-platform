@@ -35,9 +35,10 @@ Het registreren doet het bedrijf zelf; VeriPasso host het paspoort en levert de 
       wat niet klopt.
 
 ## 3. Paspoorten registreren
-- [ ] In VeriPasso: product → tabblad QR-code → *EU DPP-register* → **UPI controleren**.
-- [ ] Gegevens overnemen (UPI, model-ID, batch-ID) of de CSV per exemplaar downloaden
-      (delen van max. 100). Batterijen: alleen per exemplaar (*item*).
+- [ ] In VeriPasso: product → tabblad QR-code → *EU DPP-register* → **UPI vooraf controleren**.
+- [ ] Gegevens overnemen (UPI, model-ID, batch-ID); het *overzicht voor handmatige invoer* (CSV) is een werklijst, **niet** om te uploaden
+      (delen van max. 100). Batterijen: alleen per exemplaar (*item*); elk exemplaar heeft een
+      eigen UPI met het serienummer erin (`…/01/{GTIN}/…/21/{serienummer}`).
 - [ ] In het register: *DPP Registration* → formulier (1 paspoort) of bestand (max. 100,
       JSON/XML volgens het sjabloon van het register; bestandsnaam alleen letters, cijfers,
       punt, underscore en koppelteken).

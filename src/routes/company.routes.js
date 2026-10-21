@@ -179,7 +179,8 @@ const dppAccess = require("../services/dppAccess.service");
 const createAccessTokenSchema = z.object({
   name: z.string().trim().min(1, "Vul een naam in").max(100),
   level: z.enum(["professional", "authority"]),
-  expiresInDays: z.number().int().min(1).max(3650).nullable().optional()
+  // Altijd een vervaldatum (max. 2 jaar): tokenhouders zijn vaak personen (AVG).
+  expiresInDays: z.number().int().min(1).max(730).default(365)
 });
 
 router.get("/access-tokens", requireRole("company_admin"), requireOwnCompany, async (req, res, next) => {
@@ -192,7 +193,7 @@ router.get("/access-tokens", requireRole("company_admin"), requireOwnCompany, as
 
 router.post("/access-tokens", requireRole("company_admin"), requireOwnCompany, validateBody(createAccessTokenSchema), async (req, res, next) => {
   try {
-    const expiresAt = req.body.expiresInDays ? new Date(Date.now() + req.body.expiresInDays * 86400000) : null;
+    const expiresAt = new Date(Date.now() + req.body.expiresInDays * 86400000);
     const created = await dppAccess
       .createToken({ companyId: req.user.companyId, level: req.body.level, name: req.body.name, createdBy: req.user.id, expiresAt })
       .catch((err) => {
@@ -206,6 +207,17 @@ router.post("/access-tokens", requireRole("company_admin"), requireOwnCompany, v
       metadata: { name: created.name, level: created.access_level, prefix: created.token_prefix }
     });
     res.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Logboek: wanneer dit token welk paspoort of document opvroeg (laatste 100; 365 dagen bewaard).
+router.get("/access-tokens/:tokenId/log", requireRole("company_admin"), requireOwnCompany, async (req, res, next) => {
+  try {
+    const id = Number(req.params.tokenId);
+    if (!Number.isInteger(id) || id < 1) throw new HttpError(404, "Niet gevonden");
+    res.json(await dppAccess.accessLog(req.user.companyId, id));
   } catch (error) {
     next(error);
   }

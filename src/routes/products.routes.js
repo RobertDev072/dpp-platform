@@ -1468,9 +1468,10 @@ router.get("/:id/registration/check", requireRole(...ALL_ROLES), heavyExportLimi
   }
 });
 
-// Registratiegegevens van alle paspoorten van dit product (model, batches, exemplaren) als
-// CSV, in delen van max. 100 (de limiet per bestand van het register). Eén fout keurt in
-// het register het hele bestand af: bij fouten 422 met de lijst, geen bestand.
+// Overzicht voor handmatige invoer: registratiegegevens van alle paspoorten van dit product
+// (model, batches, exemplaren) als CSV-werklijst, in delen van max. 100. Niet uploadbaar in
+// het register (dat accepteert alleen JSON/XML volgens zijn sjabloon). Eén fout keurt in het
+// register een heel bestand af: bij fouten daarom 422 met de lijst, geen bestand.
 router.get(
   "/:id/registration/records",
   requireRole(...ALL_ROLES),
@@ -1485,7 +1486,7 @@ router.get(
       if (!records.length) throw new HttpError(404, "Geen paspoorten voor deze granulariteit");
       const issues = registry.validate(records);
       if (issues.length) throw new HttpError(422, "De registratiegegevens bevatten fouten", { issues: issues.slice(0, 200) }, "REGISTRATION_INVALID");
-      const stem = registry.safeFileName(`registratie-${product.sku || product.name}-${granularity || "alle"}`);
+      const stem = registry.safeFileName(`overzicht-handmatige-invoer-${product.sku || product.name}-${granularity || "alle"}`);
       const parts = registry.chunk(records);
       res.set("Cache-Control", "private, no-store");
       if (parts.length === 1) {

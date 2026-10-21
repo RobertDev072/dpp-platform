@@ -40,6 +40,18 @@ Wij verwerken persoonsgegevens in twee rollen:
 - **Cookie:** één functionele sessiecookie om ingelogd te blijven (strikt noodzakelijk, geen
   toestemming nodig). Geen analyse- of advertentiecookies, geen trackers van derden.
 
+## 3a. Reparateurs, recyclers en autoriteiten met een toegangstoken
+Een klant kan een professional of toezichthouder een toegangstoken geven om meer van een
+paspoort te zien. Dan verwerken wij (namens de klant):
+- **Wat:** de naam van de partij of persoon zoals de klant die invoert, het niveau, wanneer het
+  token is gemaakt, verloopt en laatst is gebruikt, en een logboek van opvragingen (tijdstip,
+  welk paspoort of document). **Geen** IP-adres of browsergegevens. Het token zelf bewaren we
+  alleen versleuteld (gehasht).
+- **Waarom:** alleen bevoegde partijen toegang geven en kunnen aantonen wie wat heeft
+  opgevraagd. Grondslag: gerechtvaardigd belang van de klant. [BESLUIT: laten bevestigen]
+- **Hoe lang:** een token verloopt na maximaal 2 jaar en is altijd in te trekken; het logboek
+  wordt na 365 dagen gewist.
+
 ## 4. Contact en demo-aanvragen
 Als je ons mailt, gebruiken we je naam, e-mailadres en bericht om je te antwoorden en een
 eventuele overeenkomst voor te bereiden. Bewaard zolang nodig, maximaal [BESLUIT: bijv. 2 jaar]
@@ -73,6 +85,8 @@ Wij verkopen geen gegevens en delen ze niet met anderen, tenzij de wet ons daart
 | Logboek van handelingen | [BESLUIT: bijv. 2 jaar] |
 | Inlogsessies | maximaal 8 uur geldig; verlopen sessies [BESLUIT: bijv. na 30 dagen gewist] |
 | Uitnodigingslinks | 48 uur geldig |
+| Toegangstokens | maximaal 2 jaar geldig, altijd in te trekken |
+| Logboek opvragingen met een token | 365 dagen |
 | Reservekopieën | op de server 7 dagen; extern [BESLUIT: bijv. 30–90 dagen] |
 | Contactberichten | [BESLUIT] |
 

@@ -10,7 +10,8 @@ const passport = require("./passport.service");
 // Per paspoort: granulariteit (model/batch/item; voor batterijen alleen item), de UPI
 // (https-URL, max. 2000 tekens), en optioneel model- en batch-ID. Het officiële bestands-
 // sjabloon is (nog) niet openbaar; zodra het er is, hoort alleen de bestandsopbouw hier
-// bij te komen. Tot dan: CSV met dezelfde velden, in delen van max. 100.
+// bij te komen. Tot dan alleen een CSV-werklijst voor handmatige invoer (niet uploadbaar:
+// het register accepteert alleen JSON of XML).
 
 const MAX_PER_FILE = 100;
 const MAX_UPI_LENGTH = 2000;
@@ -88,8 +89,10 @@ function validate(records) {
   return issues;
 }
 
-// Opent de UPI zoals het register dat doet: alleen https, hooguit één doorverwijzing en
-// nooit terug naar http; het eindantwoord moet 200 zijn.
+// Vooraf controleren volgens de eisen uit de handleiding: te veel doorverwijzingen of een
+// doorverwijzing naar http gaan fout. Het exacte maximum noemt de handleiding niet; wij staan
+// er hooguit één toe (veilig). Het eindantwoord moet 200 zijn. Het register doet zelf de
+// definitieve controle.
 async function checkResolvable(upi, { maxRedirects = 1 } = {}) {
   let current = upi;
   for (let hop = 0; hop <= maxRedirects; hop += 1) {

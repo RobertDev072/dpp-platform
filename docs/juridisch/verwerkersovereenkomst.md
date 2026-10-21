@@ -101,8 +101,8 @@ Ondertekend:
 | Onderdeel | Inhoud |
 |---|---|
 | Doel | Leveren van het VeriPasso-platform: accounts, productgegevens beheren, digitale productpaspoorten publiceren, QR-codes, API, beveiliging en reservekopieën |
-| Betrokkenen | Medewerkers van de klant (gebruikers); personen die eventueel voorkomen in documenten die de klant uploadt |
-| Persoonsgegevens | Naam, zakelijk e-mailadres, rol, bedrijf, optionele profielfoto, gehasht wachtwoord, versleuteld geheim voor tweestapsverificatie, inlogsessies (met tijdstip, browser en IP-adres [INVULLEN: controleren wat precies wordt opgeslagen]), logboek van handelingen, API-sleutels (alleen gehasht) |
+| Betrokkenen | Medewerkers van de klant (gebruikers); externe tokenhouders die de klant toegang geeft (reparateurs, recyclers, autoriteiten); personen die eventueel voorkomen in documenten die de klant uploadt |
+| Persoonsgegevens | Naam, zakelijk e-mailadres, rol, bedrijf, optionele profielfoto, gehasht wachtwoord, versleuteld geheim voor tweestapsverificatie, inlogsessies (met tijdstip, browser en IP-adres [INVULLEN: controleren wat precies wordt opgeslagen]), logboek van handelingen, API-sleutels (alleen gehasht); bij toegangstokens: naam van de partij, niveau, geldigheid en een logboek van opvragingen (tijdstip, paspoort/document; geen IP-adres; token alleen gehasht, max. 2 jaar geldig, logboek 365 dagen) |
 | Bijzondere persoonsgegevens | Geen. De klant uploadt geen bijzondere persoonsgegevens. |
 | Bewaartermijnen | Zie het document Bewaartermijnen |
 | Locatie | EU: Duitsland (applicatie en database), Finland (reservekopieën), EU-opslag bij Cloudflare (bestanden) |

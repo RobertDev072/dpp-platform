@@ -107,4 +107,46 @@ function levelFor(req, companyId) {
   return "public";
 }
 
-module.exports = { LEVELS, rank, canSeeDocument, isAccessToken, listTokens, createToken, revokeToken, authenticate, levelFor, MAX_ACTIVE_TOKENS };
+// Opvraging met een token vastleggen (wie = het token, wat, wanneer). Alleen als het token
+// voor dit paspoort meer gaf dan de publieke weergave. Nooit blokkerend: een fout in het
+// logboek mag het opvragen niet breken.
+function logAccess(req, product, { resource, documentId = null, publicId = null }) {
+  const access = req.dppAccess;
+  if (!access || levelFor(req, product.company_id) === "public") return;
+  getPool()
+    .then((pool) =>
+      pool.query("INSERT INTO dbo.dppaccesslog (token_id, public_id, resource, document_id) VALUES ($1, $2, $3, $4)", [
+        access.tokenId,
+        String(publicId || product.instance?.publicId || product.public_id).toLowerCase(),
+        resource,
+        documentId
+      ])
+    )
+    .catch(() => {});
+}
+
+async function accessLog(companyId, tokenId, limit = 100) {
+  const pool = await getPool();
+  return (await pool.query(
+    `SELECT l.public_id, l.resource, l.document_id, l.accessed_at
+     FROM dbo.dppaccesslog l JOIN dbo.dppaccesstokens t ON t.id = l.token_id
+     WHERE l.token_id = $1 AND t.company_id IS NOT DISTINCT FROM $2
+     ORDER BY l.accessed_at DESC LIMIT $3`,
+    [tokenId, companyId, limit]
+  )).rows;
+}
+
+module.exports = {
+  LEVELS,
+  rank,
+  canSeeDocument,
+  isAccessToken,
+  listTokens,
+  createToken,
+  revokeToken,
+  authenticate,
+  levelFor,
+  logAccess,
+  accessLog,
+  MAX_ACTIVE_TOKENS
+};

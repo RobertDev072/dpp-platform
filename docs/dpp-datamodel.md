@@ -17,8 +17,11 @@ Stand: 2026-10-18 · `dppSchemaVersion` **1.0.0**. Geldt voor `GET /api/dpp/{id}
 | `authority` | markttoezicht, aangemelde instanties, Commissie | idem, token met niveau autoriteit | plus documenten met zichtbaarheid *Autoriteiten* |
 
 Tokens maakt de Bedrijfsbeheerder in **Bedrijfsinstellingen → Toegang voor professionals en
-autoriteiten**; per document kies je *Zichtbaar voor*. Interne documenten komen nooit in de
-API. Antwoorden met een token zijn `Cache-Control: private, no-store` en worden nooit door
+autoriteiten**; per document kies je *Zichtbaar voor* (standaard *Alleen intern*: openzetten is
+een bewuste keuze). Interne documenten komen nooit in de API. Tokens worden alleen gehasht
+bewaard, verlopen altijd (max. 2 jaar) en zijn in te trekken; elke opvraging die meer geeft dan
+de publieke weergave wordt gelogd (token, paspoort/document, tijdstip; geen IP-adres; 365 dagen
+bewaard, zichtbaar bij *Gebruik*). Antwoorden met een token zijn `Cache-Control: private, no-store` en worden nooit door
 Cloudflare bewaard. Beperkte documenten downloaden: `GET /api/dpp/{id}/documents/{docId}/file`
 met het token. Een eigen API-sleutel (`vp_…`) geeft op de eigen paspoorten niveau `authority`.
 Welke **gegevensvelden** per niveau openbaar zijn (bijv. Bijlage XIII van de Batterijverordening)

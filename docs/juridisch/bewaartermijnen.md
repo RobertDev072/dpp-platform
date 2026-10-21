@@ -13,6 +13,8 @@
 | Paspoortversies (productgegevens) | bewaard, onveranderlijk (hashketen) | zolang het paspoort moet bestaan; [BESLUIT: minimaal de wettelijke termijn per productgroep, vaak 10 jaar] | wettelijke eisen DPP (ESPR) |
 | Gearchiveerde producten/bedrijven | gearchiveerd, later definitief verwijderd [INVULLEN: termijn controleren] | [BESLUIT] | |
 | Uitnodigingslinks | 48 uur geldig | 48 uur | beveiliging |
+| Toegangstokens (professionals/autoriteiten) | max. 2 jaar geldig, intrekbaar; ingetrokken/verlopen tokens blijven zichtbaar in de lijst | [BESLUIT: verlopen tokens na 1 jaar verwijderen] | toegang beperken |
+| Logboek opvragingen met een token | 365 dagen (automatisch) | 365 dagen | aantonen wie wat opvroeg |
 | Reservekopie op de server | 7 dagen | 7 dagen | herstel |
 | Reservekopie Cloudflare R2 | [INVULLEN: controleren levenscyclusregel] | [BESLUIT: 30 dagen] | herstel |
 | Reservekopie Hetzner | 30 dagen | 30 dagen | herstel |

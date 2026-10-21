@@ -513,6 +513,8 @@ async function pruneOldMetrics({ hourlyRetentionDays, snapshotRetentionDays }) {
   await pool.request().input("days", sql.Int, snapshotRetentionDays).query(`
     DELETE FROM dbo.SystemMetricsSnapshots WHERE taken_at < now() - make_interval(days => @days::int)
   `);
+  // Toegangslogboek van tokenhouders (persoonsgegevens): 365 dagen, zie bewaartermijnen.
+  await pool.request().query("DELETE FROM dbo.dppaccesslog WHERE accessed_at < now() - interval '365 days'");
 }
 
 // --- groei & prognose ---------------------------------------------------------

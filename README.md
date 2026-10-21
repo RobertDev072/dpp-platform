@@ -140,7 +140,7 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   toegangstokens (`vpa_…`) die het bedrijf uitgeeft; per document *Zichtbaar voor*. Antwoorden
   met een token worden nooit gedeeld gecachet. Zie docs/dpp-datamodel.md.
 - **EU DPP-register**: de klant registreert zelf (EU Login + QSeal). VeriPasso levert de
-  registratiegegevens (UPI, model-/batch-ID; CSV per 100), controleert ze zoals het register en
+  registratiegegevens (UPI per exemplaar, model-/batch-ID; CSV-werklijst per 100), controleert ze vooraf en
   legt de uitkomst vast (URI, correlation ID, status, foutcode, paspoortversie). Zie
   docs/eu-register-en-backup.md en de [checklist voor klanten](docs/eu-register-checklist-klant.md).
 - **Back-up-dienstverlener**: koppeling gebouwd, staat uit tot er een partij is.

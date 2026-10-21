@@ -80,6 +80,11 @@ test("toegang per niveau en EU-registratiegegevens", async (t) => {
     const list = await request(baseUrl, "GET", "/api/company/access-tokens", { cookie: cookieA });
     assert.equal(list.data.length, 2);
     assert.ok(list.data.every((row) => row.token === undefined && !("token_hash" in row)), "geen token of hash in de lijst");
+    // Altijd een vervaldatum: standaard 1 jaar, hooguit 2 jaar.
+    const days = (new Date(pro.data.expires_at) - Date.now()) / 86400000;
+    assert.ok(days > 364 && days < 366, `verloopt over ${days} dagen`);
+    assert.equal((await request(baseUrl, "POST", "/api/company/access-tokens", { cookie: cookieA, body: { name: "X", level: "professional", expiresInDays: 731 } })).status, 400);
+    assert.equal((await request(baseUrl, "POST", "/api/company/access-tokens", { cookie: cookieA, body: { name: "X", level: "professional", expiresInDays: null } })).status, 400);
   });
 
   const titles = (body) => body.documents.map((d) => d.title).sort();
@@ -130,6 +135,24 @@ test("toegang per niveau en EU-registratiegegevens", async (t) => {
     assert.equal(ok.headers.get("location"), "https://files.example.test/repair.pdf");
     assert.equal((await dpp(baseUrl, publicId, professionalToken, `/documents/${docs.test.id}/file`)).status, 404);
     assert.equal((await dpp(baseUrl, publicId, authorityToken, `/documents/${docs.intern.id}/file`)).status, 404);
+  });
+
+  await t.test("logboek: wie wanneer wat opvroeg, alleen als het token meer gaf dan publiek", async () => {
+    const list = await request(baseUrl, "GET", "/api/company/access-tokens", { cookie: cookieA });
+    const pro = list.data.find((row) => row.access_level === "professional");
+    let rows = [];
+    for (let i = 0; i < 20 && rows.length < 2; i += 1) {
+      rows = (await request(baseUrl, "GET", `/api/company/access-tokens/${pro.id}/log`, { cookie: cookieA })).data;
+      if (rows.length < 2) await new Promise((r) => setTimeout(r, 50));
+    }
+    const kinds = rows.map((r) => r.resource);
+    assert.ok(kinds.includes("passport") && kinds.includes("document"), JSON.stringify(rows));
+    assert.ok(rows.every((r) => String(r.public_id).toLowerCase() === publicId));
+    assert.ok(rows.every((r) => !("ip" in r) && !("user_agent" in r)), "geen IP of browser in het logboek");
+    // Ander bedrijf ziet het logboek niet; token van B gaf alleen publiek → niets gelogd.
+    assert.deepEqual((await request(baseUrl, "GET", `/api/company/access-tokens/${pro.id}/log`, { cookie: cookieB })).data, []);
+    const ofB = (await pool.query("SELECT count(*) FROM dbo.dppaccesslog l JOIN dbo.dppaccesstokens t ON t.id = l.token_id WHERE t.company_id = $1", [companyB])).rows[0].count;
+    assert.equal(Number(ofB), 0);
   });
 
   await t.test("ingetrokken token werkt niet meer", async () => {

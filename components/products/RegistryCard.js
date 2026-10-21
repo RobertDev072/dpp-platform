@@ -97,7 +97,12 @@ export default function RegistryCard({ product }) {
           EU-register
         </a>
         , nadat het daar geverifieerd is (EU Login en een gekwalificeerd elektronisch zegel). VeriPasso host het paspoort en
-        zorgt dat de UPI altijd naar het paspoort leidt. Batterijen worden per exemplaar geregistreerd.
+        zorgt dat de UPI altijd naar het paspoort leidt.
+      </p>
+      <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+        <strong>Batterijen worden per exemplaar geregistreerd.</strong> Elk exemplaar (tabblad Batches &amp; exemplaren) heeft een
+        eigen UPI met het serienummer erin, bijv. <code className="text-xs">…/01/&#123;GTIN&#125;/21/&#123;serienummer&#125;</code>. De
+        UPI hieronder is die van het model en geldt alleen voor model-informatie.
       </p>
 
       {!published && <p className="text-xs text-slate-400">Publiceer het paspoort eerst.</p>}
@@ -105,8 +110,8 @@ export default function RegistryCard({ product }) {
       {published && record && (
         <dl className="grid gap-2 rounded-lg border border-slate-200 p-3 text-sm sm:grid-cols-[10rem_minmax(0,1fr)]">
           <dt className="text-slate-500">Granulariteit</dt>
-          <dd>Model (exemplaren: zie de downloads hieronder)</dd>
-          <dt className="text-slate-500">UPI</dt>
+          <dd>Model (exemplaren: zie het overzicht hieronder)</dd>
+          <dt className="text-slate-500">UPI (model)</dt>
           <dd className="flex min-w-0 items-center gap-2">
             <code className="truncate text-xs">{record.upi}</code>
             <Button type="button" size="sm" variant="ghost" onClick={() => copy(record.upi)}>
@@ -153,31 +158,37 @@ export default function RegistryCard({ product }) {
       {published && (
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" loading={checking} onClick={runCheck}>
-            UPI controleren
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => download("item")}>
-            Gegevens exemplaren (CSV)
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => download("batch")}>
-            Gegevens batches (CSV)
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => download("model")}>
-            Gegevens model (CSV)
+            UPI vooraf controleren
           </Button>
         </div>
       )}
       {check && (
         <p className={`text-sm ${check.resolvable?.ok ? "text-emerald-700" : "text-amber-700"}`}>
           {check.resolvable?.ok
-            ? `In orde: de UPI opent het paspoort (${check.resolvable.redirects} doorverwijzing).`
+            ? `Geen problemen gevonden volgens de eisen uit de handleiding van het register: https, de UPI opent het paspoort (${check.resolvable.redirects} doorverwijzing, niet naar http). Het register doet zelf de definitieve controle.`
             : check.issues?.[0]?.message || check.resolvable?.message || "Niet in orde"}
         </p>
       )}
       {published && (
-        <p className="text-xs text-slate-400">
-          De CSV-bestanden bevatten per paspoort de UPI, model-ID en batch-ID, in delen van maximaal 100 (de limiet per bestand van
-          het register). Het officiële uploadsjabloon van het register zit nog niet in VeriPasso.
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-slate-800">Overzicht voor handmatige invoer</p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => download("item")}>
+              Exemplaren (CSV)
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => download("batch")}>
+              Batches (CSV)
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => download("model")}>
+              Model (CSV)
+            </Button>
+          </div>
+          <p className="text-xs text-slate-400">
+            Werklijst met per paspoort de UPI, model-ID en batch-ID, in delen van maximaal 100. <strong>Niet uploaden in het
+            register</strong>: dat accepteert alleen JSON of XML volgens zijn eigen sjabloon. Die uploadexport volgt zodra het
+            sjabloon in VeriPasso zit.
+          </p>
+        </div>
       )}
 
       {published && (

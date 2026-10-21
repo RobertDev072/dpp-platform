@@ -21,7 +21,7 @@ aangesteld (niet verplicht) [BESLUIT: bevestigen].
 
 | # | Verantwoordelijke | Categorie verwerking | Subverwerkers | Buiten EER | Beveiliging |
 |---|---|---|---|---|---|
-| B1 | elke klant met een verwerkersovereenkomst (lijst: [INVULLEN: verwijzing naar klantenlijst]) | gebruikersaccounts, sessies, activiteitenlog, inhoud van productgegevens en documenten, API-sleutels, reservekopieën | STRATO, Cloudflare, Hetzner (zie [subverwerkers.md](subverwerkers.md)) | alleen via Cloudflare-netwerk, met waarborgen | Bijlage 2 verwerkersovereenkomst |
+| B1 | elke klant met een verwerkersovereenkomst (lijst: [INVULLEN: verwijzing naar klantenlijst]) | gebruikersaccounts, sessies, activiteitenlog, inhoud van productgegevens en documenten, API-sleutels, toegangstokens voor externe partijen met logboek van opvragingen (365 dagen), reservekopieën | STRATO, Cloudflare, Hetzner (zie [subverwerkers.md](subverwerkers.md)) | alleen via Cloudflare-netwerk, met waarborgen | Bijlage 2 verwerkersovereenkomst |
 
 ## DPIA
 Een gegevensbeschermingseffectbeoordeling is waarschijnlijk niet verplicht: geen bijzondere
