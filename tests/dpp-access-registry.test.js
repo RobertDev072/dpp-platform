@@ -219,7 +219,10 @@ test("toegang per niveau en EU-registratiegegevens", async (t) => {
   });
 
   await t.test("uitkomst uit het register vastleggen, met de paspoortversie", async () => {
+    const counts = (await request(baseUrl, "GET", `/api/products/${product}/registration`, { cookie: cookieA })).data;
+    assert.deepEqual([counts.itemCount, counts.batchCount], [105, 1], "kaart toont exemplaren als hoofdroute");
     assert.equal((await request(baseUrl, "PATCH", `/api/products/${product}/registration`, { cookie: cookieA, body: { status: "registered" } })).status, 400);
+    assert.equal((await request(baseUrl, "PATCH", `/api/products/${product}/registration`, { cookie: cookieA, body: { status: "" } })).status, 400, "geen status = niets opslaan");
     const rejected = await request(baseUrl, "PATCH", `/api/products/${product}/registration`, {
       cookie: cookieA,
       body: { status: "rejected", correlationId: "corr-1", errorCode: "SEMANTIC_UNAVAILABLE", errorMessage: "Semantic validation failed due to its unavailability." }

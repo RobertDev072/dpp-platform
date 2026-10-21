@@ -1445,9 +1445,17 @@ router.get("/:id/registration", requireRole(...ALL_ROLES), async (req, res, next
     const continuity = require("../services/dppContinuity.service");
     const registration = product.public_id ? await continuity.getRegistration(product.public_id) : null;
     const record = product.public_id ? registry.record(product, null, getQrBaseUrl(req)) : null;
+    const { getPool } = require("../config/db");
+    const counts = (await (await getPool()).query(
+      `SELECT (SELECT count(*) FROM dbo.productitems WHERE product_id = $1)::int AS items,
+              (SELECT count(*) FROM dbo.productbatches WHERE product_id = $1)::int AS batches`,
+      [product.id]
+    )).rows[0];
     res.json({
       ...(registration || { status: "none", registryConfigured: Boolean(continuity.config().registryUrl) }),
       record,
+      itemCount: counts.items,
+      batchCount: counts.batches,
       issues: record ? registry.validate([record]) : []
     });
   } catch (error) {
