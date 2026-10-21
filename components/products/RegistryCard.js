@@ -6,6 +6,7 @@ import { fetchBlob, saveBlob } from "@/lib/download";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
+import InfoTip from "@/components/ui/InfoTip";
 import { useToast } from "@/components/ui/Toast";
 import { productGroup } from "@/lib/productGroups";
 
@@ -29,26 +30,6 @@ const HELP = {
   correlation: "Het nummer van je aanvraag bij de EU. Handig als je contact opneemt met de EU-helpdesk.",
   errorCode: "Alleen bij een afwijzing: de foutcode of foutmelding die de EU toont."
 };
-
-// Kleine uitleg achter een ⓘ: werkt met klikken (ook op telefoons, waar geen hover is).
-function Info({ text }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-label="Uitleg"
-        title={text}
-        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 align-middle text-[10px] font-semibold text-slate-500 hover:bg-slate-100"
-      >
-        i
-      </button>
-      {open && <span className="mt-1 block text-xs font-normal text-slate-500">{text}</span>}
-    </>
-  );
-}
 
 function Step({ n, title, children }) {
   return (
@@ -256,7 +237,7 @@ export default function RegistryCard({ product }) {
                     <p>
                       Dit product heeft {reg.itemCount} exemplaren. Batterijen meld je <strong>per exemplaar</strong> aan, elk met een
                       eigen webadres met het serienummer erin.
-                      <Info text={HELP.itemUpi} />
+                      <InfoTip text={HELP.itemUpi} />
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" size="sm" variant="accent" onClick={() => download("item")}>
@@ -277,7 +258,7 @@ export default function RegistryCard({ product }) {
                   <dl className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
                     <dt className="text-slate-500">
                       {hasItems ? "Webadres van het model" : "Webadres paspoort"}
-                      <Info text={hasItems ? `${HELP.upi} Dit adres geldt alleen voor de model-informatie.` : HELP.upi} />
+                      <InfoTip text={hasItems ? `${HELP.upi} Dit adres geldt alleen voor de model-informatie.` : HELP.upi} />
                     </dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <code className="truncate text-xs text-slate-800">{record.upi}</code>
@@ -287,7 +268,7 @@ export default function RegistryCard({ product }) {
                     </dd>
                     <dt className="text-slate-500">
                       Modelnummer
-                      <Info text={HELP.model} />
+                      <InfoTip text={HELP.model} />
                     </dt>
                     <dd>{record.modelIdentifier || <span className="text-slate-400">niet ingevuld (mag leeg blijven)</span>}</dd>
                   </dl>
@@ -344,13 +325,13 @@ export default function RegistryCard({ product }) {
                   </label>
                   <label className="text-sm text-slate-700">
                     Aanvraagnummer (correlation ID)
-                    <Info text={HELP.correlation} />
+                    <InfoTip text={HELP.correlation} />
                     <input className={input} maxLength={200} value={outcome.correlationId} onChange={(e) => setOutcome((o) => ({ ...o, correlationId: e.target.value }))} />
                   </label>
                   {outcome.status === "registered" && (
                     <label className="text-sm text-slate-700 sm:col-span-2">
                       Registratienummer van de EU (URI)
-                      <Info text={HELP.uri} />
+                      <InfoTip text={HELP.uri} />
                       <input className={input} maxLength={500} value={outcome.registryUri} onChange={(e) => setOutcome((o) => ({ ...o, registryUri: e.target.value }))} />
                     </label>
                   )}
@@ -358,7 +339,7 @@ export default function RegistryCard({ product }) {
                     <>
                       <label className="text-sm text-slate-700">
                         Foutcode
-                        <Info text={HELP.errorCode} />
+                        <InfoTip text={HELP.errorCode} />
                         <input className={input} maxLength={100} value={outcome.errorCode} onChange={(e) => setOutcome((o) => ({ ...o, errorCode: e.target.value }))} />
                       </label>
                       <label className="text-sm text-slate-700">

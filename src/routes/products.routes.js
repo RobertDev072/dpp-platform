@@ -1366,6 +1366,9 @@ router.post("/:id/items", requireRole(...EDITOR_ROLES), validateBody(createItems
       const ok = (await pool.query("SELECT 1 FROM dbo.productbatches WHERE id = $1 AND product_id = $2", [batchId, product.id])).rowCount;
       if (!ok) throw new HttpError(400, "Onbekende batch voor dit product");
     }
+    // Tijdstip van de database vóór het aanmaken: de client vraagt daarmee de ZIP met alleen
+    // deze nieuwe exemplaren op (?createdAfter=), los van de klok van de browser.
+    const since = (await (await require("../config/db").getPool()).query("SELECT now() AS t")).rows[0].t;
     const result = await instancesRepo.createItems({ productId: product.id, companyId: product.company_id, batchId, serials });
     await logAuditFromReq(req, {
       companyId: product.company_id,
@@ -1376,7 +1379,7 @@ router.post("/:id/items", requireRole(...EDITOR_ROLES), validateBody(createItems
     });
     // Verwijzingen voor de noodkopie aanmaken (best effort; het onderhoud haalt achterstand in).
     await require("../services/edgeCache.service").queuePurgeSafely(result.created.map((r) => r.public_id));
-    res.status(201).json({ created: result.created.length, skipped: result.skipped });
+    res.status(201).json({ created: result.created.length, skipped: result.skipped, since: new Date(since).toISOString() });
   } catch (error) {
     next(error);
   }
@@ -1416,6 +1419,49 @@ router.get("/:id/items/export.csv", requireRole(...ALL_ROLES), async (req, res, 
     next(error);
   }
 });
+
+// Alle QR-codes van de exemplaren als ZIP voor de drukker (SVG, vector; per bestand het
+// serienummer). ?createdAfter=ISO: alleen de exemplaren die net zijn aangemaakt. Max. 2.000
+// per ZIP; meer in delen met ?part=2, 3, …
+const ITEMS_PER_ZIP = 2000;
+router.get(
+  "/:id/items/qr.zip",
+  requireRole(...ALL_ROLES),
+  heavyExportLimiter,
+  validateQuery(
+    z.object({
+      createdAfter: z.string().datetime({ offset: true }).optional(),
+      type: z.enum(["qr", "datamatrix"]).default("qr"),
+      part: z.coerce.number().int().min(1).max(1000).default(1)
+    })
+  ),
+  async (req, res, next) => {
+    try {
+      const product = await loadOwnProduct(req);
+      const { createdAfter, type, part } = req.validatedQuery;
+      const pool = await require("../config/db").getPool();
+      const rows = (await pool.query(
+        `SELECT public_id, serial_number FROM dbo.productitems
+         WHERE product_id = $1 AND status = 'active' AND ($2::timestamptz IS NULL OR created_at >= $2::timestamptz)
+         ORDER BY id LIMIT $3 OFFSET $4`,
+        [product.id, createdAfter || null, ITEMS_PER_ZIP, (part - 1) * ITEMS_PER_ZIP]
+      )).rows;
+      if (!rows.length) throw new HttpError(404, "Geen exemplaren om te downloaden");
+      const { zipSync, strToU8 } = require("fflate");
+      const files = {};
+      for (const row of rows) {
+        const text = getPassportUrl(req, row.public_id);
+        const svg = type === "datamatrix" ? generateDataMatrixSvgString(text) : await generateQrSvgString(text);
+        files[`${type === "datamatrix" ? "datamatrix" : "qr"}-${String(row.serial_number).replace(/[^A-Za-z0-9._-]+/g, "-")}.svg`] = strToU8(svg);
+      }
+      await logAuditFromReq(req, { companyId: product.company_id, action: "export_item_codes", entityType: "Product", entityId: product.id, metadata: { count: rows.length, part } });
+      res.set("Cache-Control", "private, no-store");
+      res.attachment(`qr-exemplaren-${qrFileStem(product)}${part > 1 ? `-deel-${part}` : ""}.zip`).type("application/zip").send(Buffer.from(zipSync(files, { level: 6 })));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 // Code van één exemplaar of batch: QR (standaard) of ?type=datamatrix; SVG of ?format=png;
 // ?content=gs1 voor een GS1 Digital Link met lot en serienummer.

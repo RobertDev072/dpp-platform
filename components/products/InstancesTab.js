@@ -7,17 +7,161 @@ import Button from "@/components/ui/Button";
 import Field from "@/components/ui/Field";
 import Select from "@/components/ui/Select";
 import Badge from "@/components/ui/Badge";
+import InfoTip from "@/components/ui/InfoTip";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { HELP, instanceGuide, plannedItemCount, itemsConfirmMessage, BATCH_CONFIRM, itemsCreatedMessage } from "@/lib/instancesGuide";
 
 function formatDate(value) {
   return value ? new Date(value).toLocaleDateString("nl-NL") : "—";
 }
 
+// Vergelijking model / batch / exemplaar. Op een breed scherm een tabel, op mobiel drie
+// kaartjes onder elkaar.
+const LEVELS = [
+  {
+    title: "Model",
+    what: "Het soort product",
+    example: "“Sneaker Blauw”",
+    codes: "1 voor alles",
+    useful: "Algemene productinformatie",
+    required: "Altijd"
+  },
+  {
+    title: "Batch",
+    what: "Eén productieronde",
+    example: "“Lot 42, gemaakt op 15 oktober”",
+    codes: "1 per ronde",
+    useful: "Terugroepacties, kwaliteit per ronde",
+    required: "Nee"
+  },
+  {
+    title: "Exemplaar",
+    what: "Eén los stuk met eigen serienummer",
+    example: "“Sneaker SN-00001”",
+    codes: "1 per stuk",
+    useful: "Garantie, reparatie, onderhoud, tweedehands",
+    required: "Nee, behalve bij batterijen (EU, vanaf 18 februari 2027)"
+  }
+];
+const ROWS = [
+  ["what", "Wat is het?"],
+  ["example", "Voorbeeld"],
+  ["codes", "QR-codes"],
+  ["useful", "Handig voor"],
+  ["required", "Verplicht?"]
+];
+const CHOICES = [
+  ["Meubels, kleding, kleine oplagen", "Alleen het model"],
+  ["Verpakt voedsel, cosmetica, verf", "Model + batch"],
+  ["Fietsen, machines, elektronica", "Model + exemplaar"],
+  ["Batterijen (EV, e-bike, industrieel)", "Exemplaar, verplicht door de EU vanaf 18 februari 2027"]
+];
+
+function Guide() {
+  return (
+    <Card className="space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-900">Wanneer gebruik ik batches en exemplaren?</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Je product heeft al één QR-code die voor álle stuks geldt (het model). Die blijft altijd werken. Hier maak je extra
+          QR-codes, als je meer wilt laten zien.
+        </p>
+      </div>
+
+      <table className="hidden w-full text-left text-sm sm:table">
+        <thead>
+          <tr className="border-b border-slate-200 text-slate-900">
+            <th className="w-32 py-2 pr-3 font-medium" scope="col">
+              <span className="sr-only">Kenmerk</span>
+            </th>
+            {LEVELS.map((level) => (
+              <th key={level.title} className="py-2 pr-3 font-semibold" scope="col">
+                {level.title}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 text-slate-600">
+          {ROWS.map(([key, label]) => (
+            <tr key={key}>
+              <th className="py-2 pr-3 font-medium text-slate-700" scope="row">
+                {label}
+              </th>
+              {LEVELS.map((level) => (
+                <td key={level.title} className="py-2 pr-3 align-top">
+                  {level[key]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="space-y-3 sm:hidden">
+        {LEVELS.map((level) => (
+          <div key={level.title} className="rounded-lg border border-slate-200 p-3 text-sm">
+            <p className="font-semibold text-slate-900">{level.title}</p>
+            <dl className="mt-2 space-y-1">
+              {ROWS.map(([key, label]) => (
+                <div key={key}>
+                  <dt className="text-xs text-slate-500">{label}</dt>
+                  <dd className="text-slate-700">{level[key]}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+
+      <details className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+        <summary className="cursor-pointer font-medium text-slate-900">Wanneer doe ik wat?</summary>
+        <ol className="mt-3 list-decimal space-y-1 pl-5">
+          <li>Eenmalig: maak je product aan en publiceer het. Je model-QR staat nu online.</li>
+          <li>Bij elke nieuwe productieronde: voeg een batch toe (lotnummer, datum, aantal).</li>
+          <li>Als je labels of stickers laat drukken: maak de exemplaren aan en download de QR-codes voor je drukker.</li>
+          <li>Plak elke code op het juiste product.</li>
+        </ol>
+        <p className="mt-3 font-medium text-slate-900">Let op:</p>
+        <ul className="mt-1 list-disc space-y-1 pl-5">
+          <li>Nieuwe codes staan direct online zodra je ze aanmaakt.</li>
+          <li>Een QR-code werkt alleen als hij op het product zit. Producten die je al verkocht hebt, krijgen niet vanzelf een eigen code.</li>
+          <li>Je kunt altijd batches en exemplaren toevoegen, ook als je model-QR al maanden online staat.</li>
+        </ul>
+      </details>
+
+      <details className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+        <summary className="cursor-pointer font-medium text-slate-900">Welke kies ik voor mijn bedrijf?</summary>
+        <table className="mt-3 w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-slate-900">
+              <th className="py-2 pr-3 font-medium" scope="col">
+                Soort product
+              </th>
+              <th className="py-2 font-medium" scope="col">
+                Wat gebruik je?
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {CHOICES.map(([kind, choice]) => (
+              <tr key={kind}>
+                <td className="py-2 pr-3 align-top">{kind}</td>
+                <td className="py-2 align-top">{choice}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </Card>
+  );
+}
+
 // Batch- en itempaspoorten. Elke batch en elk exemplaar krijgt een eigen, permanente
-// QR-code; de productgegevens komen van dit (model)paspoort. Openbaar zodra het product
-// gepubliceerd is.
+// QR-code; de productgegevens komen van dit (model)paspoort.
 export default function InstancesTab({ product }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [batches, setBatches] = useState(null);
   const [items, setItems] = useState(null);
   const [page, setPage] = useState(1);
@@ -25,6 +169,8 @@ export default function InstancesTab({ product }) {
   const [gen, setGen] = useState({ mode: "generate", count: "10", prefix: "", start: "1", list: "", batchId: "" });
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [created, setCreated] = useState(null);
+  const { canCreate, notices } = instanceGuide(product);
 
   const loadBatches = useCallback(() => api.get(`/api/products/${product.id}/batches`).then(setBatches).catch((e) => setError(e.message)), [product.id]);
   const loadItems = useCallback(
@@ -42,6 +188,8 @@ export default function InstancesTab({ product }) {
   async function addBatch() {
     setError("");
     if (!batchForm.batchNumber.trim()) return setError("Vul een batch- of lotnummer in");
+    const ok = await confirm({ title: "Batch toevoegen?", message: BATCH_CONFIRM, confirmLabel: "Ja, aanmaken", cancelLabel: "Annuleren" });
+    if (!ok) return;
     setBusy("batch");
     try {
       await api.post(`/api/products/${product.id}/batches`, {
@@ -50,7 +198,7 @@ export default function InstancesTab({ product }) {
         quantity: batchForm.quantity ? Number(batchForm.quantity) : undefined
       });
       setBatchForm({ batchNumber: "", productionDate: "", quantity: "" });
-      toast.success("Batch toegevoegd");
+      toast.success("Batch toegevoegd en online");
       await loadBatches();
     } catch (err) {
       setError(err.message);
@@ -61,6 +209,10 @@ export default function InstancesTab({ product }) {
 
   async function addItems() {
     setError("");
+    const count = plannedItemCount(gen);
+    if (count < 1) return setError("Vul een aantal of een lijst met serienummers in");
+    const ok = await confirm({ title: "Exemplaren aanmaken?", message: itemsConfirmMessage(count), confirmLabel: "Ja, aanmaken", cancelLabel: "Annuleren" });
+    if (!ok) return;
     setBusy("items");
     try {
       const body =
@@ -69,9 +221,7 @@ export default function InstancesTab({ product }) {
           : { serials: gen.list.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean) };
       if (gen.batchId) body.batchId = Number(gen.batchId);
       const result = await api.post(`/api/products/${product.id}/items`, body);
-      toast.success(
-        `${result.created} exemplaren aangemaakt${result.skipped.length ? `; ${result.skipped.length} serienummers bestonden al` : ""}`
-      );
+      setCreated({ count: result.created, skipped: result.skipped.length, since: result.since });
       setPage(1);
       await loadItems();
     } catch (err) {
@@ -90,75 +240,42 @@ export default function InstancesTab({ product }) {
     }
   }
 
-  const notPublished = !product.published_at;
-
   return (
     <div className="space-y-4">
-      <details className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
-        <summary className="cursor-pointer font-semibold text-slate-900">Hoe werken batches en exemplaren?</summary>
-        <div className="mt-3 space-y-3">
-          <p>
-            Dit product heeft al één paspoort met één QR-code: het <b>modelpaspoort</b>. Dat geldt voor álle exemplaren van dit
-            product. Soms wil je specifieker zijn:
-          </p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>
-              <b>Batch</b>: een productieronde (lot), bijv. alles wat op 15 oktober is gemaakt. Handig bij terugroepacties,
-              kwaliteitscontrole of als materialen per productieronde verschillen.
-            </li>
-            <li>
-              <b>Exemplaar</b>: één individueel product met een eigen serienummer. Handig voor garantie, reparatie,
-              onderhoudshistorie, tweedehands verkoop of dure producten (fietsen, machines, accu's).
-            </li>
-          </ul>
-          <p>
-            Elke batch en elk exemplaar krijgt een <b>eigen QR-code</b> die nooit verandert. Wie die scant, ziet hetzelfde paspoort
-            als het model, plus het serienummer, het lotnummer en de productiedatum. Wijzig je het product, dan zijn alle
-            batches en exemplaren automatisch bijgewerkt.
-          </p>
-          <p className="font-medium text-slate-900">Zo gebruik je het:</p>
-          <ol className="list-decimal space-y-1 pl-5">
-            <li>Publiceer het product (anders werken de codes nog niet).</li>
-            <li>Voeg eventueel een batch toe met lotnummer, productiedatum en aantal.</li>
-            <li>
-              Maak exemplaren aan: laat VeriPasso nummeren (bijv. voorvoegsel <code>SN-</code>, beginnen bij 1 → SN-00001,
-              SN-00002 …) of plak je eigen serienummers. Koppel ze aan een batch als dat van toepassing is.
-            </li>
-            <li>
-              Klik <b>Exporteren (CSV voor drukwerk)</b>: per regel het serienummer en de link voor de QR-code. Die geef je aan je
-              drukker of etiketprinter, die per exemplaar een unieke code print. Of download losse codes via “QR-code”.
-            </li>
-            <li>Plak of graveer de code op het juiste exemplaar.</li>
-          </ol>
-          <p className="text-xs text-slate-500">
-            Een exemplaar archiveren (bijv. gesloopt of teruggenomen) laat het paspoort raadpleegbaar; het krijgt de status
-            gearchiveerd. Serienummers zijn uniek per product: hetzelfde nummer twee keer aanmaken wordt overgeslagen.
-          </p>
-        </div>
-      </details>
+      <Guide />
 
-      {notPublished && (
-        <Card className="border-amber-200 bg-amber-50 text-sm text-amber-800">
-          De QR-codes van batches en exemplaren werken pas als dit product gepubliceerd is.
-        </Card>
-      )}
-      {!product.gtin && (
-        <Card className="border-blue-200 bg-blue-50 text-sm text-blue-800">
-          Tip: met een GTIN krijgt elk exemplaar ook een GS1 Digital Link (GTIN + lot + serienummer).
-        </Card>
-      )}
+      {notices.map((notice) => (
+        <div
+          key={notice.key}
+          role={notice.tone === "warning" ? "alert" : "note"}
+          className={`rounded-xl border p-4 text-sm ${notice.tone === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-blue-200 bg-blue-50 text-blue-800"}`}
+        >
+          {notice.text}
+        </div>
+      ))}
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <Card className="space-y-4">
         <div>
           <h2 className="text-sm font-semibold text-slate-900">Batches</h2>
-          <p className="text-xs text-slate-500">Een paspoort per productiebatch (lot). Lotnummers van max. 20 tekens komen ook in de GS1 Digital Link.</p>
+          <p className="text-xs text-slate-500">Een eigen QR-code per productieronde (lot).</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
-          <Field label="Batch- / lotnummer" name="batch-number" maxLength={100} value={batchForm.batchNumber} onChange={(e) => setBatchForm({ ...batchForm, batchNumber: e.target.value })} />
+          <Field
+            label={
+              <>
+                Batch- / lotnummer
+                <InfoTip text={HELP.lot} />
+              </>
+            }
+            name="batch-number"
+            maxLength={100}
+            value={batchForm.batchNumber}
+            onChange={(e) => setBatchForm({ ...batchForm, batchNumber: e.target.value })}
+          />
           <Field label="Productiedatum" name="batch-date" type="date" value={batchForm.productionDate} onChange={(e) => setBatchForm({ ...batchForm, productionDate: e.target.value })} />
           <Field label="Aantal" name="batch-qty" type="number" min="1" value={batchForm.quantity} onChange={(e) => setBatchForm({ ...batchForm, quantity: e.target.value })} />
-          <Button type="button" variant="accent" loading={busy === "batch"} onClick={addBatch}>
+          <Button type="button" variant="accent" loading={busy === "batch"} disabled={!canCreate} onClick={addBatch}>
             Batch toevoegen
           </Button>
         </div>
@@ -173,7 +290,7 @@ export default function InstancesTab({ product }) {
                     {b.quantity ? ` · ${b.quantity} stuks` : ""} · <span className="font-mono">{b.passportUrl}</span>
                   </span>
                 </span>
-                <span className="flex gap-3">
+                <span className="flex items-center gap-3">
                   <a className="text-xs font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/batches/${b.id}/qr`} target="_blank" rel="noreferrer">
                     QR-code
                   </a>
@@ -191,14 +308,45 @@ export default function InstancesTab({ product }) {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Exemplaren (serienummers)</h2>
-            <p className="text-xs text-slate-500">Een eigen paspoort en QR-code per exemplaar. Tot 1000 per keer.</p>
+            <p className="text-xs text-slate-500">Een eigen QR-code per stuk. Tot 1000 per keer.</p>
           </div>
           {items?.total > 0 && (
-            <a className="text-sm font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/items/export.csv`}>
-              Exporteren (CSV voor drukwerk)
-            </a>
+            <span className="flex flex-wrap gap-3 text-sm">
+              <a className="font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/items/qr.zip`}>
+                Alle QR-codes (ZIP)
+              </a>
+              <a className="font-medium text-blue-600 hover:underline" href={`/api/products/${product.id}/items/export.csv`}>
+                Overzicht voor drukker (CSV)
+              </a>
+            </span>
           )}
         </div>
+
+        {created && (
+          <div role="status" className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+            <p>
+              {itemsCreatedMessage(created.count)}
+              {created.skipped ? ` (${created.skipped} serienummers bestonden al en zijn overgeslagen.)` : ""}
+            </p>
+            {created.count > 0 && (
+              <div className="flex flex-wrap gap-2">
+                <a
+                  className="inline-flex items-center rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+                  href={`/api/products/${product.id}/items/qr.zip?createdAfter=${encodeURIComponent(created.since)}`}
+                >
+                  Download alle QR-codes (ZIP)
+                </a>
+                <a
+                  className="inline-flex items-center rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+                  href={`/api/products/${product.id}/items/export.csv`}
+                >
+                  Overzicht voor drukker (CSV)
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-4 text-sm">
           <label className="flex items-center gap-2">
             <input type="radio" name="gen-mode" checked={gen.mode === "generate"} onChange={() => setGen({ ...gen, mode: "generate" })} /> Nummeren
@@ -210,8 +358,32 @@ export default function InstancesTab({ product }) {
         {gen.mode === "generate" ? (
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Aantal" name="gen-count" type="number" min="1" max="1000" value={gen.count} onChange={(e) => setGen({ ...gen, count: e.target.value })} />
-            <Field label="Voorvoegsel" name="gen-prefix" maxLength={10} placeholder="Bijv. SN-" value={gen.prefix} onChange={(e) => setGen({ ...gen, prefix: e.target.value })} />
-            <Field label="Beginnen bij" name="gen-start" type="number" min="0" value={gen.start} onChange={(e) => setGen({ ...gen, start: e.target.value })} />
+            <Field
+              label={
+                <>
+                  Voorvoegsel
+                  <InfoTip text={HELP.prefix} />
+                </>
+              }
+              name="gen-prefix"
+              maxLength={10}
+              placeholder="Bijv. SN-"
+              value={gen.prefix}
+              onChange={(e) => setGen({ ...gen, prefix: e.target.value })}
+            />
+            <Field
+              label={
+                <>
+                  Beginnen bij
+                  <InfoTip text={HELP.start} />
+                </>
+              }
+              name="gen-start"
+              type="number"
+              min="0"
+              value={gen.start}
+              onChange={(e) => setGen({ ...gen, start: e.target.value })}
+            />
           </div>
         ) : (
           <div>
@@ -230,7 +402,12 @@ export default function InstancesTab({ product }) {
         <div className="flex flex-wrap items-end gap-3">
           {batches?.length > 0 && (
             <Select
-              label="Koppelen aan batch"
+              label={
+                <>
+                  Koppelen aan batch
+                  <InfoTip text={HELP.batchLink} />
+                </>
+              }
               name="gen-batch"
               placeholder="Geen batch"
               options={batches.map((b) => ({ value: String(b.id), label: b.batch_number }))}
@@ -239,13 +416,17 @@ export default function InstancesTab({ product }) {
               className="w-56"
             />
           )}
-          <Button type="button" variant="accent" loading={busy === "items"} onClick={addItems}>
+          <Button type="button" variant="accent" loading={busy === "items"} disabled={!canCreate} onClick={addItems}>
             Exemplaren aanmaken
           </Button>
         </div>
 
         {items?.items?.length > 0 && (
           <>
+            <p className="text-xs text-slate-500">
+              Data Matrix
+              <InfoTip text={HELP.dataMatrix} label="Wat is Data Matrix?" />
+            </p>
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">
               {items.items.map((item) => (
                 <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
@@ -282,6 +463,10 @@ export default function InstancesTab({ product }) {
                 </Button>
               </span>
             </div>
+            <p className="text-xs text-slate-500">
+              Een exemplaar archiveren (bijv. gesloopt of teruggenomen) laat het paspoort raadpleegbaar; het krijgt de status
+              gearchiveerd. Serienummers zijn uniek per product: hetzelfde nummer twee keer aanmaken wordt overgeslagen.
+            </p>
           </>
         )}
       </Card>
