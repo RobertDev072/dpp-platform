@@ -6,7 +6,7 @@ geïsoleerde omgeving; consumenten scannen een QR-code en zien het publieke
 productpaspoort zonder account. Systemen kunnen hetzelfde paspoort op dezelfde URL
 machineleesbaar opvragen (JSON, JSON-LD, XML).
 
-Laatst bijgewerkt: 2026-10-21. **Status: live.** Applicatie en database op een eigen Linux-server
+Laatst bijgewerkt: 2026-10-21 (avond). **Status: live.** Applicatie en database op een eigen Linux-server
 (STRATO, Duitsland), bestanden en QR-rand bij Cloudflare (EU), derde back-up bij Hetzner (Finland).
 Bewaking met pushmeldingen en een geteste noodherstelprocedure: zie §7.
 
@@ -22,6 +22,8 @@ Documentatie:
 
 | Onderwerp | Document |
 |---|---|
+| **Alle functies, in gewone taal** | **[docs/functies.md](docs/functies.md)** |
+| **Wat de eigenaar nog moet doen** | **[docs/checklist-eigenaar.md](docs/checklist-eigenaar.md)** |
 | Hoe alles in elkaar zit | **[docs/infrastructuur.md](docs/infrastructuur.md)** |
 | Bij storingen | **[docs/noodplan.md](docs/noodplan.md)** |
 | Serverbeheer (STRATO) | [docs/hosting-strato.md](docs/hosting-strato.md) |
@@ -289,6 +291,9 @@ docs/                     zie de tabel bovenaan
 ---
 
 ## 10. Openstaand
+
+Afvinklijst voor de eigenaar (wat jij nog moet doen of beslissen):
+**[docs/checklist-eigenaar.md](docs/checklist-eigenaar.md)**. Hieronder het volledige overzicht.
 
 ### Organisatie en wet (geen code; zie [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md))
 - [ ] Juridische concepten invullen, laten controleren en publiceren ([docs/juridisch/](docs/juridisch/)):
