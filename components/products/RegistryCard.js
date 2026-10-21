@@ -7,6 +7,7 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
+import { productGroup } from "@/lib/productGroups";
 
 const STATUS = {
   none: ["neutral", "Nog niet aangemeld"],
@@ -79,7 +80,8 @@ export default function RegistryCard({ product }) {
       .get(`/api/products/${product.id}/registration`)
       .then((data) => {
         setReg(data);
-        if (data?.status && !["none", "queued"].includes(data.status)) setOpen(true);
+        // Batterijen: stappen direct open. Al aangemeld/ingediend: ook open.
+        if (productGroup(data?.productGroup).registryOpen || (data?.status && !["none", "queued"].includes(data.status))) setOpen(true);
       })
       .catch(() => setReg(null));
   }, [product.id]);
@@ -142,6 +144,27 @@ export default function RegistryCard({ product }) {
   const hasItems = (reg?.itemCount || 0) > 0;
   const hasBatches = (reg?.batchCount || 0) > 0;
   const input = "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm";
+  const group = productGroup(reg?.productGroup ?? product.product_group);
+  const started = reg?.status && !["none", "queued"].includes(reg.status);
+  const expiry = reg?.euVerification;
+  const formatDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("nl-NL", { timeZone: "UTC", day: "numeric", month: "long", year: "numeric" });
+
+  // Productgroep waarvoor aanmelden (nog) niet aan de orde is: alleen één ingeklapte regel.
+  if (!group.registryOpen && !started) {
+    return (
+      <Card className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">EU-register</h2>
+          <p className="text-sm text-slate-500">
+            {group.key === "unknown"
+              ? "Kies bij Basisgegevens de productgroep. Pas dan weet je of aanmelden bij de EU nodig is."
+              : `Voor deze productgroep (${group.label.toLowerCase()}) is aanmelden bij de EU nog niet nodig.`}
+          </p>
+        </div>
+        <Badge variant="neutral">Niet nodig</Badge>
+      </Card>
+    );
+  }
 
   return (
     <Card className="space-y-4">
@@ -196,11 +219,23 @@ export default function RegistryCard({ product }) {
             nemen.
           </p>
 
-          <Step n={1} title="Laat je bedrijf verifiëren bij de EU (eenmalig)">
-            <p>
-              Je hebt een EU Login-account en een gekwalificeerd elektronisch zegel (QSeal) van je bedrijf nodig. Na de verificatie
-              toont de EU tot wanneer je zegel geldig is; daarna moet je opnieuw verifiëren.
-            </p>
+          <Step n={1} title="Laat je bedrijf verifiëren bij de EU">
+            <p>Je hebt een EU Login-account en een gekwalificeerd elektronisch zegel (QSeal) van je bedrijf nodig.</p>
+            {expiry ? (
+              <p className={expiry.expired ? "text-red-700" : expiry.remind ? "text-amber-700" : ""}>
+                {expiry.expired ? "Je verificatie is verlopen op " : "Je verificatie verloopt op "}
+                <strong>{formatDay(expiry.expiresOn)}</strong> ({expiry.reason}). Daarna moet je opnieuw verifiëren.
+              </p>
+            ) : (
+              <p>
+                Je verificatie verloopt op de vervaldatum van je zegel, en uiterlijk 3 jaar na je eerste verificatie. Daarna moet je
+                opnieuw verifiëren. Vul de datums in bij{" "}
+                <a href="/company/instellingen" className="text-blue-600 hover:underline">
+                  Bedrijfsinstellingen
+                </a>
+                ; VeriPasso herinnert je dan 60 dagen van tevoren.
+              </p>
+            )}
             <p className="flex flex-wrap gap-3">
               <a href={CHECKLIST_URL} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
                 Lees onze checklist (PDF)

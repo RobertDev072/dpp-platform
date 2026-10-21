@@ -141,8 +141,10 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   met een token worden nooit gedeeld gecachet. Zie docs/dpp-datamodel.md.
 - **EU DPP-register**: de klant registreert zelf (EU Login + QSeal). VeriPasso levert de
   registratiegegevens (UPI per exemplaar, model-/batch-ID; CSV-werklijst per 100), controleert ze vooraf en
-  legt de uitkomst vast (URI, correlation ID, status, foutcode, paspoortversie). Zie
-  docs/eu-register-en-backup.md en de [checklist voor klanten](docs/eu-register-checklist-klant.md).
+  legt de uitkomst vast (URI, correlation ID, status, foutcode, paspoortversie). Productgroep per
+  product (registerkaart alleen actief bij batterijen); verificatiedatums van het bedrijf met een
+  melding 60 dagen voor het verlopen. Zie docs/eu-register-en-backup.md en de
+  [checklist voor klanten](docs/eu-register-checklist-klant.md).
 - **Back-up-dienstverlener**: koppeling gebouwd, staat uit tot er een partij is.
 - **Scans**: alleen echte QR-scans tellen (niet vanuit de app, geen refresh, geen bots;
   1× per apparaat per paspoort per 30 minuten; geen IP, niets op het apparaat). Zie docs/scans.md.

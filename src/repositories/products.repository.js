@@ -5,7 +5,7 @@ const { calculateProductCompleteness } = require("../utils/completeness");
 const PUBLIC_COLUMNS = `
   id, company_id, name, brand, model, sku, gtin, category_id, category_label, description,
   manufacturer, country_of_origin, photo_url, photo_blob_name, photo_thumb_blob_name, status, highlights, public_id,
-  published_at, created_by, created_at, updated_at, facility_id, content_specification_ids, language
+  published_at, created_by, created_at, updated_at, facility_id, content_specification_ids, language, product_group
 `;
 
 // Whitelist: voorkomt dat sort/order ooit rauw in de SQL belanden. De tweede kolom
@@ -387,6 +387,7 @@ async function createProduct({
   manufacturer,
   countryOfOrigin,
   photoUrl,
+  productGroup,
   createdBy
 }) {
   const pool = await getPool();
@@ -404,11 +405,12 @@ async function createProduct({
     .input("manufacturer", sql.NVarChar(200), manufacturer ?? null)
     .input("countryOfOrigin", sql.NVarChar(100), countryOfOrigin ?? null)
     .input("photoUrl", sql.NVarChar(1000), photoUrl ?? null)
+    .input("productGroup", sql.NVarChar(20), productGroup || "unknown")
     .query(`
       INSERT INTO dbo.Products
-        (company_id, name, brand, model, sku, gtin, category_label, description, manufacturer, country_of_origin, photo_url, created_by, status)
+        (company_id, name, brand, model, sku, gtin, category_label, description, manufacturer, country_of_origin, photo_url, created_by, status, product_group)
       VALUES
-        (@companyId, @name, @brand, @model, @sku, @gtin, @categoryLabel, @description, @manufacturer, @countryOfOrigin, @photoUrl, @createdBy, 'draft')
+        (@companyId, @name, @brand, @model, @sku, @gtin, @categoryLabel, @description, @manufacturer, @countryOfOrigin, @photoUrl, @createdBy, 'draft', @productGroup)
       RETURNING ${PUBLIC_COLUMNS}
     `);
   return result.recordset[0];
@@ -430,7 +432,8 @@ const UPDATABLE_FIELDS = [
   "status",
   "facilityId",
   "contentSpecificationIds",
-  "language"
+  "language",
+  "productGroup"
 ];
 const FIELD_TO_COLUMN = {
   name: "name",
@@ -448,7 +451,8 @@ const FIELD_TO_COLUMN = {
   status: "status",
   facilityId: "facility_id",
   contentSpecificationIds: "content_specification_ids",
-  language: "language"
+  language: "language",
+  productGroup: "product_group"
 };
 const FIELD_TO_SQL_TYPE = {
   name: () => sql.NVarChar(200),
@@ -466,7 +470,8 @@ const FIELD_TO_SQL_TYPE = {
   status: () => sql.NVarChar(20),
   facilityId: () => sql.NVarChar(100),
   contentSpecificationIds: () => sql.NVarChar(sql.MAX),
-  language: () => sql.NVarChar(12)
+  language: () => sql.NVarChar(12),
+  productGroup: () => sql.NVarChar(20)
 };
 
 async function updateProduct(id, fields) {

@@ -166,9 +166,23 @@ router.get("/notifications", requireAuth, async (req, res, next) => {
 
     if (["company_admin", "company_user"].includes(user.role) && user.companyId != null) {
       items = await require("../services/insights.service").getCompanyNotifications(user.companyId, { role: user.role });
+      // EU-register: herinnering 60 dagen vóór de verificatie verloopt (vroegste van
+      // vervaldatum zegel en 3 jaar na verificatie). Geen e-mail: VeriPasso mailt niet.
+      const company = await companiesRepo.getCompanyById(user.companyId);
+      const { verificationExpiry } = require("../../lib/euVerification");
+      const expiry = company ? verificationExpiry({ verifiedAt: company.eu_verified_at, sealExpiresAt: company.eu_seal_expires_at }) : null;
+      if (expiry?.remind) {
+        items.unshift({
+          id: `eu-verification:${expiry.expiresOn}:${expiry.expired ? "expired" : "soon"}`,
+          severity: expiry.expired ? "error" : "warning",
+          title: expiry.expired ? "EU-verificatie verlopen" : `EU-verificatie verloopt over ${expiry.daysLeft} dagen`,
+          description: `${expiry.expired ? "Verlopen" : "Verloopt"} op ${new Date(`${expiry.expiresOn}T00:00:00Z`).toLocaleDateString("nl-NL", { timeZone: "UTC" })} (${expiry.reason}). Verifieer je bedrijf opnieuw in het EU-register.`,
+          href: "/company/instellingen"
+        });
+      }
       if (user.role !== "company_admin") {
-        // Abonnementsmeldingen linken naar een beheerpagina die alleen de beheerder ziet.
-        items = items.map((item) => (item.id.startsWith("license:") ? { ...item, href: null } : item));
+        // Abonnements- en verificatiemeldingen linken naar een beheerpagina die alleen de beheerder ziet.
+        items = items.map((item) => (item.id.startsWith("license:") || item.id.startsWith("eu-verification:") ? { ...item, href: null } : item));
       }
     } else if (require("../utils/roles").isPlatformOwner(user.role) || user.role === "partner_admin") {
       const rows = await companiesRepo.listCompaniesWithStats(user.role === "partner_admin" ? { partnerId: user.companyId } : {});

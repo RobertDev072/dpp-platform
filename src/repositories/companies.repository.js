@@ -28,7 +28,7 @@ async function getCompanyById(id) {
     .query(`
       SELECT c.id, c.name, c.slug, c.status, c.plan_id, ${logoUrlSql("c")} AS logo, c.kind, c.partner_id,
              c.license_start, c.license_end, c.created_at, c.updated_at,
-             c.economic_operator_id, c.economic_operator_id_scheme
+             c.economic_operator_id, c.economic_operator_id_scheme, c.eu_verified_at, c.eu_seal_expires_at
       FROM dbo.Companies c
       WHERE c.id = @id
     `);
@@ -58,11 +58,13 @@ async function createCompany({ name, slug, planId, status, kind, partnerId, lice
 
 const UPDATABLE_FIELDS = [
   "name", "slug", "status", "planId", "logo", "logoBlobName", "licenseStart", "licenseEnd", "partnerId",
-  "economicOperatorId", "economicOperatorIdScheme"
+  "economicOperatorId", "economicOperatorIdScheme", "euVerifiedAt", "euSealExpiresAt"
 ];
 const FIELD_TO_COLUMN = {
   economicOperatorId: "economic_operator_id",
   economicOperatorIdScheme: "economic_operator_id_scheme",
+  euVerifiedAt: "eu_verified_at",
+  euSealExpiresAt: "eu_seal_expires_at",
   name: "name",
   slug: "slug",
   status: "status",
@@ -128,7 +130,7 @@ async function updateCompany(id, fields) {
       request.input(field, sql.NVarChar(sql.MAX), fields[field] ?? null);
     } else if (field === "logoBlobName") {
       request.input(field, sql.NVarChar(300), fields[field] ?? null);
-    } else if (field === "licenseStart" || field === "licenseEnd") {
+    } else if (field === "licenseStart" || field === "licenseEnd" || field === "euVerifiedAt" || field === "euSealExpiresAt") {
       request.input(field, sql.Date, fields[field] ?? null);
     } else {
       request.input(field, sql.NVarChar(field === "name" ? 200 : 100), fields[field]);
@@ -145,7 +147,8 @@ async function updateCompany(id, fields) {
     UPDATE dbo.Companies
     SET ${setClauses.join(", ")}
     WHERE id = @id
-    RETURNING id, name, slug, status, plan_id, created_at, updated_at, economic_operator_id, economic_operator_id_scheme
+    RETURNING id, name, slug, status, plan_id, created_at, updated_at, economic_operator_id, economic_operator_id_scheme,
+              eu_verified_at, eu_seal_expires_at
   `);
 
   return result.recordset[0] || null;

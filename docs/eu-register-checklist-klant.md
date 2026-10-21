@@ -33,6 +33,10 @@ Het registreren doet het bedrijf zelf; VeriPasso host het paspoort en levert de 
 - [ ] PDF uploaden (alleen PDF, bestandsnaam max. 100 tekens) → *Verify your Organisation*.
 - [ ] Status volgen in het **Activity Dashboard**. Afgewezen: het foutrapport noemt per veld
       wat niet klopt.
+- [ ] **Geldigheid:** de verificatie verloopt als je zegel verloopt, en uiterlijk 3 jaar na je
+      eerste verificatie (Uitvoeringsverordening (EU) 2026/1778; Battery FAQ van de Commissie,
+      vraag 6.2). Daarna opnieuw verifiëren. Vul in VeriPasso bij *Bedrijfsinstellingen* de datum
+      van verificatie en de vervaldatum van het zegel in: je krijgt 60 dagen vooraf een melding.
 
 ## 3. Paspoorten registreren
 - [ ] In VeriPasso: product → tabblad QR-code → *EU DPP-register* → **UPI vooraf controleren**.

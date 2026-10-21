@@ -46,6 +46,18 @@ Bron: *DPP Registry User Guide for Economic Operators* v1.03 (Europese Commissie
 optioneel model-ID en batch-ID. Het register geeft een correlation ID en bij succes een
 registratie-ID (URI). Eén fout in een bestand keurt het hele bestand af.
 
+**Productgroep:** elk product heeft een verplichte productgroep (Batterij, Textiel, IJzer &
+staal, Aluminium, Banden, Meubels, Overig, Nog niet bekend; standaard *Nog niet bekend*, zie
+`lib/productGroups.js`). Alleen bij **Batterij** staat de registerkaart open en actief; bij de
+andere groepen toont de kaart één regel "aanmelden is nog niet nodig". De productgroep is geen
+paspoortinhoud (geen nieuwe versie bij wijzigen) en staat in het overzicht voor handmatige invoer.
+
+**Verificatie van het bedrijf:** verloopt met het zegel, en uiterlijk 3 jaar na de eerste
+verificatie (Uitvoeringsverordening (EU) 2026/1778; Battery FAQ van de Commissie, vraag 6.2).
+Bedrijfsinstellingen heeft twee optionele datums (verificatie, vervaldatum zegel); 60 dagen vóór
+de vroegste datum verschijnt een melding bij het belletje (`lib/euVerification.js`). Geen e-mail:
+VeriPasso verstuurt bewust geen e-mail (productbesluit oktober 2026).
+
 **In VeriPasso** (product → tabblad QR-code → kaart *EU DPP-register*):
 - UPI, model-ID en granulariteit om over te nemen. **UPI per exemplaar:** elk exemplaar heeft
   een eigen paspoort en een eigen UPI met het serienummer (`…/01/{GTIN}[/10/{lot}]/21/{serie}`);

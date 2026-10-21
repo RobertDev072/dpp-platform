@@ -1,10 +1,12 @@
 const { z } = require("zod");
+const { PRODUCT_GROUP_KEYS } = require("../../lib/productGroups");
 
 // Taalcode: ISO 639 (2–3 letters), optioneel met regio (ISO 3166), bijv. nl, nl-NL, en-GB.
 const LANGUAGE_PATTERN = /^[a-z]{2,3}(-[A-Z]{2})?$/;
 
 const createProductSchema = z.object({
   name: z.string().min(1).max(200),
+  productGroup: z.enum(PRODUCT_GROUP_KEYS, { message: "Kies een productgroep" }).optional(),
   brand: z.string().max(150).optional(),
   model: z.string().max(150).optional(),
   sku: z.string().max(100).optional(),
@@ -38,7 +40,9 @@ const productFieldsSchema = z
     // wetgeving/normen, en de taal van de basisteksten (BCP 47, bijv. nl-NL).
     facilityId: z.string().trim().max(100).nullable().optional(),
     contentSpecificationIds: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
-    language: z.string().regex(LANGUAGE_PATTERN, "Gebruik een taalcode zoals nl-NL of en").optional()
+    language: z.string().regex(LANGUAGE_PATTERN, "Gebruik een taalcode zoals nl-NL of en").optional(),
+    // Productgroep voor het EU DPP-register (zie lib/productGroups.js); standaard "unknown".
+    productGroup: z.enum(PRODUCT_GROUP_KEYS, { message: "Kies een productgroep" }).optional()
   })
   ;
 const updateProductSchema = productFieldsSchema.refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
@@ -48,4 +52,4 @@ const translationSchema = z.object({
   description: z.string().max(20000).nullable().optional()
 });
 
-module.exports = { createProductSchema, productFieldsSchema, updateProductSchema, translationSchema, LANGUAGE_PATTERN };
+module.exports = { PRODUCT_GROUP_KEYS, createProductSchema, productFieldsSchema, updateProductSchema, translationSchema, LANGUAGE_PATTERN };

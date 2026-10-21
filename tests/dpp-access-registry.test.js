@@ -194,7 +194,7 @@ test("toegang per niveau en EU-registratiegegevens", async (t) => {
     assert.equal(one.status, 200);
     assert.match(one.headers.get("content-type"), /text\/csv/);
     const csv = await one.text();
-    assert.match(csv, /^granularity,upi,modelIdentifier,batchIdentifier,serialNumber,digitalProductPassportId\r\n/);
+    assert.match(csv, /^productGroup,granularity,upi,modelIdentifier,batchIdentifier,serialNumber,digitalProductPassportId\r\n/);
     assert.match(one.headers.get("content-disposition"), /filename="[A-Za-z0-9._-]+\.csv"/);
 
     const zip = await fetch(`${baseUrl}/api/products/${product}/registration/records?granularity=item`, { headers: { Cookie: cookieA } });

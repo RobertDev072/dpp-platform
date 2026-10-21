@@ -1,5 +1,6 @@
 const { getPool } = require("../config/db");
 const passport = require("./passport.service");
+const { productGroup } = require("../../lib/productGroups");
 
 // Registry-adapter voor het EU DPP-register (DPP Registry User Guide for Economic Operators,
 // v1.03, 2026-09-16). Het register bewaart alleen een registratierecord; de klant (de
@@ -31,7 +32,9 @@ function safeFileName(value) {
 
 function record(product, instance, qrBaseUrl) {
   const snapshotLike = { publicId: String(product.public_id).toLowerCase(), product: { gtin: product.gtin ?? null } };
+  const group = productGroup(product.product_group);
   return {
+    productGroup: group.eu || null,
     granularity: instance?.granularity || "model",
     upi: passport.uniqueProductIdentifier(snapshotLike, { qrBaseUrl, instance }),
     modelIdentifier: product.model || product.sku || null,
@@ -133,7 +136,7 @@ function csvCell(value) {
 }
 
 function toCsv(records) {
-  const header = ["granularity", "upi", "modelIdentifier", "batchIdentifier", "serialNumber", "digitalProductPassportId"];
+  const header = ["productGroup", "granularity", "upi", "modelIdentifier", "batchIdentifier", "serialNumber", "digitalProductPassportId"];
   const lines = [header.join(",")];
   for (const r of records) lines.push(header.map((key) => csvCell(r[key])).join(","));
   return `${lines.join("\r\n")}\r\n`;

@@ -10,6 +10,7 @@ import FormError from "@/components/ui/FormError";
 import Skeleton from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import OperatorIdCard from "@/components/company/OperatorIdCard";
+import EuVerificationCard from "@/components/company/EuVerificationCard";
 import ApiKeysCard from "@/components/company/ApiKeysCard";
 import AccessTokensCard from "@/components/company/AccessTokensCard";
 
@@ -276,6 +277,7 @@ export default function InstellingenPage() {
       </Card>
 
       {company && <OperatorIdCard company={company} />}
+      {company && <EuVerificationCard company={company} />}
       {company && <ApiKeysCard />}
       {company && <AccessTokensCard />}
     </div>

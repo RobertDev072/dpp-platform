@@ -492,6 +492,7 @@ router.post("/:id/duplicate", requireRole(...EDITOR_ROLES), async (req, res, nex
       name: `${source.name} (kopie)`.slice(0, 200),
       brand: source.brand,
       model: source.model,
+      productGroup: source.product_group,
       // SKU/GTIN zijn identificerend; die horen niet stilzwijgend dubbel te bestaan.
       sku: null,
       gtin: null,
@@ -1456,6 +1457,12 @@ router.get("/:id/registration", requireRole(...ALL_ROLES), async (req, res, next
       record,
       itemCount: counts.items,
       batchCount: counts.batches,
+      productGroup: product.product_group || "unknown",
+      euVerification: await (async () => {
+        const company = await require("../repositories/companies.repository").getCompanyById(product.company_id);
+        const { verificationExpiry } = require("../../lib/euVerification");
+        return company ? verificationExpiry({ verifiedAt: company.eu_verified_at, sealExpiresAt: company.eu_seal_expires_at }) : null;
+      })(),
       issues: record ? registry.validate([record]) : []
     });
   } catch (error) {

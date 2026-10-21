@@ -1,5 +1,6 @@
 const express = require("express");
 const { z } = require("zod");
+const { isoDate } = require("../schemas/documents.schema");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { validateBody } = require("../middleware/validate");
 const companiesRepo = require("../repositories/companies.repository");
@@ -30,7 +31,10 @@ const updateOwnCompanySchema = z
     // Identificatie als marktdeelnemer op het paspoort (economicOperatorId). Beide
     // velden samen; null wist ze.
     economicOperatorIdScheme: z.enum(OPERATOR_SCHEMES).nullable().optional(),
-    economicOperatorId: z.string().max(100).nullable().optional()
+    economicOperatorId: z.string().max(100).nullable().optional(),
+    // EU DPP-register: datum van de verificatie en vervaldatum van het zegel (optioneel).
+    euVerifiedAt: isoDate.nullable().optional(),
+    euSealExpiresAt: isoDate.nullable().optional()
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" })
   .superRefine((data, ctx) => {
@@ -64,6 +68,8 @@ router.get("/", requireRole("company_admin", "company_user"), requireOwnCompany,
 router.patch("/", requireRole("company_admin"), requireOwnCompany, validateBody(updateOwnCompanySchema), async (req, res, next) => {
   try {
     const fields = req.body.name !== undefined ? { name: req.body.name } : {};
+    if (req.body.euVerifiedAt !== undefined) fields.euVerifiedAt = req.body.euVerifiedAt;
+    if (req.body.euSealExpiresAt !== undefined) fields.euSealExpiresAt = req.body.euSealExpiresAt;
     if (req.body.economicOperatorId !== undefined || req.body.economicOperatorIdScheme !== undefined) {
       const scheme = req.body.economicOperatorId ? req.body.economicOperatorIdScheme : null;
       fields.economicOperatorIdScheme = scheme;

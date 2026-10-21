@@ -21,6 +21,9 @@ import NumberField from "@/components/products/NumberField";
 import DocumentsTab from "@/components/products/DocumentsTab";
 import InstancesTab from "@/components/products/InstancesTab";
 import RegistryCard from "@/components/products/RegistryCard";
+import { PRODUCT_GROUPS } from "@/lib/productGroups";
+
+const PRODUCT_GROUP_OPTIONS = PRODUCT_GROUPS.map((g) => ({ value: g.key, label: g.label }));
 import Select from "@/components/ui/Select";
 import TranslationsCard, { LANGUAGE_OPTIONS, parseSpecList } from "@/components/products/TranslationsCard";
 import ProductCompleteness from "@/components/products/ProductCompleteness";
@@ -327,6 +330,7 @@ function BasisTab({ product, onSaved }) {
       description: product.description || "",
       photoUrl: product.photo_url || "",
       language: product.language || "nl-NL",
+      productGroup: product.product_group || "unknown",
       facilityId: product.facility_id || "",
       contentSpecificationIds: parseSpecList(product.content_specification_ids).join("\n")
     },
@@ -395,6 +399,15 @@ function BasisTab({ product, onSaved }) {
             </datalist>
           </div>
           {field("brand", "Merk", { maxLength: 150 })}
+          <Select
+            label="Productgroep"
+            name="productGroup"
+            required
+            options={PRODUCT_GROUP_OPTIONS}
+            value={form.values.productGroup}
+            onChange={(e) => form.setValue("productGroup", e.target.value)}
+            help="Bepaalt of je dit product bij het EU-register moet aanmelden (eerst batterijen)."
+          />
           <div className="sm:col-span-2">
             <label htmlFor="description" className="block text-sm font-medium text-slate-700">
               Omschrijving
