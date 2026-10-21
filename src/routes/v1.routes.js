@@ -1,6 +1,7 @@
 const express = require("express");
 const { z } = require("zod");
 const { apiKeyAuth } = require("../middleware/apiKey");
+const { dppAccessAuth } = require("../middleware/dppAccess");
 const { apiClientLimiter } = require("../middleware/rateLimit");
 const { validateBody, validateQuery } = require("../middleware/validate");
 const { HttpError } = require("../middleware/errorHandler");
@@ -37,7 +38,7 @@ const { DPP_VOCABULARY } = require("../../lib/dppVocabulary");
 // Alle antwoorden JSON; fouten als { error: { message, code } }. Versie: /api/v1 (stabiel;
 // brekende wijzigingen komen in /api/v2).
 const router = express.Router();
-router.use(apiKeyAuth({ optional: true }), apiClientLimiter);
+router.use(apiKeyAuth({ optional: true }), dppAccessAuth(), apiClientLimiter);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -76,7 +77,8 @@ function audit(req, action, productId, metadata = {}) {
 async function respondWithDpp(req, res, product, status = 200) {
   const qrBaseUrl = getQrBaseUrl(req);
   const snapshot = await passport.buildSnapshot(product);
-  const body = passport.toDppJson(snapshot, { qrBaseUrl, lastUpdated: product.updated_at });
+  const body = passport.toDppJson(snapshot, { qrBaseUrl, lastUpdated: product.updated_at, accessLevel: "authority" });
+  res.set("Cache-Control", "private, no-store");
   body.dppStatus = product.status === "draft" ? "Draft" : body.dppStatus;
   res.status(status).json(body);
 }

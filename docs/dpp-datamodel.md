@@ -8,12 +8,29 @@ Stand: 2026-10-18 · `dppSchemaVersion` **1.0.0**. Geldt voor `GET /api/dpp/{id}
 > namen en verplichtingen door een gelicentieerde persoon of de certificeerder bevestigen.
 > Bestaande velden zijn behouden, zodat bestaande koppelingen blijven werken.
 
+## Toegang per niveau
+
+| Niveau | Wie | Hoe | Ziet |
+|---|---|---|---|
+| `public` | iedereen (consumenten) | zonder token | openbare gegevens en documenten |
+| `professional` | reparateurs, recyclers | `Authorization: Bearer vpa_…` (token van het bedrijf) | plus documenten met zichtbaarheid *Professionals* |
+| `authority` | markttoezicht, aangemelde instanties, Commissie | idem, token met niveau autoriteit | plus documenten met zichtbaarheid *Autoriteiten* |
+
+Tokens maakt de Bedrijfsbeheerder in **Bedrijfsinstellingen → Toegang voor professionals en
+autoriteiten**; per document kies je *Zichtbaar voor*. Interne documenten komen nooit in de
+API. Antwoorden met een token zijn `Cache-Control: private, no-store` en worden nooit door
+Cloudflare bewaard. Beperkte documenten downloaden: `GET /api/dpp/{id}/documents/{docId}/file`
+met het token. Een eigen API-sleutel (`vp_…`) geeft op de eigen paspoorten niveau `authority`.
+Welke **gegevensvelden** per niveau openbaar zijn (bijv. Bijlage XIII van de Batterijverordening)
+volgt zodra er productgroep-specifieke velden komen; nu zijn alle datavelden openbaar.
+
 ## Header
 
 | Veld | Inhoud |
 |---|---|
 | `digitalProductPassportId` | `urn:uuid:{id}`: permanent, nooit hergebruikt (database-trigger) |
-| `uniqueProductIdentifier` | GS1 Digital Link (`https://id.gs1.org/01/{GTIN-14}[/10/{lot}][/21/{serie}]`) als er een geldige GTIN is, anders `urn:uuid:{id}` |
+| `uniqueProductIdentifier` | UPI: altijd een persistente **https-URL** die naar het paspoort leidt (eis van het EU DPP-register, max. 2000 tekens). Met een geldige GTIN de GS1 Digital Link op het QR-domein (`https://qr.veripasso.com/01/{GTIN-14}[/10/{lot}][/21/{serie}]`, opent via de resolver met één doorverwijzing het paspoort), anders de paspoort-URL `https://qr.veripasso.com/p/{ID}`. De vorm onder `id.gs1.org` staat in `identifiers.gs1DigitalLink`. |
+| `accessLevel` | `public`, `professional` of `authority`: het niveau van de lezer (zie hieronder) |
 | `granularity` | `model`, `batch` of `item` |
 | `dppSchemaVersion` | versie van deze structuur |
 | `dppStatus` | `Active` (op de markt) of `Archived` (blijft raadpleegbaar) |

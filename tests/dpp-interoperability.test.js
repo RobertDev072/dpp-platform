@@ -123,7 +123,8 @@ test("DPP-header, meertaligheid, dictionaryReference en permanente public_id", a
     assert.equal(res.status, 200);
     const dpp = await res.json();
     assert.equal(dpp.digitalProductPassportId, `urn:uuid:${publicId}`);
-    assert.equal(dpp.uniqueProductIdentifier, `https://id.gs1.org/01/0${gtin}`);
+    assert.equal(dpp.uniqueProductIdentifier, `${new URL(dpp.id).origin}/01/0${gtin}`);
+    assert.equal(dpp.identifiers.gs1DigitalLink, `https://id.gs1.org/01/0${gtin}`);
     assert.equal(dpp.granularity, "model");
     assert.equal(dpp.dppSchemaVersion, "1.0.0");
     assert.equal(dpp.dppStatus, "Active");

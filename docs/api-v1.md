@@ -9,6 +9,9 @@ paspoortstructuur: `GET /api/v1/schema/dpp.json` (JSON Schema), termen: `GET /ap
 ## Toegang
 
 - **Lezen** van gepubliceerde (en gearchiveerde) paspoorten: publiek, geen sleutel nodig.
+- **Professionals en autoriteiten**: met een toegangstoken van het bedrijf
+  (`Authorization: Bearer vpa_…`) bevat het paspoort ook de documenten voor dat niveau; zie
+  docs/dpp-datamodel.md → Toegang per niveau.
 - **Schrijven**: API-sleutel van het bedrijf met recht *Lezen en schrijven*, aan te maken
   door de Bedrijfsbeheerder in **Bedrijfsinstellingen → API-sleutels**. Header:
   `Authorization: Bearer vp_xxxxxxxx_…`. De sleutel is één keer zichtbaar; opgeslagen wordt

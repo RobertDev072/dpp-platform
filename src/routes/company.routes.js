@@ -173,6 +173,56 @@ router.delete("/api-keys/:keyId", requireRole("company_admin"), requireOwnCompan
   }
 });
 
+// Toegangstokens voor professionals (reparateurs, recyclers) en autoriteiten: zij zien
+// met zo'n token in de machineleesbare paspoorten ook de documenten voor hun niveau.
+const dppAccess = require("../services/dppAccess.service");
+const createAccessTokenSchema = z.object({
+  name: z.string().trim().min(1, "Vul een naam in").max(100),
+  level: z.enum(["professional", "authority"]),
+  expiresInDays: z.number().int().min(1).max(3650).nullable().optional()
+});
+
+router.get("/access-tokens", requireRole("company_admin"), requireOwnCompany, async (req, res, next) => {
+  try {
+    res.json(await dppAccess.listTokens(req.user.companyId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/access-tokens", requireRole("company_admin"), requireOwnCompany, validateBody(createAccessTokenSchema), async (req, res, next) => {
+  try {
+    const expiresAt = req.body.expiresInDays ? new Date(Date.now() + req.body.expiresInDays * 86400000) : null;
+    const created = await dppAccess
+      .createToken({ companyId: req.user.companyId, level: req.body.level, name: req.body.name, createdBy: req.user.id, expiresAt })
+      .catch((err) => {
+        throw err.statusCode ? new HttpError(err.statusCode, err.message) : err;
+      });
+    await logAuditFromReq(req, {
+      companyId: req.user.companyId,
+      action: "access_token_create",
+      entityType: "AccessToken",
+      entityId: created.id,
+      metadata: { name: created.name, level: created.access_level, prefix: created.token_prefix }
+    });
+    res.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/access-tokens/:tokenId", requireRole("company_admin"), requireOwnCompany, async (req, res, next) => {
+  try {
+    const id = Number(req.params.tokenId);
+    const revoked = Number.isInteger(id) && id > 0 ? await dppAccess.revokeToken(req.user.companyId, id) : null;
+    if (!revoked) throw new HttpError(404, "Niet gevonden");
+    await logAuditFromReq(req, { companyId: req.user.companyId, action: "access_token_revoke", entityType: "AccessToken", entityId: id, metadata: { prefix: revoked.token_prefix } });
+    res.json(revoked);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Licentiegebruik van het eigen bedrijf (voor de licentiekaart op het dashboard).
 // Abonnementsgegevens alleen voor de bedrijfsbeheerder (niet voor medewerkers).
 router.get("/license", requireRole("company_admin"), requireOwnCompany, async (req, res, next) => {

@@ -9,7 +9,8 @@ function apiKeyAuth({ optional = false, scope = null } = {}) {
     try {
       const header = req.get("authorization") || "";
       const match = /^Bearer\s+(\S+)$/i.exec(header);
-      if (!match) {
+      // Toegangstokens voor professionals/autoriteiten (vpa_…) handelt dppAccessAuth af.
+      if (!match || (optional && /^vpa_/.test(match[1]))) {
         if (optional) return next();
         res.set("WWW-Authenticate", 'Bearer realm="veripasso"');
         return next(new HttpError(401, "API-sleutel ontbreekt (Authorization: Bearer vp_…)", undefined, "API_KEY_MISSING"));

@@ -11,6 +11,7 @@
 const crypto = require("crypto");
 const { getPool } = require("../config/db");
 const gs1 = require("../utils/gs1");
+const { canSeeDocument } = require("./dppAccess.service");
 
 // 2: marktdeelnemer-id, vestiging, inhoudsspecificaties, taal en vertalingen.
 const SNAPSHOT_SCHEMA_VERSION = 2;
@@ -40,7 +41,7 @@ async function loadPassportData(product, db) {
     "SELECT id, part_number, name, description, image_url FROM dbo.productparts WHERE product_id = $1 ORDER BY id"
   );
   const documents = await one(`SELECT id, type, title, language, storage_url, blob_name, file_size, mime_type,
-      is_public, category, valid_until, version
+      is_public, access_level, category, valid_until, version
     FROM dbo.documents WHERE product_id = $1 ORDER BY id`);
   const translations = await one(
     "SELECT language, name, description FROM dbo.producttranslations WHERE product_id = $1 ORDER BY language"
@@ -150,6 +151,8 @@ function snapshotFromData(product, { sustainability, compliance, parts, document
       category: d.category,
       language: d.language ?? null,
       isPublic: Boolean(d.is_public),
+      // Alleen bij beperkte zichtbaarheid (anders weggelaten: bestaande hashes blijven gelijk).
+      accessLevel: !d.is_public && d.access_level ? d.access_level : undefined,
       mimeType: d.mime_type ?? null,
       fileSize: d.file_size ?? null,
       objectName: d.blob_name ?? null,
@@ -188,11 +191,32 @@ function passportBaseUrl(qrBaseUrl, publicId) {
 // Documentlinks: huidige versie via de bestaande publieke route; een gearchiveerde
 // versie via de versieroute (die het object uit de snapshot ontsluit, ook als het
 // document later is verwijderd).
+// Beperkte documenten (professional/authority) altijd via de DPP-route, die het token
+// controleert; openbare via de bestaande publieke route.
 function documentUrl(publicId, doc, versionNumber) {
-  if (!doc.objectName) return doc.externalUrl || null;
-  return versionNumber
-    ? `/api/dpp/${publicId}/versions/${versionNumber}/documents/${doc.id}/file`
-    : `/api/public/products/${publicId}/documents/${doc.id}/file`;
+  if (!doc.objectName && doc.isPublic) return doc.externalUrl || null;
+  if (versionNumber) return `/api/dpp/${publicId}/versions/${versionNumber}/documents/${doc.id}/file`;
+  return doc.isPublic ? `/api/public/products/${publicId}/documents/${doc.id}/file` : `/api/dpp/${publicId}/documents/${doc.id}/file`;
+}
+
+// Unique Product Identifier (UPI): altijd een persistente https-URL die naar het paspoort
+// leidt (eis van het EU-register). Met een geldige GTIN de GS1 Digital Link op ons eigen
+// QR-domein (de GTIN zit in de URL, de resolver /01/… opent het paspoort); anders, of als
+// een lot-/serienummer niet in een Digital Link past, de permanente paspoort-URL.
+function uniqueProductIdentifier(snapshot, { qrBaseUrl, instance = null }) {
+  const p = snapshot.product;
+  const dppId = instance?.publicId || snapshot.publicId;
+  const granularity = instance?.granularity || "model";
+  const lot = instance?.lotNumber || null;
+  const serial = granularity === "item" ? instance?.serialNumber || null : null;
+  // Een batch heeft een lotnummer nodig en een exemplaar een serienummer; anders zou de
+  // link samenvallen met die van het model.
+  const fits =
+    (!lot || gs1.isValidAiValue(lot)) &&
+    (granularity !== "batch" || Boolean(lot)) &&
+    (granularity !== "item" || (Boolean(serial) && gs1.isValidAiValue(serial)));
+  const path = fits ? gs1.digitalLinkPath({ gtin: p.gtin, lot, serial }) : null;
+  return path ? `${qrBaseUrl}${path}` : passportBaseUrl(qrBaseUrl, dppId);
 }
 
 // De bestaande JSON voor de paspoortpagina (vorm ongewijzigd t.o.v. vóór de
@@ -331,10 +355,9 @@ function dppHeader(snapshot, { qrBaseUrl, lastUpdated = null, instance = null })
   const p = snapshot.product;
   const dppId = instance?.publicId || snapshot.publicId;
   const granularity = instance?.granularity || "model";
-  const link = gs1.digitalLink({ gtin: p.gtin, lot: instance?.lotNumber, serial: instance?.serialNumber });
   return {
     digitalProductPassportId: `urn:uuid:${dppId}`,
-    uniqueProductIdentifier: link || `urn:uuid:${dppId}`,
+    uniqueProductIdentifier: uniqueProductIdentifier(snapshot, { qrBaseUrl, instance }),
     granularity,
     dppSchemaVersion: DPP_SCHEMA_VERSION,
     dppStatus: DPP_STATUS[snapshot.status] || "Active",
@@ -347,18 +370,21 @@ function dppHeader(snapshot, { qrBaseUrl, lastUpdated = null, instance = null })
   };
 }
 
-function toDppJson(snapshot, { qrBaseUrl, version = null, lastUpdated = null, instance = null }) {
+// accessLevel: public (standaard), professional of authority; bepaalt welke niet-openbare
+// documenten meekomen (zie dppAccess.service.js).
+function toDppJson(snapshot, { qrBaseUrl, version = null, lastUpdated = null, instance = null, accessLevel = "public" }) {
   const publicId = snapshot.publicId;
   const dppPublicId = instance?.publicId || publicId;
   const passportUrl = passportBaseUrl(qrBaseUrl, dppPublicId);
   const p = snapshot.product;
   const absolute = (url) => (url && url.startsWith("/") ? `${qrBaseUrl}${url}` : url);
   const gs1Path = gs1.digitalLinkPath({ gtin: p.gtin, lot: instance?.lotNumber, serial: instance?.serialNumber });
-  const publicDocuments = snapshot.documents.filter((d) => d.isPublic);
+  const publicDocuments = snapshot.documents.filter((d) => canSeeDocument(d, accessLevel));
   const docUrl = (d) => absolute(documentUrl(publicId, d, version && !version.isCurrent ? version.versionNumber : null));
   return {
     ...dppHeader(snapshot, { qrBaseUrl, lastUpdated: lastUpdated || version?.createdAt, instance }),
     id: passportUrl,
+    accessLevel,
     identifiers: {
       passportId: dppPublicId,
       urn: `urn:uuid:${dppPublicId}`,
@@ -417,6 +443,7 @@ function toDppJson(snapshot, { qrBaseUrl, version = null, lastUpdated = null, in
       fileSize: d.fileSize,
       validUntil: d.validUntil,
       version: d.version,
+      accessLevel: d.isPublic ? "public" : d.accessLevel,
       url: docUrl(d)
     })),
     // Zelfde documenten in de vorm RelatedResource (titel, soort, MIME-type, download-URL).
@@ -503,6 +530,7 @@ function toDppXml(snapshot, options) {
 }
 
 module.exports = {
+  uniqueProductIdentifier,
   SNAPSHOT_SCHEMA_VERSION,
   DPP_SCHEMA_VERSION,
   DATA_ELEMENTS,

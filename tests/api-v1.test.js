@@ -86,7 +86,9 @@ test("B2B-API v1: sleutels, lezen, schrijven en tenantgrenzen", async (t) => {
     assert.equal(res.status, 201, JSON.stringify(res.data));
     assert.match(res.data.digitalProductPassportId, /^urn:uuid:[0-9a-f-]{36}$/);
     assert.equal(res.data.dppStatus, "Active");
-    assert.equal(res.data.uniqueProductIdentifier, `https://id.gs1.org/01/0${gtin}`);
+    // UPI = https-URL op ons QR-domein met de GTIN erin (GS1 Digital Link, opent het paspoort).
+    assert.equal(res.data.uniqueProductIdentifier, `${new URL(res.data.id).origin}/01/0${gtin}`);
+    assert.equal(res.data.identifiers.gs1DigitalLink, `https://id.gs1.org/01/0${gtin}`);
     dppId = res.data.digitalProductPassportId;
     const row = (await pool.query("SELECT id, company_id FROM dbo.products WHERE public_id = $1", [dppId.slice(9)])).rows[0];
     created.push(row.id);

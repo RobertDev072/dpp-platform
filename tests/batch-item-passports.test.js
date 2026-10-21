@@ -75,7 +75,7 @@ test("batch- en itempaspoorten", async (t) => {
     const dpp = await res.json();
     assert.equal(dpp.digitalProductPassportId, `urn:uuid:${String(item.public_id).toLowerCase()}`);
     assert.equal(dpp.granularity, "item");
-    assert.equal(dpp.uniqueProductIdentifier, `https://id.gs1.org/01/0${gtin}/10/L2026-10/21/SN-00007`);
+    assert.equal(dpp.uniqueProductIdentifier, `${new URL(dpp.id).origin}/01/0${gtin}/10/L2026-10/21/SN-00007`);
     assert.equal(dpp.identifiers.serialNumber, "SN-00007");
     assert.equal(dpp.identifiers.lotNumber, "L2026-10");
     assert.equal(dpp.identifiers.modelPassportId, modelId);
@@ -86,7 +86,7 @@ test("batch- en itempaspoorten", async (t) => {
   await t.test("batchpaspoort en publieke paginagegevens", async () => {
     const dpp = await (await json(baseUrl, `/api/dpp/${batch.public_id}`)).json();
     assert.equal(dpp.granularity, "batch");
-    assert.equal(dpp.uniqueProductIdentifier, `https://id.gs1.org/01/0${gtin}/10/L2026-10`);
+    assert.equal(dpp.uniqueProductIdentifier, `${new URL(dpp.id).origin}/01/0${gtin}/10/L2026-10`);
     const view = await (await fetch(`${baseUrl}/api/public/products/${String(item.public_id).toUpperCase()}`)).json();
     assert.equal(view.instance.granularity, "item");
     assert.equal(view.instance.serialNumber, "SN-00007");

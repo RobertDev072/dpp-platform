@@ -13,8 +13,9 @@ const passport = require("./passport.service");
 // 2. EU DPP-register: RegisterProductDPP zet een aanmelding in de wachtrij; met
 //    EU_DPP_REGISTRY_URL ingesteld wordt die verstuurd als
 //      POST {url}/registrations  { digitalProductPassportId, uniqueProductIdentifier, ... }
-//    Het echte register en zijn API bestaan nog niet; dit is een generiek koppelpunt dat
-//    aangepast moet worden zodra de Commissie de specificatie publiceert.
+//    Het register is open (sinds juli 2026), maar heeft geen API voor dienstverleners: de
+//    klant registreert zelf (zie registryRecord.service.js). Dit is een generiek koppelpunt
+//    dat uit staat en aangepast moet worden zodra er een officiële API is.
 
 const TIMEOUT_MS = 15000;
 
@@ -130,6 +131,8 @@ async function replicationStatus() {
 }
 
 // --- 2. EU-register --------------------------------------------------------------------
+const REGISTRATION_COLUMNS = `status, registry_reference, requested_at, registered_at, last_error, attempts, upi, version_number,
+  registry_uri, correlation_id, error_code, submitted_at, updated_at`;
 async function queueRegistration(product) {
   const pool = await getPool();
   const row = (await pool.query(
@@ -138,7 +141,7 @@ async function queueRegistration(product) {
      ON CONFLICT (public_id) DO UPDATE SET
        status = CASE WHEN dbo.dppregistrations.status = 'registered' THEN 'registered' ELSE 'queued' END,
        next_attempt_at = CASE WHEN dbo.dppregistrations.status = 'registered' THEN dbo.dppregistrations.next_attempt_at ELSE NULL END
-     RETURNING status, registry_reference, requested_at, registered_at, last_error`,
+     RETURNING ${REGISTRATION_COLUMNS}`,
     [String(product.public_id).toLowerCase(), product.id, product.company_id]
   )).rows[0];
   return { ...row, registryConfigured: Boolean(config().registryUrl) };
@@ -147,10 +150,37 @@ async function queueRegistration(product) {
 async function getRegistration(publicId) {
   const pool = await getPool();
   const row = (await pool.query(
-    "SELECT status, registry_reference, requested_at, registered_at, last_error, attempts FROM dbo.dppregistrations WHERE public_id = $1",
+    `SELECT ${REGISTRATION_COLUMNS} FROM dbo.dppregistrations WHERE public_id = $1`,
     [String(publicId).toLowerCase()]
   )).rows[0];
   return row ? { ...row, registryConfigured: Boolean(config().registryUrl) } : null;
+}
+
+// Wat het EU-register teruggaf, vastgelegd door de klant (die zelf registreert): status
+// (ingediend / geregistreerd / afgewezen), registratie-ID (URI), correlation ID en bij een
+// afwijzing de foutcode en -melding. De paspoortversie van dat moment wordt mee bewaard,
+// zodat de registratie naar een vaste, onveranderlijke versie verwijst.
+async function recordRegistration(product, { publicId, upi, status, registryUri = null, correlationId = null, errorCode = null, errorMessage = null }) {
+  const pool = await getPool();
+  const version = (await pool.query("SELECT max(version_number) AS n FROM dbo.passportversions WHERE product_id = $1", [product.id])).rows[0]?.n ?? null;
+  const rejected = status === "rejected";
+  const row = (await pool.query(
+    `INSERT INTO dbo.dppregistrations (public_id, product_id, company_id, status, upi, version_number, registry_uri, correlation_id,
+       error_code, last_error, submitted_at, registered_at, updated_at)
+     VALUES ($1, $2, $3, $4::varchar, $5, $6, $7, $8, $9, $10, now(), CASE WHEN $4::varchar = 'registered' THEN now() END, now())
+     ON CONFLICT (public_id) DO UPDATE SET
+       status = EXCLUDED.status, upi = EXCLUDED.upi, version_number = EXCLUDED.version_number,
+       registry_uri = COALESCE(EXCLUDED.registry_uri, dbo.dppregistrations.registry_uri),
+       correlation_id = COALESCE(EXCLUDED.correlation_id, dbo.dppregistrations.correlation_id),
+       error_code = EXCLUDED.error_code, last_error = EXCLUDED.last_error,
+       submitted_at = COALESCE(dbo.dppregistrations.submitted_at, EXCLUDED.submitted_at),
+       registered_at = CASE WHEN EXCLUDED.status = 'registered' THEN COALESCE(dbo.dppregistrations.registered_at, now()) ELSE dbo.dppregistrations.registered_at END,
+       next_attempt_at = NULL, updated_at = now()
+     RETURNING ${REGISTRATION_COLUMNS}`,
+    [String(publicId).toLowerCase(), product.id, product.company_id, status, upi, version, registryUri, correlationId,
+      rejected ? errorCode : null, rejected ? errorMessage : null]
+  )).rows[0];
+  return { ...row, registryConfigured: Boolean(config().registryUrl) };
 }
 
 async function processRegistrations({ limit = 50 } = {}) {
@@ -196,4 +226,4 @@ async function processRegistrations({ limit = 50 } = {}) {
   return counts;
 }
 
-module.exports = { config, replicateVersions, replicationStatus, queueRegistration, getRegistration, processRegistrations };
+module.exports = { config, replicateVersions, replicationStatus, queueRegistration, getRegistration, recordRegistration, processRegistrations };

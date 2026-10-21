@@ -1,6 +1,8 @@
 const { z } = require("zod");
 
 const DOCUMENT_CATEGORIES = ["document", "manual", "video", "3d_model", "certificate", "declaration"];
+// Zichtbaarheid van een niet-openbaar document voor externe partijen met een toegangstoken.
+const ACCESS_LEVELS = ["professional", "authority"];
 
 const isoDate = z
   .string()
@@ -13,6 +15,7 @@ const createDocumentSchema = z.object({
   language: z.string().max(10).optional(),
   storageUrl: z.string().min(1).max(1000),
   isPublic: z.boolean().optional().default(false),
+  accessLevel: z.enum(ACCESS_LEVELS).nullable().optional(),
   category: z.enum(DOCUMENT_CATEGORIES).optional().default("document"),
   validUntil: isoDate.optional(),
   version: z.string().max(30).optional()
@@ -22,6 +25,7 @@ const updateDocumentSchema = z
   .object({
     title: z.string().min(1).max(200).optional(),
     isPublic: z.boolean().optional(),
+    accessLevel: z.enum(ACCESS_LEVELS).nullable().optional(),
     category: z.enum(DOCUMENT_CATEGORIES).optional(),
     language: z.string().max(10).optional(),
     validUntil: isoDate.nullable().optional(),
@@ -29,4 +33,4 @@ const updateDocumentSchema = z
   })
   .refine((data) => Object.keys(data).length > 0, { message: "Geen velden om bij te werken" });
 
-module.exports = { createDocumentSchema, updateDocumentSchema, DOCUMENT_CATEGORIES, isoDate };
+module.exports = { createDocumentSchema, updateDocumentSchema, DOCUMENT_CATEGORIES, ACCESS_LEVELS, isoDate };

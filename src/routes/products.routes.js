@@ -9,7 +9,7 @@ const { createPartSchema } = require("../schemas/parts.schema");
 const { updateSustainabilitySchema } = require("../schemas/sustainability.schema");
 const { updateComplianceSchema } = require("../schemas/compliance.schema");
 const { createBatchSchema } = require("../schemas/batches.schema");
-const { createDocumentSchema, updateDocumentSchema, DOCUMENT_CATEGORIES, isoDate } = require("../schemas/documents.schema");
+const { createDocumentSchema, updateDocumentSchema, DOCUMENT_CATEGORIES, ACCESS_LEVELS, isoDate } = require("../schemas/documents.schema");
 const productsRepo = require("../repositories/products.repository");
 const partsRepo = require("../repositories/parts.repository");
 const sustainabilityRepo = require("../repositories/sustainability.repository");
@@ -872,6 +872,7 @@ async function saveUploadedDocument(req, product, { blobName, fileSize, mimeType
     fileSize,
     mimeType,
     isPublic,
+    accessLevel: !isPublic && ACCESS_LEVELS.includes(req.body.accessLevel) ? req.body.accessLevel : null,
     category: DOCUMENT_CATEGORIES.includes(req.body.category) ? req.body.category : "document",
     ...optionalUploadMetadata(req.body),
     uploadedBy: req.user.id
@@ -1432,13 +1433,111 @@ async function sendInstanceQr(req, res, table, idParam) {
   await sendCode(req, res, { symbology: req.query.type === "datamatrix" ? "datamatrix" : "qr", text, stem });
 }
 
-// --- EU DPP-register (RegisterProductDPP vanuit de applicatie) ---------------------------
+// --- EU DPP-register ---------------------------------------------------------------------
+// De klant registreert zelf in het EU-register (EU Login + QSeal). VeriPasso levert de
+// registratiegegevens (UPI, model-/batch-ID), controleert ze vooraf zoals het register dat
+// doet, en bewaart wat het register teruggaf. Zie registryRecord.service.js.
+const registry = require("../services/registryRecord.service");
+
 router.get("/:id/registration", requireRole(...ALL_ROLES), async (req, res, next) => {
   try {
     const product = await loadOwnProduct(req);
     const continuity = require("../services/dppContinuity.service");
     const registration = product.public_id ? await continuity.getRegistration(product.public_id) : null;
-    res.json(registration || { status: "none", registryConfigured: Boolean(continuity.config().registryUrl) });
+    const record = product.public_id ? registry.record(product, null, getQrBaseUrl(req)) : null;
+    res.json({
+      ...(registration || { status: "none", registryConfigured: Boolean(continuity.config().registryUrl) }),
+      record,
+      issues: record ? registry.validate([record]) : []
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Opent de UPI zoals het register dat doet (https, max. 1 doorverwijzing, eindigt op 200).
+router.get("/:id/registration/check", requireRole(...ALL_ROLES), heavyExportLimiter, async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    if (!product.public_id || !product.published_at) throw new HttpError(409, "Publiceer het paspoort eerst", undefined, "NOT_PUBLISHED");
+    const record = registry.record(product, null, getQrBaseUrl(req));
+    const issues = registry.validate([record]);
+    res.json({ upi: record.upi, issues, resolvable: issues.length ? null : await registry.checkResolvable(record.upi) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Registratiegegevens van alle paspoorten van dit product (model, batches, exemplaren) als
+// CSV, in delen van max. 100 (de limiet per bestand van het register). Eén fout keurt in
+// het register het hele bestand af: bij fouten 422 met de lijst, geen bestand.
+router.get(
+  "/:id/registration/records",
+  requireRole(...ALL_ROLES),
+  heavyExportLimiter,
+  validateQuery(z.object({ granularity: z.enum(["model", "batch", "item"]).optional() })),
+  async (req, res, next) => {
+    try {
+      const product = await loadOwnProduct(req);
+      if (!product.public_id || !product.published_at) throw new HttpError(409, "Publiceer het paspoort eerst", undefined, "NOT_PUBLISHED");
+      const granularity = req.validatedQuery.granularity || null;
+      const records = await registry.recordsForProduct(product, { qrBaseUrl: getQrBaseUrl(req), granularity });
+      if (!records.length) throw new HttpError(404, "Geen paspoorten voor deze granulariteit");
+      const issues = registry.validate(records);
+      if (issues.length) throw new HttpError(422, "De registratiegegevens bevatten fouten", { issues: issues.slice(0, 200) }, "REGISTRATION_INVALID");
+      const stem = registry.safeFileName(`registratie-${product.sku || product.name}-${granularity || "alle"}`);
+      const parts = registry.chunk(records);
+      res.set("Cache-Control", "private, no-store");
+      if (parts.length === 1) {
+        res.attachment(`${stem}.csv`).type("text/csv; charset=utf-8").send(registry.toCsv(records));
+        return;
+      }
+      const { zipSync, strToU8 } = require("fflate");
+      const files = {};
+      parts.forEach((part, i) => {
+        files[`${stem}-deel-${String(i + 1).padStart(3, "0")}.csv`] = strToU8(registry.toCsv(part));
+      });
+      res.attachment(`${stem}.zip`).type("application/zip").send(Buffer.from(zipSync(files)));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+const recordRegistrationSchema = z.object({
+  status: z.enum(["submitted", "registered", "rejected"]),
+  registryUri: z.string().trim().max(500).nullable().optional(),
+  correlationId: z.string().trim().max(200).nullable().optional(),
+  errorCode: z.string().trim().max(100).nullable().optional(),
+  errorMessage: z.string().trim().max(500).nullable().optional()
+});
+
+// Uitkomst uit het Activity Dashboard van het register vastleggen (modelpaspoort).
+router.patch("/:id/registration", requireRole(...EDITOR_ROLES), validateBody(recordRegistrationSchema), async (req, res, next) => {
+  try {
+    const product = await loadOwnProduct(req);
+    if (!product.public_id || !product.published_at) throw new HttpError(409, "Publiceer het paspoort eerst", undefined, "NOT_PUBLISHED");
+    if (req.body.status === "registered" && !req.body.registryUri) {
+      throw new HttpError(400, "Ongeldige invoer", { formErrors: [], fieldErrors: { registryUri: ["Vul de registratie-ID (URI) uit het register in"] } });
+    }
+    const record = registry.record(product, null, getQrBaseUrl(req));
+    const saved = await require("../services/dppContinuity.service").recordRegistration(product, {
+      publicId: product.public_id,
+      upi: record.upi,
+      status: req.body.status,
+      registryUri: req.body.registryUri || null,
+      correlationId: req.body.correlationId || null,
+      errorCode: req.body.errorCode || null,
+      errorMessage: req.body.errorMessage || null
+    });
+    await logAuditFromReq(req, {
+      companyId: product.company_id,
+      action: "registration_update",
+      entityType: "Product",
+      entityId: product.id,
+      metadata: { status: saved.status, registryUri: saved.registry_uri, correlationId: saved.correlation_id }
+    });
+    res.json({ ...saved, record, issues: registry.validate([record]) });
   } catch (error) {
     next(error);
   }

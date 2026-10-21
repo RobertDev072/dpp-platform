@@ -224,7 +224,7 @@ function DocumentsInner() {
                         <td className="py-2 pr-3 uppercase text-slate-600">{doc.language || "—"}</td>
                         <td className="py-2 pr-3">{validity ? <span title={`Geldig tot ${formatDate(doc.valid_until)}`}><Badge variant={validity.variant}>{validity.label}</Badge></span> : <span className="text-slate-400">—</span>}</td>
                         <td className="py-2 pr-3">
-                          <Badge variant={doc.is_public ? "success" : "neutral"}>{doc.is_public ? "Openbaar" : "Privé"}</Badge>
+                          <Badge variant={doc.is_public ? "success" : doc.access_level ? "info" : "neutral"}>{doc.is_public ? "Openbaar" : doc.access_level === "professional" ? "Professionals" : doc.access_level === "authority" ? "Autoriteiten" : "Privé"}</Badge>
                         </td>
                         <td className="whitespace-nowrap py-2 pr-3 text-slate-600">{formatDate(doc.created_at)}</td>
                         <td className="py-2 text-right">

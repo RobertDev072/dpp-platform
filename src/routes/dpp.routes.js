@@ -7,6 +7,8 @@ const { getProductDocumentUrl } = require("../services/blobStorage.service");
 const { getQrBaseUrl } = require("../utils/baseUrl");
 const { publicApiLimiter } = require("../middleware/rateLimit");
 const { HttpError } = require("../middleware/errorHandler");
+const { dppAccessAuth } = require("../middleware/dppAccess");
+const dppAccess = require("../services/dppAccess.service");
 
 // Machineleesbare productpaspoorten (EN 18216:2026 §4-5):
 // - JSON is altijd beschikbaar; JSON-LD en XML via HTTP content negotiation
@@ -19,9 +21,12 @@ const { HttpError } = require("../middleware/errorHandler");
 // Publiek, zonder login: alleen gepubliceerde of gearchiveerde paspoorten en alleen
 // openbare velden (zelfde whitelist als de paspoortpagina). Een onbekende of nog niet
 // gepubliceerde id geeft 404 (bestaan wordt niet bevestigd).
+// Met een toegangstoken (Authorization: Bearer vpa_…) van het bedrijf ziet een
+// professional of autoriteit ook de documenten voor dat niveau; zo'n antwoord wordt
+// nooit gedeeld gecachet (Cache-Control: private, no-store).
 
 const router = express.Router();
-router.use(publicApiLimiter);
+router.use(dppAccessAuth(), publicApiLimiter);
 
 const FORMATS = {
   json: "application/json",
@@ -45,10 +50,12 @@ function negotiate(req) {
   return "json";
 }
 
-function send(res, format, snapshot, { qrBaseUrl, version, immutable, lastUpdated = null, instance = null }) {
-  const options = { qrBaseUrl, version, lastUpdated, instance };
+function send(res, format, snapshot, { qrBaseUrl, version, immutable, lastUpdated = null, instance = null, accessLevel = "public" }) {
+  const options = { qrBaseUrl, version, lastUpdated, instance, accessLevel };
   res.vary("Accept");
-  res.set("Cache-Control", immutable ? "public, max-age=86400, immutable" : "public, max-age=60");
+  res.vary("Authorization");
+  if (accessLevel !== "public") res.set("Cache-Control", "private, no-store");
+  else res.set("Cache-Control", immutable ? "public, max-age=86400, immutable" : "public, max-age=60");
   res.set("Link", `<${qrBaseUrl}/p/${(instance?.publicId || snapshot.publicId).toUpperCase()}>; rel="canonical"`);
   if (version?.contentSha256) res.set("ETag", `"${version.contentSha256}"`);
   if (format === "xml") {
@@ -99,7 +106,8 @@ async function sendArchivedVersion(req, res, product, version, format) {
     qrBaseUrl,
     version: versionMeta(version, latest?.versionNumber === version.versionNumber),
     immutable: true,
-    instance: product.instance || null
+    instance: product.instance || null,
+    accessLevel: dppAccess.levelFor(req, product.company_id)
   });
 }
 
@@ -140,7 +148,8 @@ async function readPassport(req, res, next) {
       version: isCurrent ? versionMeta(latest, true) : null,
       immutable: false,
       lastUpdated: product.updated_at,
-      instance: product.instance || null
+      instance: product.instance || null,
+      accessLevel: dppAccess.levelFor(req, product.company_id)
     });
   } catch (error) {
     next(error);
@@ -191,9 +200,32 @@ router.get("/:publicId/versions/:version/documents/:documentId/file", async (req
     const product = await loadPublicProduct(req.params.publicId);
     const version = await archive.getVersion(product.id, parseVersionNumber(req.params.version));
     const doc = version?.snapshot?.documents?.find((d) => String(d.id) === String(req.params.documentId));
-    if (!doc || !doc.isPublic) throw new HttpError(404, "Niet gevonden");
+    if (!doc || !dppAccess.canSeeDocument(doc, dppAccess.levelFor(req, product.company_id))) throw new HttpError(404, "Niet gevonden");
     if (doc.objectName) {
-      res.set("Cache-Control", "public, max-age=60");
+      res.set("Cache-Control", doc.isPublic ? "public, max-age=60" : "private, no-store");
+      res.redirect(302, await getProductDocumentUrl(doc.objectName));
+      return;
+    }
+    if (doc.externalUrl) {
+      res.redirect(302, doc.externalUrl);
+      return;
+    }
+    throw new HttpError(404, "Niet gevonden");
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Actueel document met beperkte zichtbaarheid (professional/authority): alleen met een
+// passend toegangstoken. Openbare documenten lopen via /api/public/products/….
+router.get("/:publicId/documents/:documentId/file", async (req, res, next) => {
+  try {
+    const product = await loadPublicProduct(req.params.publicId);
+    const snapshot = await passport.buildSnapshot(product);
+    const doc = snapshot.documents.find((d) => String(d.id) === String(req.params.documentId));
+    if (!doc || !dppAccess.canSeeDocument(doc, dppAccess.levelFor(req, product.company_id))) throw new HttpError(404, "Niet gevonden");
+    res.set("Cache-Control", doc.isPublic ? "public, max-age=60" : "private, no-store");
+    if (doc.objectName) {
       res.redirect(302, await getProductDocumentUrl(doc.objectName));
       return;
     }

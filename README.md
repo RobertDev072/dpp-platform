@@ -134,7 +134,16 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 - **B2B-API `/api/v1`** met API-sleutels per bedrijf (ReadDPPById, ReadDPPByProductId,
   ReadDPPIdsByProductIds, CreateDPP, UpdateDPPById, DeleteDPPById, Read/UpdateDataElement,
   RegisterProductDPP); OpenAPI op `/api/v1/openapi.json`. Zie docs/api-v1.md.
-- **Back-up-dienstverlener en EU-register**: gebouwd, staan uit tot er een partij/register is.
+- **UPI**: `uniqueProductIdentifier` is altijd een persistente https-URL die naar het paspoort
+  leidt (GS1 Digital Link op `qr.veripasso.com` met de GTIN erin, anders de paspoort-URL).
+- **Toegang per niveau**: publiek, professional (reparateurs, recyclers) en autoriteit, via
+  toegangstokens (`vpa_…`) die het bedrijf uitgeeft; per document *Zichtbaar voor*. Antwoorden
+  met een token worden nooit gedeeld gecachet. Zie docs/dpp-datamodel.md.
+- **EU DPP-register**: de klant registreert zelf (EU Login + QSeal). VeriPasso levert de
+  registratiegegevens (UPI, model-/batch-ID; CSV per 100), controleert ze zoals het register en
+  legt de uitkomst vast (URI, correlation ID, status, foutcode, paspoortversie). Zie
+  docs/eu-register-en-backup.md en de [checklist voor klanten](docs/eu-register-checklist-klant.md).
+- **Back-up-dienstverlener**: koppeling gebouwd, staat uit tot er een partij is.
 - **Scans**: alleen echte QR-scans tellen (niet vanuit de app, geen refresh, geen bots;
   1× per apparaat per paspoort per 30 minuten; geen IP, niets op het apparaat). Zie docs/scans.md.
 
@@ -285,6 +294,9 @@ docs/                     zie de tabel bovenaan
       bewaartermijnen, datalekprocedure, verwerkingsregister. Daarna pagina's /privacy en /voorwaarden.
 - [ ] Verwerkersovereenkomsten met STRATO, Cloudflare en Hetzner afsluiten/controleren; partnerovereenkomst.
 - [ ] Back-up-dienstverlener voor paspoorten contracteren (koppeling gebouwd, staat uit).
+- [ ] EU-register: officieel uploadsjabloon (JSON/XML) ophalen uit de testomgeving van het register
+      en de bestandsexport daarop bouwen; batterijvelden en openbaarheid per veld (Bijlage XIII)
+      zodra de semantische catalogus van de EU er is.
 - [ ] Per klant: productgroep en toepasselijke gedelegeerde handeling (ESPR) vaststellen.
 - [ ] Certificeerder: toetsing tegen EN 18216–18223 (normteksten niet door AI gelezen i.v.m. de
       EVS-licentie), levensduur paspoort per productgroep, digitale handtekeningen (EN 18246).

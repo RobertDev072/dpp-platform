@@ -23,7 +23,41 @@ beschikbaar bij een onafhankelijke derde.
 dienstverlener zodra die er zijn, en afspraken over hun API. Wijkt hun API af van het
 bovenstaande, dan is alleen `src/services/dppContinuity.service.js` aan te passen.
 
-## 2. EU DPP-register (RegisterProductDPP)
+## 2. EU DPP-register
+
+Bron: *DPP Registry User Guide for Economic Operators* v1.03 (Europese Commissie, 2026-09-16).
+
+**Wie doet wat**
+- **De klant (marktdeelnemer)** verifieert zijn bedrijf in het register (EU Login, door de
+  Commissie gezegelde PDF-verklaring, ondertekend met een QSeal/QES, zie
+  [eu-register-checklist-klant.md](eu-register-checklist-klant.md)) en registreert zelf: per
+  paspoort via een formulier, of tot 100 tegelijk met een JSON/XML-bestand volgens het
+  sjabloon van het register. VeriPasso en partners doen dit niet voor de klant.
+- **VeriPasso** host de volledige paspoortgegevens, houdt ze actueel en *altijd bereikbaar*,
+  bewaart elke versie onveranderlijk (nooit verwijderen; elke versie blijft als JSON, JSON-LD en
+  XML op te vragen) en levert de registratiegegevens.
+
+**Wat het register vraagt per paspoort:** granulariteit (voor batterijen alleen *item*), de
+**UPI** (https-URL volgens JTC 24, max. 2000 tekens, moet naar het paspoort leiden) en
+optioneel model-ID en batch-ID. Het register geeft een correlation ID en bij succes een
+registratie-ID (URI). Eén fout in een bestand keurt het hele bestand af.
+
+**In VeriPasso** (product → tabblad QR-code → kaart *EU DPP-register*):
+- UPI, model-ID en granulariteit om over te nemen; per batch en exemplaar als CSV, in delen van
+  max. 100 (`GET /api/products/{id}/registration/records?granularity=item|batch|model`).
+- Controles vooraf zoals het register: alleen https, geen afwijkende poort, unieke UPI's,
+  toegestane bestandsnaam; *UPI controleren* opent de UPI zoals het register (max. één
+  doorverwijzing, nooit naar http, eindigt op 200).
+- Uitkomst vastleggen: status (ingediend / geregistreerd / afgewezen), URI, correlation ID,
+  foutcode; de paspoortversie van dat moment wordt mee bewaard.
+- Stand register (gids v1.03): registratie van batterijpaspoorten lukt nog niet, omdat de
+  semantische catalogus ontbreekt ("Semantic validation failed due to its unavailability").
+
+**Nog niet:** het officiële bestandssjabloon (alleen te downloaden na inloggen in het register;
+zodra we het hebben, komt de bestandsopbouw in `src/services/registryRecord.service.js`) en een
+API voor dienstverleners (bestaat niet). De oude koppeling hieronder blijft daarom uit.
+
+### Oude generieke koppeling (staat uit)
 
 - In de app: product → tabblad **QR-code** → **Klaarzetten voor EU-register** (indienen doet de klant zelf, zie hieronder).
 - Via de API: `POST /api/v1/dpp/{dppId}/register` (sleutel met schrijfrecht), status via

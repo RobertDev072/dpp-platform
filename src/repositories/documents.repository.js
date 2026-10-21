@@ -2,7 +2,7 @@ const { getPool, sql } = require("../config/db");
 
 const COLUMNS = `
   id, company_id, product_id, type, title, language, storage_url, blob_name, file_size, mime_type,
-  is_public, category, valid_until, version, uploaded_by, created_at
+  is_public, access_level, category, valid_until, version, uploaded_by, created_at
 `;
 
 async function listDocumentsForProduct(productId, options = {}) {
@@ -34,6 +34,7 @@ async function createDocument({
   fileSize,
   mimeType,
   isPublic,
+  accessLevel,
   category,
   validUntil,
   version,
@@ -53,16 +54,17 @@ async function createDocument({
     .input("mimeType", sql.NVarChar(100), mimeType ?? null)
     .input("isPublic", sql.Bit, isPublic ?? false)
     .input("category", sql.NVarChar(30), category ?? "document")
+    .input("accessLevel", sql.NVarChar(20), accessLevel || null)
     .input("validUntil", sql.Date, validUntil || null)
     .input("version", sql.NVarChar(30), version || null)
     .input("uploadedBy", sql.Int, uploadedBy ?? null)
     .query(`
       INSERT INTO dbo.Documents
         (company_id, product_id, type, title, language, storage_url, blob_name, file_size, mime_type, is_public, category,
-         valid_until, version, uploaded_by)
+         valid_until, version, uploaded_by, access_level)
       VALUES
         (@companyId, @productId, @type, @title, @language, @storageUrl, @blobName, @fileSize, @mimeType, @isPublic, @category,
-         @validUntil, @version, @uploadedBy)
+         @validUntil, @version, @uploadedBy, @accessLevel)
       RETURNING ${COLUMNS}
     `);
   return result.recordset[0];
@@ -96,6 +98,7 @@ async function deleteDocument(id, productId) {
 const EDITABLE = {
   title: ["title", () => sql.NVarChar(200)],
   isPublic: ["is_public", () => sql.Bit],
+  accessLevel: ["access_level", () => sql.NVarChar(20)],
   category: ["category", () => sql.NVarChar(30)],
   language: ["language", () => sql.NVarChar(10)],
   validUntil: ["valid_until", () => sql.Date],
@@ -154,7 +157,7 @@ async function listDocumentsForCompany(companyId, { q, category, visibility, val
 
   const result = await request.query(`
     SELECT d.id, d.product_id, d.type, d.category, d.title, d.language, d.storage_url, d.blob_name,
-           d.file_size, d.mime_type, d.is_public, d.valid_until, d.version, d.created_at,
+           d.file_size, d.mime_type, d.is_public, d.access_level, d.valid_until, d.version, d.created_at,
            ${VALIDITY_EXPR} AS validity,
            p.name AS product_name, p.sku AS product_sku,
            u.email AS uploaded_by_email,

@@ -16,6 +16,46 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { DOCUMENT_CATEGORY_OPTIONS, documentCategoryLabel, documentValidity, formatFileSize } from "./documentUtils";
 
+// Wie ziet het document: iedereen (paspoortpagina), alleen professionals (reparateurs,
+// recyclers) of autoriteiten met een toegangstoken, of alleen het eigen bedrijf.
+const VISIBILITY = [
+  ["public", "Iedereen (op het paspoort)"],
+  ["professional", "Professionals en autoriteiten"],
+  ["authority", "Alleen autoriteiten"],
+  ["private", "Alleen intern"]
+];
+
+function visibilityOf(doc) {
+  if (doc.is_public) return "public";
+  return doc.access_level || "private";
+}
+
+function visibilityPayload(value) {
+  return { isPublic: value === "public", accessLevel: value === "professional" || value === "authority" ? value : null };
+}
+
+function VisibilitySelect({ value, onChange, id }) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
+        Zichtbaar voor
+      </label>
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 block w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+      >
+        {VISIBILITY.map(([key, label]) => (
+          <option key={key} value={key}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // Zelfde whitelist als de backend (products.routes.js): controle vóór de upload
 // voorkomt een zinloze upload van een te groot bestand die toch een 400 oplevert.
 const ALLOWED_MIME_TYPES = [
@@ -112,10 +152,10 @@ export default function DocumentsTab({ productId, onChanged }) {
             documents={documents}
             deletingId={deletingId}
             onDelete={handleDelete}
-            onTogglePublic={async (doc) => {
+            onChangeVisibility={async (doc, value) => {
               try {
-                await api.patch(`/api/products/${productId}/documents/${doc.id}`, { isPublic: !doc.is_public });
-                toast.success(doc.is_public ? "Document is nu privé" : "Document staat nu op het paspoort");
+                await api.patch(`/api/products/${productId}/documents/${doc.id}`, visibilityPayload(value));
+                toast.success(`Zichtbaar voor: ${VISIBILITY.find(([key]) => key === value)[1].toLowerCase()}`);
                 await refresh();
               } catch (err) {
                 toast.error(err.message);
@@ -130,7 +170,7 @@ export default function DocumentsTab({ productId, onChanged }) {
 
 function UploadCard({ productId, onUploaded }) {
   const form = useForm({
-    initial: { title: "", category: "document", isPublic: false, validUntil: "", version: "" },
+    initial: { title: "", category: "document", visibility: "private", validUntil: "", version: "" },
     validators: {
       title: (value) => (String(value || "").trim() ? null : "Vul een titel in")
     }
@@ -194,7 +234,7 @@ function UploadCard({ productId, onUploaded }) {
       await api.uploadDirect(`/api/products/${productId}/documents`, file, {
         title: form.values.title.trim(),
         category: form.values.category,
-        isPublic: form.values.isPublic,
+        ...visibilityPayload(form.values.visibility),
         validUntil: form.values.validUntil || undefined,
         version: form.values.version.trim() || undefined
       });
@@ -304,14 +344,7 @@ function UploadCard({ productId, onUploaded }) {
           />
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={form.values.isPublic}
-            onChange={(e) => form.setValue("isPublic", e.target.checked)}
-          />
-          Publiek zichtbaar op het productpaspoort
-        </label>
+        <VisibilitySelect id="upload-visibility" value={form.values.visibility} onChange={(value) => form.setValue("visibility", value)} />
 
         <SubmitButton disabled={uploading}>
           {uploading ? (
@@ -334,7 +367,7 @@ function UploadCard({ productId, onUploaded }) {
 function ExternalLinkCard({ productId, onCreated }) {
   const [open, setOpen] = useState(false);
   const form = useForm({
-    initial: { type: "", title: "", storageUrl: "", isPublic: false },
+    initial: { type: "", title: "", storageUrl: "", visibility: "private" },
     validators: {
       title: (value) => (String(value || "").trim() ? null : "Vul een titel in"),
       storageUrl: (value) => (String(value || "").trim() ? null : "Vul een URL in")
@@ -356,7 +389,7 @@ function ExternalLinkCard({ productId, onCreated }) {
         type: form.values.type,
         title: form.values.title,
         storageUrl: form.values.storageUrl,
-        isPublic: form.values.isPublic
+        ...visibilityPayload(form.values.visibility)
       });
       form.reset();
       await onCreated();
@@ -419,14 +452,7 @@ function ExternalLinkCard({ productId, onCreated }) {
             />
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={form.values.isPublic}
-              onChange={(e) => form.setValue("isPublic", e.target.checked)}
-            />
-            Publiek zichtbaar op het productpaspoort
-          </label>
+          <VisibilitySelect id="link-visibility" value={form.values.visibility} onChange={(value) => form.setValue("visibility", value)} />
 
           <SubmitButton loading={saving}>Link toevoegen</SubmitButton>
         </form>
@@ -435,7 +461,7 @@ function ExternalLinkCard({ productId, onCreated }) {
   );
 }
 
-function DocumentList({ productId, documents, deletingId, onDelete, onTogglePublic }) {
+function DocumentList({ productId, documents, deletingId, onDelete, onChangeVisibility }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
@@ -489,14 +515,20 @@ function DocumentList({ productId, documents, deletingId, onDelete, onTogglePubl
                   })()}
                 </td>
                 <td className="py-2 pr-3">
-                  <button
-                    type="button"
-                    onClick={() => onTogglePublic(doc)}
-                    title={doc.is_public ? "Klik om privé te maken" : "Klik om op het paspoort te tonen"}
-                    className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                  <select
+                    aria-label={`Zichtbaarheid van ${doc.title}`}
+                    value={visibilityOf(doc)}
+                    onChange={(e) => onChangeVisibility(doc, e.target.value)}
+                    className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                      doc.is_public ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
                   >
-                    {doc.is_public ? <Badge variant="success">Publiek</Badge> : <Badge variant="neutral">Privé</Badge>}
-                  </button>
+                    {VISIBILITY.map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td className="py-2 pr-3 text-slate-600">{formatDate(doc.created_at)}</td>
                 <td className="py-2">
