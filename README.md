@@ -6,10 +6,9 @@ geïsoleerde omgeving; consumenten scannen een QR-code en zien het publieke
 productpaspoort zonder account. Systemen kunnen hetzelfde paspoort op dezelfde URL
 machineleesbaar opvragen (JSON, JSON-LD, XML).
 
-Laatst bijgewerkt: 2026-10-19. **Status: live.** Applicatie en database op een eigen Linux-server
+Laatst bijgewerkt: 2026-10-21. **Status: live.** Applicatie en database op een eigen Linux-server
 (STRATO, Duitsland), bestanden en QR-rand bij Cloudflare (EU), derde back-up bij Hetzner (Finland).
-Bewaking met pushmeldingen en een geteste noodherstelprocedure: zie §7. AWS, Supabase, Azure en
-Vercel worden niet meer gebruikt (laatste AWS-versie: git-tag `aws-laatste-versie`).
+Bewaking met pushmeldingen en een geteste noodherstelprocedure: zie §7.
 
 Domeinen (DNS bij Cloudflare):
 
@@ -19,11 +18,20 @@ Domeinen (DNS bij Cloudflare):
 | https://app.veripasso.com | de SaaS-applicatie (inloggen, dashboards, beheer) |
 | https://qr.veripasso.com | QR-scans en publieke productpaspoorten (permanent: staat op elke gedrukte code) |
 
-**Hoe alles in elkaar zit: [docs/infrastructuur.md](docs/infrastructuur.md)**. Serverbeheer: [docs/hosting-strato.md](docs/hosting-strato.md), bij storingen **[docs/noodplan.md](docs/noodplan.md)**.
-DPP-datamodel: [docs/dpp-datamodel.md](docs/dpp-datamodel.md) · B2B-API: [docs/api-v1.md](docs/api-v1.md) · back-up-dienstverlener en EU-register: [docs/eu-register-en-backup.md](docs/eu-register-en-backup.md).
-Rollen en accounts: [docs/accounts.md](docs/accounts.md); QR-scans: [docs/scans.md](docs/scans.md); wettelijke compliance: [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md) (live op een
-STRATO-server sinds 2026-10-13). Verder: [compliance-matrix](docs/compliance/requirements-matrix.md),
-[Cloudflare vóór qr.veripasso.com](docs/cloudflare.md) (paspoortcache en gebundelde scans).
+Documentatie:
+
+| Onderwerp | Document |
+|---|---|
+| Hoe alles in elkaar zit | **[docs/infrastructuur.md](docs/infrastructuur.md)** |
+| Bij storingen | **[docs/noodplan.md](docs/noodplan.md)** |
+| Serverbeheer (STRATO) | [docs/hosting-strato.md](docs/hosting-strato.md) |
+| Cloudflare vóór qr.veripasso.com | [docs/cloudflare.md](docs/cloudflare.md) |
+| DPP-datamodel en B2B-API | [docs/dpp-datamodel.md](docs/dpp-datamodel.md), [docs/api-v1.md](docs/api-v1.md) |
+| Back-up-dienstverlener en EU-register | [docs/eu-register-en-backup.md](docs/eu-register-en-backup.md) |
+| Rollen, accounts en QR-scans | [docs/accounts.md](docs/accounts.md), [docs/scans.md](docs/scans.md) |
+| Wet en normen | [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md), [normmatrix](docs/compliance/requirements-matrix.md) |
+| Juridische documenten (concepten) | [docs/juridisch/](docs/juridisch/) |
+| Tests en hersteltest | [docs/verification/](docs/verification/) |
 
 ---
 
@@ -73,8 +81,6 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   verplichte wachtwoordwijziging (met MFA ook de code, zodat een reset MFA niet omzeilt).
 - **Geen e-mailverzending** (bewuste keuze): "Wachtwoord vergeten" verwijst naar de
   beheerder; uitnodigingslinks worden handmatig gedeeld.
-- Microsoft Entra is volledig verwijderd. Accounts die nog geen lokaal wachtwoord hebben
-  (oud Entra), krijgen vóór de overstap een tijdelijk wachtwoord (runbook §5.3).
 - Bescherming: rate limiting (login, MFA, resets, publieke API), 1,2 s vloer op mislukte
   logins, dummy-bcrypt bij onbekende accounts, gesaneerde gestructureerde logging.
 
@@ -83,11 +89,10 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 ## 3. Producten, paspoorten, documenten en QR
 
 - Producten per tenant met duurzaamheid, compliance, onderdelen, batches en documenten;
-  compleetheid op 7 criteria; bulkacties en QR-downloads (PNG/SVG/ZIP). Importeren (Excel/CSV) en
-  labels printen zijn verwijderd (2026-10-14); importeren komt eventueel terug in versie 2.
+  compleetheid op 7 criteria; bulkacties, export naar Excel en QR-downloads (PNG/SVG/ZIP).
 - **Uploads** (foto's ≤ 15 MB, verkleind opgeslagen; documenten PDF/JPEG/PNG/SVG/WEBP ≤ 25 MB)
   gaan rechtstreeks van de browser naar **privé buckets in S3-compatibele opslag**
-  (lokaal bijv. MinIO, later bijv. Cloudflare R2; zonder ingestelde opslag staan uploads uit):
+  (live: Cloudflare R2; lokaal bijv. MinIO; zonder ingestelde opslag staan uploads uit):
   1. `POST /api/products/:id/{photo|documents}/upload-url`: rol, tenant, type en grootte
      worden gecontroleerd; de server geeft een **presigned PUT** voor precies één object
      (`products/{productId}/{uuid}.{ext}`); type en exacte grootte zitten in de handtekening,
@@ -98,7 +103,7 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   Objecten worden nooit overschreven of door de app verwijderd (zet bij de opslag
   versioning aan als tweede slot).
 - **QR**: formaat `{QR_BASE_URL}/p/{PUBLIC_ID}` met `QR_BASE_URL=https://qr.veripasso.com`.
-  De GUID staat in **hoofdletters** (zo gedrukt in de Azure-tijd); opzoeken werkt
+  De GUID staat in **hoofdletters** (zo staat hij op de gedrukte codes); opzoeken werkt
   hoofdletterongevoelig. Een QR identificeert een **productmodel**, een **batch** of een
   **exemplaar** (serienummer); elk heeft een eigen permanente id (tabblad "Batches &
   exemplaren"). Vrije ruimte 4 modules (ISO/IEC 18004); ook **Data Matrix** (ISO/IEC 16022) en
@@ -189,8 +194,7 @@ Menu's verbergen is UI-comfort; élk endpoint dwingt de rol ook server-side af.
    daarna weer weghalen) → `npm run dev` (http://localhost:3000).
 
 Lokaal is er geen domeinverdeling: alle pagina's (landingspagina, app, paspoorten) staan
-op `localhost:3000`. Achter de zakelijke proxy (Zscaler): `NODE_EXTRA_CA_CERTS` naar het
-root-CA-bestand (`scripts/export-zscaler-ca.ps1`).
+op `localhost:3000`.
 
 ---
 
@@ -232,6 +236,7 @@ app/                      Next.js App Router (admin, partner, company, login, p/
 components/, lib/         UI-componenten en frontend-helpers (lib/api.js incl. presigned upload)
 pages/api/[[...path]].js  Eén API-route die alle /api/*-verzoeken aan Express geeft
 instrumentation.js        Start achtergrondtaken; nette afsluiting bij SIGTERM
+proxy.js                  Domeinverdeling (www / app / qr)
 src/
   app.js                  Express: health/readiness, telemetrie, routes
   config/                 db (pg + TLS), storage (S3-compatibel), monitoring, zod-NL
@@ -246,12 +251,14 @@ src/
   utils/                  logger, roles, tenant, auditLog, password, baseUrl
 db/migrations/            PostgreSQL-migraties (oplopend; bijgehouden in dbo.schemamigrations)
 deploy/                   Serveropzet: compose.yaml (app + PostgreSQL + Caddy), Caddyfile, .env.example,
-                          backup.sh, update.sh; Dockerfile in de root
-edge/cloudflare/          Cloudflare Worker voor qr.veripasso.com (scans bundelen, cache verversen)
+                          backup.sh (nachtelijke back-up), update.sh (uitrollen), recover.sh (herstel);
+                          Dockerfile in de root
+edge/cloudflare/          Cloudflare Worker voor qr.veripasso.com (cache, noodkopie, scans, bewaking)
 scripts/                  migrate, seed-system-owner, backfill-passport-versions, local-db,
-                          check-db-connection, cleanup-test-data
+                          check-db-connection, noodherstel (noodherstel in stappen),
+                          maak-noodpakket (ZIP met klikbestanden)
 tests/                    node --test (zie §9)
-docs/                     cloudflare, compliance-matrix, verificatie
+docs/                     zie de tabel bovenaan
 ```
 
 ---
@@ -273,10 +280,10 @@ docs/                     cloudflare, compliance-matrix, verificatie
 ## 10. Openstaand
 
 ### Organisatie en wet (geen code; zie [docs/compliance/wettelijke-matrix.md](docs/compliance/wettelijke-matrix.md))
-- [ ] Privacyverklaring publiceren (concepten van alle juridische documenten: docs/juridisch/).
-- [ ] Verwerkersovereenkomsten: met klanten, en met STRATO, Cloudflare en Hetzner (subverwerkers).
-- [ ] Verwerkingsregister, bewaartermijnen (accounts, auditlog, back-ups) en datalekprocedure.
-- [ ] Algemene voorwaarden / SaaS-overeenkomst en partnerovereenkomst.
+- [ ] Juridische concepten invullen, laten controleren en publiceren ([docs/juridisch/](docs/juridisch/)):
+      privacyverklaring, algemene voorwaarden, verwerkersovereenkomst, subverwerkers,
+      bewaartermijnen, datalekprocedure, verwerkingsregister. Daarna pagina's /privacy en /voorwaarden.
+- [ ] Verwerkersovereenkomsten met STRATO, Cloudflare en Hetzner afsluiten/controleren; partnerovereenkomst.
 - [ ] Back-up-dienstverlener voor paspoorten contracteren (koppeling gebouwd, staat uit).
 - [ ] Per klant: productgroep en toepasselijke gedelegeerde handeling (ESPR) vaststellen.
 - [ ] Certificeerder: toetsing tegen EN 18216–18223 (normteksten niet door AI gelezen i.v.m. de
@@ -302,3 +309,4 @@ docs/                     cloudflare, compliance-matrix, verificatie
 - [x] TLS 1.0/1.1 uit; derde back-up bij Hetzner (versleuteld, met snapshots); beperkte back-upsleutel.
 - [x] Bewaking vanuit Cloudflare, meldingen vanaf de server, noodherstel in stappen + noodpakket.
 - [x] Storings- en hersteltest: QR blijft werken, volledig herstel zonder STRATO in ca. 3 minuten.
+- [x] AVG: eigen gegevens downloaden in het profiel; concepten van alle juridische documenten.
