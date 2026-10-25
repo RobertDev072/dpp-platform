@@ -41,6 +41,8 @@ COPY --from=build --chown=node:node /app/public ./public
 # staan al in de standalone-node_modules.
 COPY --from=build --chown=node:node /app/db ./db
 COPY --from=build --chown=node:node /app/src ./src
+# Blogartikelen (de pagina's zijn statisch, maar zo kan Next ze ook bij runtime lezen).
+COPY --from=build --chown=node:node /app/content ./content
 COPY --from=build --chown=node:node /app/scripts/migrate.js /app/scripts/seed-system-owner.js /app/scripts/backfill-passport-versions.js ./scripts/
 
 RUN printf '#!/bin/sh\nset -e\nnode scripts/migrate.js\nexec node server.js\n' > /app/start.sh \
