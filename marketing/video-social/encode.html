@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"><title>Codering</title></head>
+<body>
+<script type="module">
+// Beelden (frames/*.jpg) + zelfgemaakte muziek en geluidseffecten → MP4 (H.264 + AAC)
+// met WebCodecs en mp4-muxer. Draait in Chrome; geen ffmpeg nodig. Geen voice-over.
+import { Muxer, ArrayBufferTarget } from "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.mjs";
+
+const params = new URLSearchParams(location.search);
+const FRAMES = Number(params.get("frames"));
+const FPS = Number(params.get("fps"));
+const W = Number(params.get("w")), H = Number(params.get("h")), RATE = 48000;
+const log = (msg) => fetch("/log", { method: "POST", body: String(msg) });
+
+// Vaste toevalsgenerator: elke render klinkt precies hetzelfde.
+let seed = 12345;
+const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+// ---------- muziek: 120 BPM, A-mineur (Am – F – C – G), maat = 2 s ----------
+const BEAT = 0.5, BAR = 2;
+const hz = (n) => 440 * Math.pow(2, (n - 69) / 12);
+const CHORDS = [
+  { root: 45, notes: [57, 60, 64, 67] }, // Am7
+  { root: 41, notes: [57, 60, 64, 65] }, // Fmaj7
+  { root: 48, notes: [55, 60, 64, 67] }, // C
+  { root: 43, notes: [55, 59, 62, 67] }  // G
+];
+const LEAD = [76, 74, 72, 69, 72, 74, 76, 79]; // melodie in achtsten (op de tellen 1 en 3)
+
+// Secties (in maten): 0–1 intro, 2–3 eerste drop, 4–7 wandeling (lichter, opbouw), 8–13 drop, 14–17 slot.
+function section(b) {
+  if (b < 2) return "intro";
+  if (b < 4) return "drop1";
+  if (b < 8) return "walk";
+  if (b < 14) return "drop2";
+  return "outro";
+}
+
+async function renderAudio(totalSec) {
+  const ctx = new OfflineAudioContext(2, Math.ceil(totalSec * RATE), RATE);
+
+  // Eindketen: compressor → limiter → uit.
+  const master = ctx.createGain(); master.gain.value = 0.9;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.ratio.value = 3; comp.attack.value = 0.005; comp.release.value = 0.2;
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -3; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.08; lim.knee.value = 0;
+  master.connect(comp).connect(lim).connect(ctx.destination);
+  master.gain.setValueAtTime(0.9, 34);
+  master.gain.linearRampToValueAtTime(0, totalSec - 0.05);
+
+  // Galm (zelf gemaakte impulsrespons).
+  const ir = ctx.createBuffer(2, RATE * 2.6, RATE);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    for (let i = 0; i < d.length; i++) d[i] = (rand() * 2 - 1) * Math.pow(1 - i / d.length, 3.2);
+  }
+  const verb = ctx.createConvolver(); verb.buffer = ir;
+  const verbOut = ctx.createGain(); verbOut.gain.value = 0.32;
+  verb.connect(verbOut).connect(master);
+
+  // Synths gaan door een "sidechain"-bus die bij elke kick even wegzakt (pompen).
+  const synth = ctx.createGain(); synth.connect(master); synth.connect(verb);
+  const drums = ctx.createGain(); drums.connect(master);
+  const sfx = ctx.createGain(); sfx.gain.value = 0.9; sfx.connect(master); sfx.connect(verb);
+
+  // Stereo-echo voor arpeggio en lead.
+  const dl = ctx.createDelay(1), dr = ctx.createDelay(1);
+  dl.delayTime.value = BEAT * 0.75; dr.delayTime.value = BEAT * 0.5;
+  const fb = ctx.createGain(); fb.gain.value = 0.3;
+  const pl = ctx.createStereoPanner(); pl.pan.value = -0.6;
+  const pr = ctx.createStereoPanner(); pr.pan.value = 0.6;
+  const echoIn = ctx.createGain(); echoIn.gain.value = 0.35;
+  echoIn.connect(dl); echoIn.connect(dr);
+  dl.connect(fb).connect(dl); dl.connect(pl).connect(synth); dr.connect(pr).connect(synth);
+
+  const noise = ctx.createBuffer(1, RATE * 2, RATE);
+  { const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = rand() * 2 - 1; }
+  const noiseSrc = (t, dur, offset = rand()) => {
+    const s = ctx.createBufferSource(); s.buffer = noise; s.start(t, offset, dur); return s;
+  };
+
+  // ---------- instrumenten ----------
+  const kicks = [];
+  function kick(t, vel = 1) {
+    kicks.push(t);
+    const o = ctx.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.9 * vel, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.42);
+    o.connect(g).connect(drums); o.start(t); o.stop(t + 0.45);
+    // klik voor definitie
+    const n = noiseSrc(t, 0.02); const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 3000;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.18 * vel, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+    n.connect(hp).connect(ng).connect(drums);
+  }
+  function clap(t, vel = 1) {
+    for (const off of [0, 0.012, 0.024]) {
+      const n = noiseSrc(t + off, 0.2); const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1500; bp.Q.value = 0.8;
+      const g = ctx.createGain(); g.gain.setValueAtTime(0.32 * vel, t + off); g.gain.exponentialRampToValueAtTime(0.001, t + off + (off === 0.024 ? 0.22 : 0.03));
+      n.connect(bp).connect(g); g.connect(drums); g.connect(verb);
+    }
+  }
+  function hat(t, vel = 1, open = false) {
+    const n = noiseSrc(t, open ? 0.25 : 0.06); const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 8000;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.08 * vel, t); g.gain.exponentialRampToValueAtTime(0.001, t + (open ? 0.22 : 0.045));
+    const p = ctx.createStereoPanner(); p.pan.value = 0.25;
+    n.connect(hp).connect(g).connect(p).connect(drums);
+  }
+  function rim(t) {
+    const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = 1700;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.09, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    const p = ctx.createStereoPanner(); p.pan.value = -0.3;
+    o.connect(g).connect(p).connect(drums); o.start(t); o.stop(t + 0.06);
+  }
+  function bass(t, note, dur, vel = 1) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.32 * vel, t + 0.01);
+    g.gain.setValueAtTime(0.32 * vel, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 4;
+    lp.frequency.setValueAtTime(1400, t); lp.frequency.exponentialRampToValueAtTime(220, t + dur * 0.8);
+    lp.connect(g).connect(synth);
+    for (const [type, mul, lvl] of [["sawtooth", 1, 0.5], ["sine", 0.5, 0.9]]) {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz(note) * mul;
+      const og = ctx.createGain(); og.gain.value = lvl; o.connect(og).connect(lp); o.start(t); o.stop(t + dur + 0.02);
+    }
+  }
+  function pad(t, notes, dur, level, cutoffFrom, cutoffTo) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(level, t + 0.25);
+    g.gain.setValueAtTime(level, t + dur - 0.1); g.gain.linearRampToValueAtTime(0, t + dur + 0.5);
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 0.7;
+    lp.frequency.setValueAtTime(cutoffFrom, t); lp.frequency.exponentialRampToValueAtTime(cutoffTo, t + dur);
+    lp.connect(g).connect(synth);
+    notes.forEach((n, i) => {
+      for (const det of [-9, 0, 9]) {
+        const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = hz(n); o.detune.value = det;
+        const p = ctx.createStereoPanner(); p.pan.value = (det / 9) * 0.5 + (i % 2 ? 0.1 : -0.1);
+        o.connect(p).connect(lp); o.start(t); o.stop(t + dur + 0.6);
+      }
+    });
+  }
+  function pluck(t, note, vel = 1, level = 0.07) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(level * vel, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.setValueAtTime(5000, t); lp.frequency.exponentialRampToValueAtTime(700, t + 0.25);
+    lp.connect(g); g.connect(synth); g.connect(echoIn);
+    for (const [type, det] of [["square", -5], ["sawtooth", 5]]) {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz(note); o.detune.value = det;
+      o.connect(lp); o.start(t); o.stop(t + 0.34);
+    }
+  }
+  function lead(t, note, dur) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.02);
+    g.gain.setValueAtTime(0.06, t + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3200;
+    lp.connect(g); g.connect(synth); g.connect(echoIn); g.connect(verb);
+    for (const det of [-12, 12]) {
+      const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = hz(note); o.detune.value = det;
+      const vib = ctx.createOscillator(); vib.frequency.value = 5.5; const vg = ctx.createGain(); vg.gain.value = 6;
+      vib.connect(vg).connect(o.detune); vib.start(t); vib.stop(t + dur);
+      o.connect(lp); o.start(t); o.stop(t + dur + 0.02);
+    }
+  }
+  function riser(t0, t1, level = 0.16) {
+    const n = noiseSrc(t0, t1 - t0 + 0.05, 0); const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 2;
+    bp.frequency.setValueAtTime(300, t0); bp.frequency.exponentialRampToValueAtTime(9000, t1);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.001, t0); g.gain.exponentialRampToValueAtTime(level, t1 - 0.02); g.gain.linearRampToValueAtTime(0, t1 + 0.04);
+    n.connect(bp).connect(g); g.connect(sfx);
+    const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.setValueAtTime(110, t0); o.frequency.exponentialRampToValueAtTime(880, t1);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.001, t0); og.gain.exponentialRampToValueAtTime(level * 0.25, t1 - 0.02); og.gain.linearRampToValueAtTime(0, t1 + 0.04);
+    const ol = ctx.createBiquadFilter(); ol.type = "lowpass"; ol.frequency.value = 2500;
+    o.connect(ol).connect(og).connect(sfx); o.start(t0); o.stop(t1 + 0.05);
+  }
+  function snareRoll(t0, t1) {
+    let t = t0, step = BEAT / 2;
+    while (t < t1 - 0.01) {
+      const frac = (t - t0) / (t1 - t0);
+      if (frac > 0.5) step = BEAT / 4;
+      if (frac > 0.8) step = BEAT / 8;
+      clap(t, 0.25 + frac * 0.6); t += step;
+    }
+  }
+  function whoosh(t, dur = 0.6, level = 0.22) {
+    const n = noiseSrc(t, dur + 0.05); const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(400, t); bp.frequency.exponentialRampToValueAtTime(5000, t + dur * 0.7); bp.frequency.exponentialRampToValueAtTime(1200, t + dur);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.001, t); g.gain.exponentialRampToValueAtTime(level, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const p = ctx.createStereoPanner(); p.pan.setValueAtTime(-0.7, t); p.pan.linearRampToValueAtTime(0.7, t + dur);
+    n.connect(bp).connect(g).connect(p).connect(sfx);
+  }
+  function impact(t, level = 1) {
+    const o = ctx.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(30, t + 1.2);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.8 * level, t); g.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
+    o.connect(g).connect(sfx); o.start(t); o.stop(t + 1.7);
+    const n = noiseSrc(t, 1.2); const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.setValueAtTime(6000, t); lp.frequency.exponentialRampToValueAtTime(300, t + 1.0);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.35 * level, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+    n.connect(lp).connect(ng); ng.connect(sfx); ng.connect(verb);
+  }
+  function beep(t, f = 1760, dur = 0.09) {
+    const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = f;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.005); g.gain.setValueAtTime(0.18, t + dur - 0.02); g.gain.linearRampToValueAtTime(0, t + dur);
+    o.connect(g).connect(sfx); o.start(t); o.stop(t + dur + 0.01);
+  }
+  function click(t) {
+    const n = noiseSrc(t, 0.03); const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 2500; bp.Q.value = 3;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+    n.connect(bp).connect(g).connect(sfx);
+    const o = ctx.createOscillator(); o.type = "sine"; o.frequency.setValueAtTime(900, t + 0.05); o.frequency.exponentialRampToValueAtTime(1800, t + 0.15);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0, t + 0.05); og.gain.linearRampToValueAtTime(0.12, t + 0.06); og.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    o.connect(og).connect(sfx); o.start(t + 0.05); o.stop(t + 0.26);
+  }
+
+  // ---------- arrangement ----------
+  const bars = Math.ceil(totalSec / BAR);
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * BAR, sec = section(b), ch = CHORDS[b % 4];
+    if (t0 >= totalSec - 0.5) break;
+
+    // Pad: in de intro dicht gefilterd en langzaam opengaand; in de drops helder.
+    const padCut = { intro: [300, 300 + b * 500 + 500], drop1: [1800, 2600], walk: [900, 1400], drop2: [2200, 3200], outro: [1600, 700] }[sec];
+    const padLvl = { intro: 0.05, drop1: 0.035, walk: 0.04, drop2: 0.035, outro: 0.045 }[sec];
+    pad(t0, ch.notes, BAR, padLvl, padCut[0], padCut[1]);
+
+    for (let k = 0; k < 4; k++) {
+      const t = t0 + k * BEAT;
+      if (sec === "drop1" || sec === "drop2") {
+        kick(t);
+        if (k % 2 === 1) clap(t);
+        hat(t + BEAT / 2, 1, k === 3);
+        if (sec === "drop2") { hat(t + BEAT / 4, 0.45); hat(t + BEAT * 0.75, 0.45); }
+        bass(t, ch.root - 12, BEAT * 0.45); bass(t + BEAT / 2, ch.root, BEAT * 0.45, 0.8);
+      } else if (sec === "walk") {
+        if (k === 0 || k === 2) kick(t, 0.8);
+        if (k === 1 || k === 3) rim(t);
+        hat(t + BEAT / 2, 0.7);
+        if (k === 0 || k === 2) bass(t, ch.root - 12, BEAT * 0.9, 0.8);
+      } else if (sec === "outro" && b === 14 && k === 0) {
+        bass(t, ch.root - 12, BAR * 0.9, 0.9);
+      }
+    }
+
+    // Arpeggio in achtsten (vanaf maat 1), zestienden in de tweede drop.
+    if (b >= 1) {
+      const steps = sec === "drop2" ? 16 : 8;
+      const order = [0, 1, 2, 3, 2, 1, 2, 3];
+      for (let k = 0; k < steps; k++) {
+        const t = t0 + k * BAR / steps;
+        const note = ch.notes[order[k % 8]] + 12;
+        const vel = sec === "outro" ? 0.6 * (1 - (b - 14) / 4) : sec === "intro" ? 0.5 : 1;
+        pluck(t, note, vel, sec === "drop2" ? 0.05 : 0.065);
+      }
+    }
+
+    // Lead-melodie in de tweede drop.
+    if (sec === "drop2") {
+      for (let k = 0; k < 4; k++) {
+        const n = LEAD[(b * 4 + k) % LEAD.length];
+        lead(t0 + k * BEAT, n, BEAT * 0.9);
+      }
+    }
+  }
+
+  // Overgangen, opbouw en geluidseffecten (synchroon met het beeld).
+  riser(1.8, 4.0, 0.14); impact(4.0, 0.7);
+  riser(13.0, 15.5, 0.18); snareRoll(14.0, 15.5); impact(15.55, 0.8);
+  riser(26.0, 28.0, 0.16); snareRoll(27.0, 28.0); impact(28.0, 1.0); impact(28.6, 0.45);
+  for (const t of [3.6, 7.6, 15.4, 19.6, 23.6, 27.6]) whoosh(t, 0.55);
+  beep(12.6); beep(12.78, 2350, 0.14);
+  click(21.5);
+  for (let i = 0; i < 6; i++) beep(21.75 + i * 0.12, 1200 + i * 180, 0.05);
+
+  // Sidechain: synthbus zakt even weg bij elke kick.
+  synth.gain.setValueAtTime(1, 0);
+  kicks.sort((a, b) => a - b).forEach((t) => {
+    synth.gain.setValueAtTime(1, Math.max(0, t - 0.005));
+    synth.gain.linearRampToValueAtTime(0.35, t + 0.01);
+    synth.gain.linearRampToValueAtTime(1, t + 0.22);
+  });
+
+  return ctx.startRendering();
+}
+
+window.runEncode = async () => {
+  const totalSec = FRAMES / FPS;
+  const audio = await renderAudio(totalSec);
+  let peak = 0; { const d = audio.getChannelData(0); for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i])); }
+  log("audio klaar: " + audio.duration.toFixed(2) + " s, piek " + peak.toFixed(2));
+
+  const muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    video: { codec: "avc", width: W, height: H, frameRate: FPS },
+    audio: { codec: "aac", sampleRate: RATE, numberOfChannels: 2 },
+    fastStart: "in-memory"
+  });
+
+  const venc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => log("video-fout " + e) });
+  venc.configure({ codec: "avc1.640028", width: W, height: H, bitrate: 14_000_000, framerate: FPS, latencyMode: "quality", avc: { format: "avc" } });
+  const aenc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => log("audio-fout " + e) });
+  aenc.configure({ codec: "mp4a.40.2", sampleRate: RATE, numberOfChannels: 2, bitrate: 192_000 });
+
+  const L = audio.getChannelData(0), R = audio.getChannelData(1);
+  for (let off = 0; off < audio.length; off += 1024) {
+    const n = Math.min(1024, audio.length - off);
+    const planar = new Float32Array(n * 2);
+    planar.set(L.subarray(off, off + n), 0);
+    planar.set(R.subarray(off, off + n), n);
+    const ad = new AudioData({ format: "f32-planar", sampleRate: RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(off / RATE * 1e6), data: planar });
+    aenc.encode(ad); ad.close();
+  }
+
+  const frameDur = Math.round(1e6 / FPS);
+  for (let i = 0; i < FRAMES; i++) {
+    const blob = await (await fetch(`frames/${String(i).padStart(5, "0")}.jpg`)).blob();
+    const bmp = await createImageBitmap(blob);
+    const frame = new VideoFrame(bmp, { timestamp: i * frameDur, duration: frameDur });
+    venc.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
+    frame.close(); bmp.close();
+    while (venc.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 5));
+    if (i % 300 === 0) log(`video ${i}/${FRAMES}`);
+  }
+  await venc.flush(); await aenc.flush();
+  muxer.finalize();
+  const buffer = muxer.target.buffer;
+  await fetch(`/save?name=VeriPasso-social-${W}x${H}.mp4`, { method: "POST", body: buffer });
+  return { megabytes: +(buffer.byteLength / 1048576).toFixed(1), seconds: totalSec, peak: +peak.toFixed(2) };
+};
+window.encodeReady = true;
+</script>
+</body>
+</html>

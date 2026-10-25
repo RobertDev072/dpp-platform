@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>VeriPasso – social video 4:5</title>
+<style>
+@font-face { font-family: 'Host Grotesk'; font-weight: 300 800; src: url(https://fonts.gstatic.com/s/hostgrotesk/v5/co3BmWBnlCJ3U42vbbfdwMjZpFjm.woff2) format('woff2'); }
+:root { --ink:#06162a; --navy:#071a33; --paper:#f5f8fc; --card:#e6edf6; --lime:#72e600; --blue:#1476ff; --sky:#b9cde8; --mute:#475a70; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1080px; height: 1350px; overflow: hidden; background: var(--navy); }
+body { font-family: 'Host Grotesk', Arial, sans-serif; color: var(--paper); -webkit-font-smoothing: antialiased; }
+#stage { position: relative; width: 1080px; height: 1350px; overflow: hidden; background: var(--navy); }
+.abs { position: absolute; }
+.full { position: absolute; inset: 0; }
+
+/* achtergrond: bewegende kleurvlakken, raster, korrel */
+.blob { position: absolute; border-radius: 50%; filter: blur(90px); }
+#b1 { width: 760px; height: 760px; background: #1476ff; opacity: .55; left: 420px; top: 300px; }
+#b2 { width: 560px; height: 560px; background: #72e600; opacity: .18; left: -180px; top: 980px; }
+#b3 { width: 520px; height: 520px; background: #19c3ff; opacity: .22; left: -120px; top: -160px; }
+#grid { position: absolute; inset: -100px; background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px); background-size: 90px 90px; }
+#grain { position: absolute; inset: 0; opacity: .09; mix-blend-mode: overlay; pointer-events: none; z-index: 90; }
+#vignette { position: absolute; inset: 0; z-index: 89; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55)); }
+#flash { position: absolute; inset: 0; z-index: 95; background: #fff; opacity: 0; pointer-events: none; }
+#fade { position: absolute; inset: 0; z-index: 99; background: #050f1f; pointer-events: none; }
+.streak { position: absolute; z-index: 80; width: 1600px; height: 220px; left: -1700px; top: 560px; transform: rotate(-18deg); background: linear-gradient(90deg, transparent, rgba(185,205,232,.0) 20%, rgba(255,255,255,.35) 50%, rgba(185,205,232,0) 80%, transparent); filter: blur(10px); }
+
+/* typografie */
+.eyebrow { display: inline-flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--sky); }
+.eyebrow::before { content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 24px var(--lime); }
+.mega { font-weight: 650; letter-spacing: -.055em; line-height: .9; }
+.mask { display: block; overflow: hidden; padding-bottom: .08em; }
+.mask > span { display: inline-block; will-change: transform; }
+.lime { color: var(--lime); }
+.chip { display: inline-flex; align-items: center; gap: 14px; padding: 20px 30px; border-radius: 32px 32px 32px 10px; background: rgba(245,248,252,.96); color: var(--ink); font-size: 34px; font-weight: 600; box-shadow: 0 30px 70px -30px rgba(0,0,0,.7); white-space: nowrap; }
+.chip.accent { background: var(--lime); border-radius: 32px 32px 10px 32px; }
+.chip svg { width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.glass { background: linear-gradient(160deg, rgba(255,255,255,.14), rgba(255,255,255,.04)); border: 1.5px solid rgba(255,255,255,.18); backdrop-filter: blur(24px); box-shadow: 0 40px 90px -40px rgba(0,0,0,.8); }
+
+/* 1. intro */
+#intro { left: 84px; top: 0; width: 920px; height: 1350px; display: flex; flex-direction: column; justify-content: center; }
+#intro .mega { margin-top: 30px; font-size: 172px; }
+#intro .bar { height: 14px; width: 0; margin-top: 18px; border-radius: 9px; background: var(--lime); box-shadow: 0 0 30px rgba(114,230,0,.7); }
+
+/* 2. wet */
+#law { left: 84px; top: 0; width: 920px; height: 1350px; display: flex; flex-direction: column; justify-content: center; }
+#year { font-size: 330px; font-weight: 700; letter-spacing: -.06em; line-height: .85; background: linear-gradient(180deg, #d6ff9e, #72e600 55%, #3fae00); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 20px 60px rgba(114,230,0,.35)); }
+#law h2 { margin-top: 26px; font-size: 76px; font-weight: 600; letter-spacing: -.035em; line-height: 1.02; }
+#law .chip { margin-top: 48px; align-self: flex-start; }
+
+/* 3. lopen en scannen */
+#walk { overflow: hidden; }
+#walk svg.scene { position: absolute; inset: 0; width: 1080px; height: 1350px; }
+#walkcap { left: 84px; top: 150px; width: 920px; }
+#walkcap .mega { font-size: 104px; }
+#walkcap .row { position: relative; height: 112px; }
+#walkcap .row > div { position: absolute; left: 0; top: 0; }
+
+/* 4. paspoort op de telefoon */
+#pass { perspective: 1800px; }
+.phone { position: absolute; width: 600px; height: 1220px; padding: 18px; border-radius: 86px; background: linear-gradient(145deg, #1e2a3c, #090f1b); box-shadow: 0 80px 140px -50px rgba(0,0,0,.9), inset 0 0 0 3px rgba(255,255,255,.14); }
+.pscreen { position: relative; width: 100%; height: 100%; border-radius: 70px; overflow: hidden; background: var(--paper); color: var(--ink); }
+.notch { position: absolute; z-index: 5; top: 20px; left: 50%; width: 180px; height: 44px; margin-left: -90px; border-radius: 999px; background: #090f1b; }
+.pscroll { display: grid; gap: 22px; padding: 92px 30px 30px; }
+.purl { justify-self: center; display: inline-flex; align-items: center; gap: 10px; padding: 9px 22px; border-radius: 999px; background: var(--card); font-size: 21px; font-weight: 600; color: var(--mute); }
+.purl svg { width: 20px; height: 20px; fill: none; stroke: #2a9d4b; stroke-width: 2.8; stroke-linecap: round; }
+.phero { padding: 32px; border-radius: 34px; background: radial-gradient(80% 90% at 85% 20%, rgba(20,118,255,.6), transparent 70%), var(--ink); color: #fff; display: grid; gap: 14px; }
+.phero .iss { font-size: 22px; color: var(--sky); display: flex; align-items: center; gap: 10px; }
+.phero .nm { font-size: 46px; font-weight: 650; letter-spacing: -.03em; line-height: 1.02; }
+.phero .bd { justify-self: start; display: inline-flex; gap: 8px; align-items: center; padding: 8px 20px; border-radius: 999px; background: var(--lime); color: var(--ink); font-size: 21px; font-weight: 700; }
+.pcard { padding: 26px 28px; border-radius: 30px; background: #fff; box-shadow: 0 10px 30px -18px rgba(6,22,42,.4); display: grid; gap: 14px; }
+.pcard h6 { font-size: 25px; font-weight: 700; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; font-size: 22px; }
+.track { grid-column: 1 / -1; height: 13px; border-radius: 99px; background: var(--card); overflow: hidden; }
+.track i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #4fd000, var(--lime)); transform-origin: 0 50%; }
+.tags { display: flex; gap: 12px; flex-wrap: wrap; }
+.tags span { padding: 10px 20px; border-radius: 999px; background: var(--card); font-size: 22px; font-weight: 600; }
+.doc { display: flex; align-items: center; gap: 14px; font-size: 22px; padding: 6px 0; }
+.doc svg { width: 30px; height: 30px; fill: none; stroke: var(--blue); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#pchips .chip { position: absolute; }
+
+/* 5. zo maak je het */
+#make { left: 0; top: 0; width: 1080px; height: 1350px; }
+#make .title { left: 84px; top: 150px; }
+#make .title .mega { font-size: 116px; }
+#mk { left: 84px; top: 420px; width: 912px; height: 820px; border-radius: 48px; padding: 52px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.ring { position: relative; width: 300px; height: 300px; }
+.ring svg { width: 300px; height: 300px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 9; }
+.ring .bgc { stroke: rgba(255,255,255,.12); }
+.ring .fgc { stroke: var(--lime); stroke-linecap: round; }
+.ring svg { filter: drop-shadow(0 0 18px rgba(114,230,0,.45)); }
+.ring b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 76px; letter-spacing: -.04em; font-weight: 700; }
+.steps { display: grid; gap: 18px; align-content: start; font-size: 30px; font-weight: 600; }
+.steps span { display: flex; align-items: center; gap: 16px; }
+.steps i { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.12); }
+.steps i svg { width: 22px; height: 22px; fill: none; stroke: var(--ink); stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.steps i.on { background: var(--lime); }
+.steps i.on svg { opacity: 1; }
+.pub { grid-column: 1; align-self: end; display: inline-flex; justify-content: center; align-items: center; height: 100px; border-radius: 999px; background: var(--lime); color: var(--ink); font-size: 38px; font-weight: 700; box-shadow: 0 24px 50px -20px rgba(114,230,0,.9); position: relative; overflow: hidden; }
+.pub .rip { position: absolute; width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,.7); }
+.qrwrap { grid-column: 2; grid-row: 1 / span 2; align-self: center; aspect-ratio: 1; display: grid; place-items: center; background: #fff; border-radius: 36px; padding: 30px; box-shadow: 0 30px 70px -30px rgba(0,0,0,.6); }
+.qrwrap svg { width: 100%; height: 100%; }
+.dlrow { position: absolute; left: 84px; top: 1262px; display: flex; gap: 16px; }
+.dlrow span { padding: 14px 26px; border-radius: 999px; font-size: 26px; font-weight: 600; background: rgba(255,255,255,.1); border: 1.5px solid rgba(255,255,255,.2); }
+
+/* 6. waarom */
+#why { left: 84px; top: 0; width: 912px; height: 1350px; display: flex; flex-direction: column; justify-content: center; gap: 26px; }
+#why .title .mega { font-size: 104px; margin-bottom: 18px; }
+.tile { display: grid; grid-template-columns: 140px 1fr; align-items: center; gap: 34px; padding: 40px 44px; border-radius: 44px; }
+.tile .n { font-size: 96px; font-weight: 700; letter-spacing: -.05em; line-height: .9; }
+.tile h3 { font-size: 50px; font-weight: 650; letter-spacing: -.03em; line-height: 1.02; }
+.tile p { margin-top: 8px; font-size: 28px; opacity: .78; }
+.tile.t1 { background: #10304f; }
+.tile.t2 { background: var(--paper); color: var(--ink); }
+.tile.t3 { background: var(--lime); color: var(--ink); }
+
+/* 7. slot */
+#end { inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+#mark { width: 300px; height: 300px; overflow: visible; }
+#word { margin-top: 34px; font-size: 128px; font-weight: 650; letter-spacing: -.05em; }
+#tag { margin-top: 18px; font-size: 52px; font-weight: 500; color: var(--sky); letter-spacing: -.02em; }
+#cta { margin-top: 70px; display: inline-flex; align-items: center; height: 120px; padding: 0 64px; border-radius: 999px; background: var(--lime); color: var(--ink); font-size: 46px; font-weight: 700; box-shadow: 0 30px 70px -24px rgba(114,230,0,.9); }
+#url { margin-top: 34px; font-size: 44px; font-weight: 600; color: #fff; letter-spacing: -.01em; }
+.halo { position: absolute; left: 50%; top: 360px; width: 520px; height: 520px; margin-left: -260px; border-radius: 50%; border: 2px solid rgba(114,230,0,.5); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bgwrap" class="full">
+    <div id="grid"></div>
+    <div class="blob" id="b1"></div><div class="blob" id="b2"></div><div class="blob" id="b3"></div>
+  </div>
+  <div class="streak" id="streak1"></div>
+  <div class="streak" id="streak2"></div>
+
+  <!-- 1. intro -->
+  <div id="intro" class="abs">
+    <p class="eyebrow">Digitaal productpaspoort</p>
+    <h1 class="mega">
+      <span class="mask"><span>Elk product</span></span>
+      <span class="mask"><span>zijn eigen</span></span>
+      <span class="mask"><span class="lime">paspoort.</span></span>
+    </h1>
+    <div class="bar" id="introbar"></div>
+  </div>
+
+  <!-- 2. wet -->
+  <div id="law" class="abs">
+    <p class="eyebrow">Europese Unie</p>
+    <div id="year">2020</div>
+    <h2><span class="mask"><span>Het batterijpaspoort</span></span><span class="mask"><span>wordt verplicht.</span></span></h2>
+    <p class="chip"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>Ecodesignverordening (ESPR)</p>
+  </div>
+
+  <!-- 3. lopen en scannen -->
+  <div id="walk" class="full">
+    <svg class="scene" id="scene" viewBox="0 0 1080 1350">
+      <defs>
+        <linearGradient id="cone" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#72e600" stop-opacity=".85"/><stop offset="1" stop-color="#72e600" stop-opacity=".05"/></linearGradient>
+        <radialGradient id="floorglow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#1476ff" stop-opacity=".35"/><stop offset="1" stop-color="#1476ff" stop-opacity="0"/></radialGradient>
+        <linearGradient id="boxFront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9a066"/><stop offset="1" stop-color="#c0874f"/></linearGradient>
+        <linearGradient id="jacket" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b8cff"/><stop offset="1" stop-color="#1257d6"/></linearGradient>
+      </defs>
+      <!-- vloer en schappen -->
+      <ellipse cx="600" cy="1085" rx="620" ry="70" fill="url(#floorglow)"/>
+      <g opacity=".22" fill="none" stroke="#b9cde8" stroke-width="3">
+        <rect x="60" y="560" width="300" height="520" rx="10"/><path d="M60 690h300M60 820h300M60 950h300"/>
+        <rect x="900" y="600" width="230" height="480" rx="10"/><path d="M900 720h230M900 840h230M900 960h230"/>
+      </g>
+      <line x1="0" y1="1080" x2="1080" y2="1080" stroke="rgba(185,205,232,.35)" stroke-width="3"/>
+      <!-- doos -->
+      <g id="box">
+        <ellipse cx="800" cy="1084" rx="200" ry="22" fill="rgba(0,0,0,.35)"/>
+        <polygon points="640,820 900,820 960,770 700,770" fill="#e8b67c"/>
+        <polygon points="900,820 960,770 960,1030 900,1080" fill="#a8723f"/>
+        <rect x="640" y="820" width="260" height="260" fill="url(#boxFront)"/>
+        <rect x="755" y="770" width="30" height="50" fill="#cfa06a" transform="skewX(-50) translate(690 0)" opacity="0"/>
+        <polygon points="760,770 790,770 730,820 700,820" fill="#f0cf9e" opacity=".8"/>
+        <rect x="700" y="820" width="30" height="260" fill="#f0cf9e" opacity=".55"/>
+        <g id="label">
+          <rect x="735" y="868" width="150" height="182" rx="14" fill="#fff"/>
+          <rect id="labelglow" x="731" y="864" width="158" height="190" rx="18" fill="none" stroke="#72e600" stroke-width="6" opacity="0"/>
+          <svg x="748" y="900" width="124" height="124" viewBox="0 0 __QRN__ __QRN__" shape-rendering="crispEdges"><path fill="#06162a" d="__QRPATH__"/></svg>
+          <text x="810" y="890" text-anchor="middle" font-size="15" font-weight="700" fill="#475a70" font-family="Host Grotesk, Arial">SCAN MIJ</text>
+        </g>
+        <g id="ripples" fill="none" stroke="#72e600" stroke-width="5">
+          <circle cx="810" cy="962" r="60" opacity="0" class="rip"/>
+          <circle cx="810" cy="962" r="60" opacity="0" class="rip"/>
+          <circle cx="810" cy="962" r="60" opacity="0" class="rip"/>
+        </g>
+      </g>
+      <polygon id="beam" points="650,592 735,868 885,1050" fill="url(#cone)" opacity="0"/>
+      <!-- persoon (zijaanzicht, kijkt naar rechts) -->
+      <g id="person" transform="translate(-420 464) scale(1.1)">
+        <ellipse cx="150" cy="566" rx="95" ry="16" fill="rgba(0,0,0,.4)" id="pshadow"/>
+        <g id="body">
+          <g id="legB" transform="translate(150 318)"><rect x="-19" y="0" width="38" height="215" rx="19" fill="#0a2342"/><ellipse cx="12" cy="226" rx="34" ry="15" fill="#f5f8fc"/></g>
+          <g id="armB" transform="translate(150 168)"><rect x="-15" y="0" width="30" height="160" rx="15" fill="#0e47b0"/><circle cx="0" cy="166" r="17" fill="#e8b48c"/></g>
+          <rect x="104" y="140" width="96" height="200" rx="42" fill="url(#jacket)"/>
+          <rect x="104" y="296" width="96" height="40" rx="10" fill="#0a2342"/>
+          <g id="legF" transform="translate(150 318)"><rect x="-19" y="0" width="38" height="215" rx="19" fill="#0d2c55"/><ellipse cx="12" cy="226" rx="34" ry="15" fill="#ffffff"/></g>
+          <rect x="138" y="118" width="26" height="34" rx="10" fill="#e8b48c"/>
+          <circle cx="152" cy="92" r="44" fill="#f0c19a"/>
+          <path d="M108 86c0-34 26-52 52-48 22 3 38 22 34 44-10-8-26-10-40-6-14 4-30 6-46 10z" fill="#1b1f2a"/>
+          <circle cx="178" cy="92" r="4.5" fill="#1b1f2a"/>
+          <g id="armF" transform="translate(150 168)">
+            <rect x="-15" y="0" width="30" height="160" rx="15" fill="url(#jacket)"/>
+            <circle cx="0" cy="166" r="17" fill="#f0c19a"/>
+            <g id="hphone" transform="translate(0 168) rotate(90)"><rect x="-26" y="-44" width="52" height="92" rx="10" fill="#0b1220"/><rect x="-21" y="-38" width="42" height="78" rx="6" fill="#72e600" opacity=".85" id="hscreen"/></g>
+          </g>
+        </g>
+      </g>
+    </svg>
+    <div id="walkcap" class="abs">
+      <div class="row"><div id="cap1" class="mega"><span class="mask"><span>Loop naar het product.</span></span></div></div>
+      <div class="row"><div id="cap2" class="mega"><span class="mask"><span>Scan de <span class="lime">QR-code.</span></span></span></div></div>
+    </div>
+  </div>
+
+  <!-- 4. paspoort -->
+  <div id="pass" class="full">
+    <div class="phone" id="bigphone" style="left:240px;top:110px">
+      <div class="pscreen">
+        <div class="notch"></div>
+        <div class="pscroll" id="pscroll">
+          <span class="purl pp"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>qr.veripasso.com/p/7BA8…</span>
+          <div class="phero pp"><span class="iss">__ICON22__ Voorbeeldfabrikant B.V.</span><span class="nm">Bureaustoel Nova</span><span class="bd">✓ Gepubliceerd paspoort</span></div>
+          <div class="pcard pp"><h6>Duurzaamheid</h6>
+            <div class="row"><span>Gerecycled materiaal</span><b>62%</b><span class="track"><i class="pb" style="width:62%"></i></span></div>
+            <div class="row"><span>Verwachte levensduur</span><b>12 jaar</b><span class="track"><i class="pb" style="width:80%"></i></span></div>
+            <div class="row"><span>CO₂-voetafdruk</span><b>18,4 kg</b><span class="track"><i class="pb" style="width:45%"></i></span></div>
+          </div>
+          <div class="pcard pp"><h6>Materialen</h6><div class="tags"><span>Staal</span><span>Gerecycled PET</span><span>Aluminium</span></div></div>
+          <div class="pcard pp"><h6>Documenten</h6><div class="doc"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Handleiding (PDF)</div><div class="doc"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>CE-verklaring (PDF)</div></div>
+        </div>
+      </div>
+    </div>
+    <div id="pchips">
+      <p class="chip" id="pc1" style="left:24px;top:600px"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Geen app nodig</p>
+      <p class="chip accent" id="pc2" style="left:620px;top:200px"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Altijd bereikbaar</p>
+      <p class="chip" id="pc3" style="left:540px;top:1190px"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Gegevens in de EU</p>
+    </div>
+  </div>
+
+  <!-- 5. zo maak je het -->
+  <div id="make" class="abs">
+    <div class="title abs"><p class="eyebrow">In VeriPasso</p><div class="mega" style="margin-top:22px"><span class="mask"><span>Zo maak je het.</span></span></div></div>
+    <div id="mk" class="abs glass">
+      <div>
+        <div class="ring"><svg viewBox="0 0 100 100"><circle class="bgc" cx="50" cy="50" r="40"/><circle class="fgc" id="fgc" cx="50" cy="50" r="40" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg><b id="pct">0%</b></div>
+        <div class="steps" style="margin-top:34px">
+          <span><i id="s1"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></i>Productgegevens</span>
+          <span><i id="s2"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></i>Duurzaamheid</span>
+          <span><i id="s3"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg></i>Documenten</span>
+        </div>
+      </div>
+      <div class="qrwrap" id="qrwrap"><svg id="qrbig" viewBox="0 0 __QRN__ __QRN__" shape-rendering="crispEdges"></svg></div>
+      <div class="pub" id="pub"><span>Publiceren</span><span class="rip" id="pubrip"></span></div>
+    </div>
+    <div class="dlrow" id="dlrow"><span>SVG ↓</span><span>PNG ↓</span><span>Data Matrix ↓</span></div>
+  </div>
+
+  <!-- 6. waarom -->
+  <div id="why" class="abs">
+    <div class="title"><p class="eyebrow">Gebouwd om te blijven</p><div class="mega" style="margin-top:22px"><span class="mask"><span>Zeker van je zaak.</span></span></div></div>
+    <div class="tile t1"><span class="n lime">01</span><div><h3>Elke versie bewaard</h3><p>Met een digitale vingerafdruk.</p></div></div>
+    <div class="tile t2"><span class="n">02</span><div><h3>Gegevens in de EU</h3><p>Servers in Duitsland en Finland.</p></div></div>
+    <div class="tile t3"><span class="n">03</span><div><h3>QR-code werkt altijd</h3><p>Ook bij een storing.</p></div></div>
+  </div>
+
+  <!-- 7. slot -->
+  <div id="end" class="abs">
+    <span class="halo" id="halo1"></span><span class="halo" id="halo2"></span>
+    <svg id="mark" viewBox="0 0 280 280">
+      <path id="mA" fill="#72E600" d="M34 42C20 52 18 72 27 91l78 145c8 15 29 16 38 1l24-42-68-132C85 36 55 27 34 42Z"/>
+      <path id="mB" fill="#1476FF" d="M222 38c21-9 40 10 35 32l-31 142c-3 14-12 26-25 33l-59 31c-14 7-30-4-26-20l49-181c7-18 31-30 57-37Z"/>
+      <path id="mC" fill="#FFFFFF" d="M174 91h47c7 0 12 5 12 12s-5 12-12 12h-47c-7 0-12-5-12-12s5-12 12-12Zm-10 45h48c7 0 12 5 12 12s-5 12-12 12h-48c-7 0-12-5-12-12s5-12 12-12Z"/>
+    </svg>
+    <div id="word"><span class="mask"><span>VeriPasso</span></span></div>
+    <div id="tag"><span class="mask"><span>Elk product zijn eigen paspoort.</span></span></div>
+    <div id="cta">Vraag een demo aan</div>
+    <div id="url">www.veripasso.com</div>
+  </div>
+
+  <div id="vignette"></div>
+  <canvas id="grain" width="1080" height="1350"></canvas>
+  <div id="flash"></div>
+  <div id="fade"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script>
+// Eén tijdlijn (36 s, 120 BPM: een maat = 2 s). window.seek(t) zet het beeld exact op t.
+const END = 36;
+const BEAT = 0.5;
+
+// Deterministische "ruis" voor de filmkorrel (zelfde beeld op hetzelfde tijdstip).
+function rand(seed) { let x = Math.sin(seed * 12.9898) * 43758.5453; return x - Math.floor(x); }
+function drawGrain(frame) {
+  const c = document.getElementById('grain'), g = c.getContext('2d');
+  const img = g.createImageData(270, 338);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = rand(i * 0.37 + frame * 101.3) * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = false;
+  g.drawImage(c, 0, 0, 270, 338, 0, 0, 1080, 1350);
+}
+
+// QR-code als losse blokjes (voor het opbouw-effect).
+function buildQr() {
+  const svg = document.getElementById('qrbig');
+  const d = '__QRPATH__';
+  const re = /M(\d+) (\d+)h1v1h-1z/g; let m; const parts = [];
+  while ((m = re.exec(d))) parts.push([+m[1], +m[2]]);
+  const n = __QRN__, c = (n - 1) / 2;
+  parts.sort((a, b) => Math.hypot(a[0] - c, a[1] - c) - Math.hypot(b[0] - c, b[1] - c));
+  for (const [x, y] of parts) {
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', x); r.setAttribute('y', y); r.setAttribute('width', 1.02); r.setAttribute('height', 1.02);
+    r.setAttribute('fill', '#06162a'); r.setAttribute('class', 'qm');
+    svg.appendChild(r);
+  }
+}
+
+function build() {
+  buildQr();
+  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power3.out' } });
+  const hide = (s) => gsap.set(s, { autoAlpha: 0 });
+  hide(['#law', '#walk', '#pass', '#make', '#why', '#end']);
+
+  // ---------- doorlopend: achtergrond, korrel, maatslagen ----------
+  tl.to('#b1', { x: -360, y: 220, scale: 1.25, duration: END, ease: 'sine.inOut' }, 0)
+    .to('#b2', { x: 520, y: -380, scale: 1.4, duration: END, ease: 'sine.inOut' }, 0)
+    .to('#b3', { x: 300, y: 260, duration: END, ease: 'sine.inOut' }, 0)
+    .to('#grid', { x: -90, y: -90, duration: END, ease: 'none' }, 0);
+  const grain = { f: 0 };
+  tl.to(grain, { f: END * 12, duration: END, ease: 'none', onUpdate: () => drawGrain(Math.floor(grain.f)) }, 0);
+  tl.to('#fade', { autoAlpha: 0, duration: 0.6, ease: 'power1.out' }, 0);
+  // Kleine "punch" van het hele beeld op elke maat in de drops.
+  for (const t of [4, 6, 16, 18, 20, 22, 24, 26]) tl.fromTo('#stage', { scale: 1.012 }, { scale: 1, duration: 0.35, ease: 'power2.out' }, t);
+  const streak = (sel, t) => tl.fromTo(sel, { x: 0 }, { x: 3600, duration: 0.7, ease: 'power2.inOut' }, t);
+  streak('#streak1', 3.6); streak('#streak2', 7.6); streak('#streak1', 19.6); streak('#streak2', 27.6);
+
+  // ---------- 1. intro (0–4) ----------
+  gsap.set('#intro .mask > span', { yPercent: 115 });
+  gsap.set('#intro .eyebrow', { autoAlpha: 0, x: -30 });
+  tl.to('#intro .eyebrow', { autoAlpha: 1, x: 0, duration: 0.6 }, 0.25)
+    .to('#intro .mask > span', { yPercent: 0, duration: 0.9, ease: 'expo.out', stagger: 0.22 }, 0.45)
+    .to('#introbar', { width: 520, duration: 0.8, ease: 'expo.out' }, 1.6)
+    .to('#intro', { autoAlpha: 0, y: -80, filter: 'blur(14px)', duration: 0.45, ease: 'power2.in' }, 3.55);
+
+  // ---------- 2. wet (4–8) ----------
+  gsap.set('#law .mask > span', { yPercent: 115 });
+  gsap.set(['#law .eyebrow', '#law .chip'], { autoAlpha: 0, y: 30 });
+  const yr = { v: 2020 };
+  tl.set('#law', { autoAlpha: 1 }, 4.0)
+    .fromTo('#year', { scale: 1.6, filter: 'blur(20px)', autoAlpha: 0 }, { scale: 1, filter: 'blur(0px)', autoAlpha: 1, duration: 0.6, ease: 'expo.out' }, 4.0)
+    .to(yr, { v: 2027, duration: 1.2, ease: 'power3.out', onUpdate: () => (document.getElementById('year').textContent = Math.round(yr.v)) }, 4.0)
+    .to('#law .eyebrow', { autoAlpha: 1, y: 0, duration: 0.5 }, 4.3)
+    .to('#law .mask > span', { yPercent: 0, duration: 0.8, ease: 'expo.out', stagger: 0.15 }, 4.9)
+    .to('#law .chip', { autoAlpha: 1, y: 0, duration: 0.6, ease: 'back.out(1.7)' }, 6.0)
+    .to('#law', { autoAlpha: 0, scale: 0.92, filter: 'blur(14px)', duration: 0.45, ease: 'power2.in' }, 7.55);
+
+  // ---------- 3. lopen en scannen (8–16) ----------
+  gsap.set('#walkcap .mask > span', { yPercent: 115 });
+  gsap.set('#box', { y: 60, autoAlpha: 0 });
+  // Armen en benen draaien precies om schouder/heup: de hoek wordt rechtstreeks in het
+  // transform-attribuut gezet (geen afhankelijkheid van bounding boxes).
+  const J = { legF: { a: 0, base: 'translate(150 318)' }, legB: { a: 0, base: 'translate(150 318)' }, armF: { a: 0, base: 'translate(150 168)' }, armB: { a: 0, base: 'translate(150 168)' } };
+  const applyJ = () => { for (const k in J) document.getElementById(k).setAttribute('transform', J[k].base + ' rotate(' + J[k].a.toFixed(2) + ')'); };
+  const joint = (k, a, dur, at, ease = 'sine.inOut') => tl.to(J[k], { a, duration: dur, ease, onUpdate: applyJ }, at);
+  tl.set('#walk', { autoAlpha: 1 }, 8.0)
+    .to('#box', { y: 0, autoAlpha: 1, duration: 0.7, ease: 'back.out(1.6)' }, 8.1)
+    .to('#cap1 .mask > span', { yPercent: 0, duration: 0.8, ease: 'expo.out' }, 8.3);
+  // Loopbeweging: benen en armen zwaaien, lichaam veert; persoon schuift naar de doos.
+  const walkStart = 8.2, walkEnd = 11.6, step = 0.42;
+  tl.fromTo('#person', { x: -420 }, { x: 300, duration: walkEnd - walkStart, ease: 'none' }, walkStart);
+  for (let t = walkStart, i = 0; t < walkEnd - 0.05; t += step, i++) {
+    const s = i % 2 ? -1 : 1;
+    joint('legF', 24 * s, step, t); joint('legB', -24 * s, step, t);
+    joint('armF', -20 * s, step, t); joint('armB', 20 * s, step, t);
+    tl.to('#body', { y: -8, duration: step / 2, ease: 'sine.out', yoyo: true, repeat: 1 }, t);
+  }
+  joint('legF', 0, 0.35, walkEnd, 'power2.out'); joint('legB', 0, 0.35, walkEnd, 'power2.out'); joint('armB', 0, 0.35, walkEnd, 'power2.out');
+  tl.to('#body', { y: 0, duration: 0.3 }, walkEnd)
+    .to('#cap1', { autoAlpha: 0, y: -30, duration: 0.35, ease: 'power2.in' }, 11.5)
+    ;
+  // Telefoon omhoog richting de doos.
+  joint('armF', -112, 0.55, 11.75, 'back.out(1.6)');
+  tl.to('#cap2 .mask > span', { yPercent: 0, duration: 0.8, ease: 'expo.out' }, 11.9)
+    // Scanstraal, label licht op, ringen.
+    .to('#beam', { opacity: 1, duration: 0.15 }, 12.35)
+    .to('#beam', { opacity: 0.55, duration: 0.08, yoyo: true, repeat: 7, ease: 'none' }, 12.5)
+    .to('#labelglow', { opacity: 1, duration: 0.2 }, 12.6)
+    .fromTo('#ripples .rip', { attr: { r: 70 }, opacity: 0.9 }, { attr: { r: 240 }, opacity: 0, duration: 1.0, stagger: 0.25, ease: 'power2.out', immediateRender: false }, 12.65)
+    .to('#hscreen', { fill: '#ffffff', duration: 0.15 }, 13.2)
+    .to('#beam', { opacity: 0, duration: 0.2 }, 13.55)
+    // Inzoomen op de telefoon in de hand.
+    .to('#cap2', { autoAlpha: 0, duration: 0.3 }, 13.7)
+    .to('#scene', { scale: 9, transformOrigin: '636px 580px', filter: 'blur(6px)', duration: 1.6, ease: 'expo.in' }, 13.9)
+    .to('#flash', { opacity: 1, duration: 0.18, ease: 'power1.in' }, 15.35)
+    .set('#walk', { autoAlpha: 0 }, 15.55);
+
+  // ---------- 4. paspoort (16–20) ----------
+  gsap.set('.pp', { autoAlpha: 0, y: 40 });
+  gsap.set('.pb', { scaleX: 0 });
+  gsap.set(['#pc1', '#pc2', '#pc3'], { autoAlpha: 0, scale: 0.6 });
+  tl.set('#pass', { autoAlpha: 1 }, 15.55)
+    .to('#flash', { opacity: 0, duration: 0.5, ease: 'power2.out' }, 15.55)
+    .fromTo('#bigphone', { scale: 1.25, rotationY: 0, rotationX: 0 }, { scale: 1, rotationY: -12, rotationX: 4, duration: 1.2, ease: 'expo.out' }, 15.55)
+    .to('.pp', { autoAlpha: 1, y: 0, duration: 0.55, stagger: 0.13, ease: 'back.out(1.4)' }, 15.9)
+    .to('.pb', { scaleX: 1, duration: 0.9, stagger: 0.12, ease: 'power3.out' }, 16.6)
+    .to('#pc1', { autoAlpha: 1, scale: 1, duration: 0.5, ease: 'back.out(2)' }, 16.5)
+    .to('#pc2', { autoAlpha: 1, scale: 1, duration: 0.5, ease: 'back.out(2)' }, 17.0)
+    .to('#pc3', { autoAlpha: 1, scale: 1, duration: 0.5, ease: 'back.out(2)' }, 17.5)
+    .to('#bigphone', { rotationY: 10, rotationX: -2, duration: 2.2, ease: 'sine.inOut' }, 17.3)
+    .to('#pscroll', { y: -150, duration: 1.8, ease: 'sine.inOut' }, 17.8)
+    .to('#pchips .chip', { y: -14, duration: 1.1, yoyo: true, repeat: 1, ease: 'sine.inOut', stagger: 0.2 }, 17.6)
+    .to('#pass', { autoAlpha: 0, x: -260, filter: 'blur(12px)', duration: 0.45, ease: 'power2.in' }, 19.55);
+
+  // ---------- 5. zo maak je het (20–24) ----------
+  gsap.set('#make .mask > span', { yPercent: 115 });
+  gsap.set('#make .eyebrow', { autoAlpha: 0, y: 20 });
+  gsap.set('#mk', { y: 120, autoAlpha: 0 });
+  gsap.set('.qm', { scale: 0, transformOrigin: '50% 50%' });
+  gsap.set('#dlrow span', { autoAlpha: 0, y: 20 });
+  gsap.set('#pubrip', { scale: 0, autoAlpha: 0 });
+  const pct = { v: 0 };
+  tl.set('#make', { autoAlpha: 1 }, 20.0)
+    .to('#make .eyebrow', { autoAlpha: 1, y: 0, duration: 0.4 }, 20.0)
+    .to('#make .mask > span', { yPercent: 0, duration: 0.7, ease: 'expo.out' }, 20.05)
+    .to('#mk', { y: 0, autoAlpha: 1, duration: 0.7, ease: 'expo.out' }, 20.15)
+    .fromTo('#fgc', { attr: { 'stroke-dashoffset': 100 } }, { attr: { 'stroke-dashoffset': 0 }, duration: 1.1, ease: 'power2.inOut' }, 20.4)
+    .to(pct, { v: 100, duration: 1.1, ease: 'power2.inOut', onUpdate: () => (document.getElementById('pct').textContent = Math.round(pct.v) + '%') }, 20.4)
+    .set('#s1', { className: 'on' }, 20.6).set('#s2', { className: 'on' }, 20.95).set('#s3', { className: 'on' }, 21.3)
+    .to('#pub', { scale: 0.94, duration: 0.08, yoyo: true, repeat: 1 }, 21.5)
+    .to('#pubrip', { scale: 14, autoAlpha: 0, duration: 0.6, startAt: { autoAlpha: 0.8, scale: 0 }, ease: 'power2.out' }, 21.5)
+    .to('.qm', { scale: 1, duration: 0.35, ease: 'back.out(3)', stagger: { each: 0.0025 } }, 21.7)
+    .to('#dlrow span', { autoAlpha: 1, y: 0, duration: 0.4, stagger: 0.1 }, 22.9)
+    .to('#make', { autoAlpha: 0, y: -60, filter: 'blur(12px)', duration: 0.45, ease: 'power2.in' }, 23.55);
+
+  // ---------- 6. waarom (24–28) ----------
+  gsap.set('#why .mask > span', { yPercent: 115 });
+  gsap.set('#why .eyebrow', { autoAlpha: 0, y: 20 });
+  tl.set('#why', { autoAlpha: 1 }, 24.0)
+    .to('#why .eyebrow', { autoAlpha: 1, y: 0, duration: 0.4 }, 24.0)
+    .to('#why .mask > span', { yPercent: 0, duration: 0.7, ease: 'expo.out' }, 24.05)
+    .from('.tile.t1', { x: -1100, rotation: -6, duration: 0.7, ease: 'expo.out' }, 24.5)
+    .from('.tile.t2', { x: 1100, rotation: 6, duration: 0.7, ease: 'expo.out' }, 25.0)
+    .from('.tile.t3', { x: -1100, rotation: -6, duration: 0.7, ease: 'expo.out' }, 25.5)
+    .to('#why', { autoAlpha: 0, scale: 0.94, filter: 'blur(12px)', duration: 0.45, ease: 'power2.in' }, 27.55);
+
+  // ---------- 7. slot (28–36) ----------
+  gsap.set('#end .mask > span', { yPercent: 115 });
+  gsap.set(['#cta', '#url'], { autoAlpha: 0, y: 30 });
+  gsap.set(['#halo1', '#halo2'], { scale: 0.4, autoAlpha: 0 });
+  tl.set('#end', { autoAlpha: 1 }, 28.0)
+    .fromTo('#mA', { x: -420, rotation: -40, autoAlpha: 0, svgOrigin: '100 140' }, { x: 0, rotation: 0, autoAlpha: 1, duration: 0.7, ease: 'expo.out' }, 28.0)
+    .fromTo('#mB', { x: 420, rotation: 40, autoAlpha: 0, svgOrigin: '190 140' }, { x: 0, rotation: 0, autoAlpha: 1, duration: 0.7, ease: 'expo.out' }, 28.0)
+    .fromTo('#mC', { scaleX: 0, svgOrigin: '200 125' }, { scaleX: 1, duration: 0.5, ease: 'expo.out' }, 28.6)
+    .to('#flash', { opacity: 0.55, duration: 0.06 }, 28.62)
+    .to('#flash', { opacity: 0, duration: 0.5 }, 28.68)
+    .to('#halo1', { scale: 2.4, autoAlpha: 0, duration: 1.4, startAt: { autoAlpha: 0.9, scale: 0.4 }, ease: 'power2.out' }, 28.65)
+    .to('#halo2', { scale: 2.4, autoAlpha: 0, duration: 1.4, startAt: { autoAlpha: 0.7, scale: 0.4 }, ease: 'power2.out' }, 29.0)
+    .fromTo('#mark', { scale: 1.08 }, { scale: 1, duration: 0.5, ease: 'power2.out' }, 28.65)
+    .to('#word .mask > span', { yPercent: 0, duration: 0.8, ease: 'expo.out' }, 29.0)
+    .to('#tag .mask > span', { yPercent: 0, duration: 0.8, ease: 'expo.out' }, 29.5)
+    .to('#cta', { autoAlpha: 1, y: 0, duration: 0.6, ease: 'back.out(1.8)' }, 30.3)
+    .to('#url', { autoAlpha: 1, y: 0, duration: 0.6 }, 30.7)
+    .to('#cta', { scale: 1.05, duration: 0.5, yoyo: true, repeat: 5, ease: 'sine.inOut' }, 31.5)
+    .to('#fade', { autoAlpha: 1, duration: 1.0, ease: 'power1.in' }, END - 1.0);
+  return tl;
+}
+
+let timeline = null;
+window.seek = (t) => { timeline.seek(t, false); return true; };
+document.fonts.ready.then(() => {
+  timeline = build();
+  timeline.seek(0, false);
+  window.videoReady = true;
+});
+</script>
+</body>
+</html>
