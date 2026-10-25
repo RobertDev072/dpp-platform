@@ -20,6 +20,19 @@ staat erbij als "→ Claude". Afvinken door `[ ]` te vervangen door `[x]`.
 - [ ] **Lege map** `Documents\VeriPasso-Noodpakket` verwijderen (was vergrendeld; venster sluiten
       en dan verwijderen).
 
+## 🟠 Gevonden worden in Google (SEO)
+
+De website heeft nu zoekwoorden, een sitemap, robots.txt, gestructureerde gegevens en een
+deelafbeelding. Wat alleen jij kunt doen:
+- [ ] **Google Search Console**: eigendom van `veripasso.com` bevestigen (makkelijkst via een
+      DNS-record in Cloudflare; Claude kan dat record zetten als je de code geeft) en de sitemap
+      `https://www.veripasso.com/sitemap.xml` indienen.
+- [ ] **Bing Webmaster Tools**: idem (kan de gegevens uit Search Console overnemen).
+- [ ] **Google Bedrijfsprofiel** aanmaken (naam, website, telefoon).
+- [ ] **Links naar de site**: LinkedIn-bedrijfspagina, Robertdev.nl, partners en brancheverenigingen
+      die naar `www.veripasso.com` linken. Dat weegt zwaar voor Google.
+- [ ] Na een paar weken in Search Console kijken op welke zoekwoorden je gevonden wordt.
+
 ## 🟠 Juridisch en organisatie (vóór de eerste betalende klant)
 
 - [ ] **Juridische concepten invullen** (`Documents\VeriPasso\Juridisch (concept)\`): bedrijfsnaam,
