@@ -2,7 +2,10 @@
 # 1. app: lockfile installeren, migraties + volledige testsuite tegen een tijdelijke
 #    PostgreSQL 17 (nooit tegen productie), productiebuild, kwetsbare afhankelijkheden;
 # 2. server: het Docker-image bouwen en de serveropzet (deploy/compose.yaml: app +
-#    database) echt starten; slaagt pas als de app gezond is en de pagina's laden.
+#    database) echt starten; slaagt pas als de app gezond is en de pagina's laden;
+# 3. deploy: alleen bij een push naar main en als 1 en 2 groen zijn: de live server
+#    bijwerken met deploy/update.sh (zie docs/automatisch-deployen.md). Zonder de
+#    geheimen DEPLOY_SSH_KEY en DEPLOY_KNOWN_HOSTS slaat deze stap zichzelf over.
 
 name: CI
 
@@ -87,7 +90,7 @@ jobs:
         run: |
           docker compose exec -T app node -e "
             (async () => {
-              for (const path of ['/api/health', '/api/health/ready', '/', '/login']) {
+              for (const path of ['/api/health', '/api/health/ready', '/', '/login', '/blog', '/en/blog', '/dpp-check', '/sitemap.xml']) {
                 const r = await fetch('http://127.0.0.1:3000' + path);
                 console.log(path, r.status);
                 if (!r.ok) process.exit(1);
@@ -101,3 +104,39 @@ jobs:
       - name: Logs bij een fout
         if: failure()
         run: docker compose logs --tail=200
+
+  deploy:
+    needs: [app, server]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Nooit twee uitrols tegelijk; een nieuwere wacht op de lopende.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Server bijwerken (update.sh maakt eerst een back-up)
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$DEPLOY_SSH_KEY" ] || [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "Geen deploy-sleutel ingesteld: automatisch uitrollen overgeslagen."
+            exit 0
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # Op de server mag deze sleutel alleen update.sh starten (command= in authorized_keys).
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes root@87.106.4.92
+
+      - name: Live controle
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          [ -n "$DEPLOY_SSH_KEY" ] || exit 0
+          for url in https://www.veripasso.com/ https://www.veripasso.com/blog https://www.veripasso.com/dpp-check https://app.veripasso.com/api/health; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url")
+            echo "$url $code"
+            [ "$code" = "200" ] || exit 1
+          done
