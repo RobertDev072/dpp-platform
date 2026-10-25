@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="nl">
+<head><meta charset="utf-8"><title>Codering</title></head>
+<body>
+<script type="module">
+// Beelden (frames/*.jpg) + voice-over (voice/*.wav) + zelfgemaakte muziek → MP4 (H.264 + AAC)
+// met WebCodecs en mp4-muxer. Draait in Chrome; geen ffmpeg nodig.
+import { Muxer, ArrayBufferTarget } from "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.mjs";
+
+const params = new URLSearchParams(location.search);
+const FRAMES = Number(params.get("frames"));
+const FPS = Number(params.get("fps"));
+const W = 1920, H = 1080, RATE = 48000;
+const log = (msg) => fetch("/log", { method: "POST", body: String(msg) });
+
+// ---------- muziek: rustige, zakelijke achtergrond (96 BPM, C – Am – F – G) ----------
+function noteHz(n) { return 440 * Math.pow(2, (n - 69) / 12); }
+const CHORDS = [[48, 52, 55, 59, 62], [45, 48, 52, 55, 59], [41, 45, 48, 52, 57], [43, 47, 50, 55, 57]];
+
+async function renderAudio(timing, totalSec) {
+  const ctx = new OfflineAudioContext(2, Math.ceil(totalSec * RATE), RATE);
+  const master = ctx.createGain();
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.25;
+  master.connect(comp).connect(ctx.destination);
+
+  // Muziekbus met ducking onder de stem.
+  const music = ctx.createGain();
+  music.connect(master);
+  const base = 0.55, duck = 0.22;
+  music.gain.setValueAtTime(0, 0);
+  music.gain.linearRampToValueAtTime(base, 2.0);
+  timing.starts.forEach((s, i) => {
+    const e = s + timing.durations[i];
+    music.gain.setTargetAtTime(duck, Math.max(0, s - 0.25), 0.12);
+    music.gain.setTargetAtTime(base, e + 0.1, 0.35);
+  });
+  music.gain.setTargetAtTime(0, totalSec - 3.2, 0.9);
+
+  const beat = 60 / 96, bar = beat * 4;
+  const bars = Math.ceil(totalSec / bar);
+  const delay = ctx.createDelay(1.0); delay.delayTime.value = beat * 0.75;
+  const fb = ctx.createGain(); fb.gain.value = 0.32;
+  const wet = ctx.createGain(); wet.gain.value = 0.35;
+  delay.connect(fb).connect(delay); delay.connect(wet).connect(music);
+
+  // Noise-buffer voor hi-hat.
+  const noise = ctx.createBuffer(1, RATE, RATE);
+  const nd = noise.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * bar;
+    if (t0 > totalSec - 1) break;
+    const chord = CHORDS[b % 4];
+    // Pad: drie licht ontstemde zaagtanden per noot, door een laagdoorlaatfilter.
+    const padGain = ctx.createGain();
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.setValueAtTime(900, t0); lp.frequency.linearRampToValueAtTime(1500, t0 + bar); lp.Q.value = 0.6;
+    padGain.gain.setValueAtTime(0, t0);
+    padGain.gain.linearRampToValueAtTime(0.045, t0 + 0.6);
+    padGain.gain.setValueAtTime(0.045, t0 + bar - 0.2);
+    padGain.gain.linearRampToValueAtTime(0, t0 + bar + 0.6);
+    padGain.connect(lp).connect(music);
+    for (const n of chord) for (const d of [-6, 0, 7]) {
+      const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = noteHz(n); o.detune.value = d;
+      o.connect(padGain); o.start(t0); o.stop(t0 + bar + 0.7);
+    }
+    // Bas: grondtoon op elke tel.
+    for (let k = 0; k < 4; k++) {
+      const t = t0 + k * beat;
+      const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = noteHz(chord[0] - 12);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.22, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + beat * 0.9);
+      o.connect(g).connect(music); o.start(t); o.stop(t + beat);
+    }
+    // Arpeggio (vanaf maat 2): achtsten in het hoge register, met echo.
+    if (b >= 1) for (let k = 0; k < 8; k++) {
+      const t = t0 + k * beat / 2;
+      const n = chord[[0, 2, 4, 2, 1, 3, 4, 3][k]] + 12;
+      const o = ctx.createOscillator(); o.type = "triangle"; o.frequency.value = noteHz(n);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 0.01); g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      o.connect(g); g.connect(music); g.connect(delay); o.start(t); o.stop(t + 0.3);
+    }
+    // Percussie (vanaf maat 3, niet in de laatste maat): kick op 1 en 3, hi-hat op de tussentellen.
+    if (b >= 2 && t0 < totalSec - bar) for (let k = 0; k < 4; k++) {
+      const t = t0 + k * beat;
+      if (k % 2 === 0) {
+        const o = ctx.createOscillator(); o.type = "sine";
+        o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.18);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.55, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        o.connect(g).connect(music); o.start(t); o.stop(t + 0.36);
+      }
+      const h = ctx.createBufferSource(); h.buffer = noise;
+      const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7500;
+      const g = ctx.createGain(); const th = t + beat / 2;
+      g.gain.setValueAtTime(0.06, th); g.gain.exponentialRampToValueAtTime(0.001, th + 0.05);
+      h.connect(hp).connect(g).connect(music); h.start(th, Math.random() * 0.5, 0.06);
+    }
+  }
+
+  // Voice-over.
+  const voice = ctx.createGain(); voice.gain.value = 1.15; voice.connect(master);
+  for (let i = 0; i < timing.starts.length; i++) {
+    const data = await (await fetch(`voice/${String(i + 1).padStart(2, "0")}.wav`)).arrayBuffer();
+    const buf = await ctx.decodeAudioData(data);
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(voice); src.start(timing.starts[i]);
+  }
+  return ctx.startRendering();
+}
+
+window.runEncode = async () => {
+  const timing = await (await fetch("timing.json")).json();
+  const totalSec = FRAMES / FPS;
+  const audio = await renderAudio(timing, totalSec);
+  log("audio klaar: " + audio.duration.toFixed(2) + " s");
+
+  const muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    video: { codec: "avc", width: W, height: H, frameRate: FPS },
+    audio: { codec: "aac", sampleRate: RATE, numberOfChannels: 2 },
+    fastStart: "in-memory"
+  });
+
+  const venc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => log("video-fout " + e) });
+  venc.configure({ codec: "avc1.640028", width: W, height: H, bitrate: 12_000_000, framerate: FPS, latencyMode: "quality", avc: { format: "avc" } });
+  const aenc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => log("audio-fout " + e) });
+  aenc.configure({ codec: "mp4a.40.2", sampleRate: RATE, numberOfChannels: 2, bitrate: 192_000 });
+
+  // Audio in blokken van 1024 samples (planar float32).
+  const L = audio.getChannelData(0), R = audio.getChannelData(1);
+  for (let off = 0; off < audio.length; off += 1024) {
+    const n = Math.min(1024, audio.length - off);
+    const planar = new Float32Array(n * 2);
+    planar.set(L.subarray(off, off + n), 0);
+    planar.set(R.subarray(off, off + n), n);
+    const ad = new AudioData({ format: "f32-planar", sampleRate: RATE, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(off / RATE * 1e6), data: planar });
+    aenc.encode(ad); ad.close();
+  }
+
+  const frameDur = Math.round(1e6 / FPS);
+  for (let i = 0; i < FRAMES; i++) {
+    const blob = await (await fetch(`frames/${String(i).padStart(5, "0")}.jpg`)).blob();
+    const bmp = await createImageBitmap(blob);
+    const frame = new VideoFrame(bmp, { timestamp: i * frameDur, duration: frameDur });
+    venc.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
+    frame.close(); bmp.close();
+    while (venc.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 5));
+    if (i % 300 === 0) log(`video ${i}/${FRAMES}`);
+  }
+  await venc.flush(); await aenc.flush();
+  muxer.finalize();
+  const buffer = muxer.target.buffer;
+  await fetch("/save?name=VeriPasso-productvideo-1080p.mp4", { method: "POST", body: buffer });
+
+  // Ook de geluidsmix los (WAV), handig om later te bewerken.
+  return { megabytes: +(buffer.byteLength / 1048576).toFixed(1), seconds: totalSec };
+};
+window.encodeReady = true;
+</script>
+</body>
+</html>
