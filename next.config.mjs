@@ -31,6 +31,9 @@ const nextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
+        // Landingspagina (www.veripasso.com): één statisch HTML-bestand, zie public/landing/.
+        // Op het app-domein stuurt proxy.js "/" eerst door naar /login.
+        { source: "/", destination: "/landing/index.html" },
         {
           source: "/p/:publicId",
           // Browsers sturen o.a. "application/xml;q=0.9" mee: alleen herschrijven als er

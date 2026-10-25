@@ -1,0 +1,937 @@
+<!doctype html>
+<!--
+  VeriPasso landingspagina. Vormgeving gebaseerd op de gratis template "Linea" van 8B:
+  https://8b.com/templates/linea/ · https://github.com/8bsite/app-landing-page-template
+  MIT License (code), Copyright (c) 2026 8B (https://8b.com). Volledige licentietekst: LICENSE-8B.txt.
+  Lettertype: Host Grotesk (Google Fonts, OFL). Bibliotheken: GSAP 3.13 (standaardlicentie), Lenis 1.3 (MIT).
+  Eén HTML-bestand, geen build-stap. Alle afbeeldingen zijn HTML/CSS/SVG (geen foto's).
+-->
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VeriPasso: elk product zijn eigen digitaal productpaspoort</title>
+<meta name="description" content="VeriPasso maakt digitale productpaspoorten volgens de Europese regels. Scan de QR-code op een product en het paspoort opent direct, zonder app. Gegevens in de EU.">
+<meta name="generator" content="8B Templates">
+<meta property="og:type" content="website">
+<meta property="og:title" content="VeriPasso: elk product zijn eigen digitaal productpaspoort">
+<meta property="og:description" content="Digitale productpaspoorten met een vaste QR-code. Scan, en het paspoort opent direct. Gegevens in de EU.">
+<meta property="og:url" content="https://www.veripasso.com/">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="/brand/veripasso-icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" href="https://fonts.gstatic.com/s/hostgrotesk/v5/co3BmWBnlCJ3U42vbbfdwMjZpFjm.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face { font-family: 'Host Grotesk'; font-style: normal; font-weight: 300 800; font-display: swap; src: url(https://fonts.gstatic.com/s/hostgrotesk/v5/co3BmWBnlCJ3U42vbbfdwMjZqljm0U0.woff2) format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Host Grotesk'; font-style: normal; font-weight: 300 800; font-display: swap; src: url(https://fonts.gstatic.com/s/hostgrotesk/v5/co3BmWBnlCJ3U42vbbfdwMjZpFjm.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+</style>
+<style>@layer tokens, base, atoms, layout, sections, scenes;</style>
+<style>
+@layer tokens {
+:root {
+  /* VeriPasso: marineblauw, blauw en limoen uit het logo. */
+  --color-1: #06162a;  /* inkt en donkere banden */
+  --color-2: #f5f8fc;  /* papier */
+  --color-3: #e6edf6;  /* kaarten op papier */
+  --color-4: #72e600;  /* limoen: knoppen, accenten */
+  --color-5: #475a70;  /* gedempte tekst op papier */
+  --color-6: #0a2342;  /* marineblauwe hero en banden */
+  --color-7: #b9cde8;  /* lichtblauwe tekst op marine */
+  --color-8: #10304f;  /* donkere vulling */
+  --color-9: #a4b4c9;  /* gedempte tekst op inkt */
+  --color-10: #1476ff; /* VeriPasso-blauw */
+  --font-1: "Host Grotesk", "Host Grotesk Fallback", Arial, sans-serif;
+  --radius-1: 3.5rem;
+  --radius-2: 1.75rem;
+  --radius-3: 62.5rem;
+  --radius-4: 1.25rem;
+  --shadow-1: 0 1.5rem 3rem -1.5rem color-mix(in srgb, var(--color-1) 60%, transparent);
+  --shadow-2: 0 0.75rem 1.75rem -0.75rem color-mix(in srgb, var(--color-4) 85%, transparent);
+  --space-1: clamp(1.125rem, 4.2vw, 3.5rem);
+  --space-2: clamp(5rem, 10vw, 9rem);
+}
+}
+</style>
+<style>
+@layer base {
+  @font-face { font-family: "Host Grotesk Fallback"; src: local("Arial Bold"), local("Arial-BoldMT"), local("Helvetica Bold"); font-weight: 550 799; size-adjust: 95.7%; ascent-override: 106.6%; descent-override: 33.4%; line-gap-override: 0%; }
+  @font-face { font-family: "Host Grotesk Fallback"; src: local("Arial"), local("ArialMT"), local("Helvetica"); font-weight: 100 549; size-adjust: 103.3%; ascent-override: 98.8%; descent-override: 31%; line-gap-override: 0%; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: var(--color-1); }
+  html.lenis, html.lenis body { height: auto; }
+  .lenis.lenis-stopped { overflow: clip; }
+  body { margin: 0; background: var(--color-2); color: var(--color-1); overflow-x: clip; }
+  img, svg { display: block; max-width: 100%; }
+  h1, h2, h3, p, ol, ul, figure, blockquote, dl, dd { margin: 0; }
+  ol, ul { padding: 0; list-style: none; }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 0.1875rem solid var(--color-10); outline-offset: 0.1875rem; }
+  .on-dark :focus-visible { outline-color: var(--color-4); }
+  ::selection { background: var(--color-4); color: var(--color-1); }
+  .skip-link { position: fixed; z-index: 100; top: 0.75rem; left: 0.75rem; padding: 0.75rem 1rem; border-radius: var(--radius-3); background: var(--color-2); color: var(--color-1); translate: 0 -200%; }
+  .skip-link:focus-visible { translate: 0 0; }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+}
+</style>
+<style>
+@layer atoms {
+.m-text { font-family: var(--font-1); font-size: 1.0625rem; font-weight: 400; line-height: 1.55; }
+.m-text-2 { font-family: var(--font-1); font-size: clamp(3rem, 6.4vw, 6rem); font-weight: 600; line-height: 0.96; letter-spacing: -0.045em; }
+.m-text-3 { font-family: var(--font-1); font-size: clamp(2.25rem, 5.2vw, 4.75rem); font-weight: 600; line-height: 1; letter-spacing: -0.04em; }
+.m-text-4 { font-family: var(--font-1); font-size: clamp(1.125rem, 1.35vw, 1.3125rem); font-weight: 400; line-height: 1.45; letter-spacing: -0.01em; }
+.m-text-5 { font-family: var(--font-1); font-size: clamp(1.1875rem, 1.6vw, 1.4375rem); font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; }
+.m-text-6 { font-family: var(--font-1); font-size: 0.9375rem; font-weight: 600; line-height: 1.25; letter-spacing: -0.005em; }
+.m-text-7 { font-family: var(--font-1); font-size: 0.8125rem; font-weight: 400; line-height: 1.5; color: color-mix(in srgb, currentColor 78%, transparent); }
+.m-text-8 { font-family: var(--font-1); font-size: 1rem; font-weight: 400; line-height: 1.5; color: color-mix(in srgb, currentColor 80%, transparent); }
+
+.m-btn, .m-btn-2, .m-btn-3 { position: relative; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-3); font-family: var(--font-1); font-weight: 600; line-height: 1.2; letter-spacing: -0.005em; text-decoration: none; cursor: pointer; }
+.m-btn { min-height: 3.25rem; padding: 0.875rem 1.625rem; background: var(--color-4); color: var(--color-1); font-size: 1rem; box-shadow: var(--shadow-2); }
+.m-btn-2 { min-height: 3.25rem; padding: 0.875rem 1.625rem; background: var(--color-2); color: var(--color-1); font-size: 1rem; }
+.m-btn-3 { min-height: 2.75rem; padding: 0.625rem 1.25rem; background: var(--color-4); color: var(--color-1); font-size: 0.9375rem; }
+.m-btn__label { display: block; transition: translate 0.45s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.m-btn__arrow { position: absolute; top: 50%; right: 1rem; translate: 0 -50%; opacity: 0; transition: opacity 0.3s; }
+@media (hover: hover) {
+  .m-btn:hover .m-btn__label, .m-btn-2:hover .m-btn__label, .m-btn-3:hover .m-btn__label { translate: -0.5rem 0; }
+  .m-btn:hover .m-btn__arrow, .m-btn-2:hover .m-btn__arrow, .m-btn-3:hover .m-btn__arrow { opacity: 1; }
+}
+.m-link { color: inherit; font-weight: 600; text-decoration: none; background-image: linear-gradient(currentColor, currentColor), linear-gradient(color-mix(in srgb, currentColor 34%, transparent), color-mix(in srgb, currentColor 34%, transparent)); background-repeat: no-repeat; background-position: 0 100%, 0 100%; background-size: 0% 0.125rem, 100% 0.0625rem; padding-bottom: 0.125rem; transition: background-size 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.m-link-2 { color: inherit; font-weight: 500; text-decoration: none; background-image: linear-gradient(currentColor, currentColor); background-repeat: no-repeat; background-position: 0 100%; background-size: 0% 0.125rem; padding-bottom: 0.125rem; transition: background-size 0.5s cubic-bezier(0.2, 0.7, 0.2, 1); }
+@media (hover: hover) { .m-link:hover { background-size: 100% 0.125rem, 100% 0.0625rem; } .m-link-2:hover { background-size: 100% 0.125rem; } }
+.m-icon-btn { position: relative; display: inline-grid; place-items: center; width: 3rem; height: 3rem; padding: 0; border: 0.0625rem solid color-mix(in srgb, var(--color-2) 22%, transparent); border-radius: var(--radius-3); background: transparent; color: var(--color-2); cursor: pointer; }
+.m-icon-btn svg { width: 1.375rem; height: 1.375rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.m-chip { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.625rem 1rem 0.625rem 0.8125rem; border-radius: var(--radius-4) var(--radius-4) var(--radius-4) 0.3125rem; background: var(--color-2); color: var(--color-1); font-family: var(--font-1); font-size: 0.9375rem; font-weight: 500; line-height: 1.3; box-shadow: var(--shadow-1); white-space: nowrap; }
+.m-chip--accent { background: var(--color-4); border-radius: var(--radius-4) var(--radius-4) 0.3125rem var(--radius-4); }
+.m-chip svg { width: 1rem; height: 1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.m-band { position: absolute; z-index: 0; top: 0; left: 0; right: 0; bottom: calc(-1 * var(--radius-1)); clip-path: inset(0% 0% 0% 0% round var(--radius-1) var(--radius-1) 0 0); pointer-events: none; }
+.m-band--paper { background: var(--color-2); }
+.m-band--card { background: var(--color-3); }
+.m-band--navy { background: var(--color-6); }
+.m-band--ink { background: var(--color-1); }
+.m-eyebrow { display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--font-1); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.m-eyebrow::before { content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--color-4); }
+}
+</style>
+<style>
+@layer layout {
+  .l-wrap { width: 100%; max-width: 88rem; margin-inline: auto; padding-inline: var(--space-1); }
+  .l-head { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 1.5rem 4rem; align-items: end; }
+  @media (max-width: 47.99rem) { .l-head { grid-template-columns: minmax(0, 1fr); } }
+}
+</style>
+<style>
+@layer sections {
+  /* --- logo ------------------------------------------------------------------------- */
+  .logo { display: inline-flex; align-items: center; gap: 0.625rem; text-decoration: none; }
+  .logo__mark { width: 2rem; height: 2rem; flex: none; }
+  .logo__word { font-family: var(--font-1); font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; }
+
+  /* --- navigatie ------------------------------------------------------------------- */
+  #nav { position: fixed; z-index: 50; top: 0.875rem; left: 0; right: 0; padding-inline: var(--space-1); color: var(--color-2); pointer-events: none; }
+  #nav .nav__bar { display: flex; align-items: center; gap: 1.75rem; max-width: 84rem; margin-inline: auto; padding: 0.4375rem 0.4375rem 0.4375rem 1.125rem; border: 0.0625rem solid color-mix(in srgb, var(--color-2) 12%, transparent); border-radius: var(--radius-3); background: color-mix(in srgb, var(--color-1) 82%, transparent); backdrop-filter: blur(0.875rem) saturate(1.3); pointer-events: auto; }
+  #nav .nav__links { display: flex; gap: 1.75rem; margin-left: auto; }
+  #nav .nav__login { margin-left: 0.25rem; }
+  #nav .nav__toggle { display: none; margin-left: auto; }
+  #nav .menu { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; gap: 2.5rem; padding: 6.5rem var(--space-1) 2.5rem; overflow-y: auto; background: var(--color-1); color: var(--color-2); pointer-events: auto; }
+  #nav .menu[hidden] { display: none; }
+  #nav .menu__close { position: absolute; top: 1.3125rem; right: var(--space-1); }
+  #nav .menu__links { display: grid; gap: 1rem; }
+  #nav .menu__links a { font-size: clamp(2rem, 9vw, 3rem); letter-spacing: -0.03em; }
+  #nav .menu__actions { display: flex; flex-wrap: wrap; gap: 1rem; }
+  @media (max-width: 63.99rem) {
+    #nav .nav__links, #nav .nav__cta, #nav .nav__login { display: none; }
+    #nav .nav__toggle { display: inline-grid; }
+  }
+
+  /* --- hero ------------------------------------------------------------------------ */
+  #hero { position: relative; isolation: isolate; overflow-x: clip; display: flex; flex-direction: column; min-height: max(100svh, 44rem); background: var(--color-6); color: var(--color-2); }
+  #hero::after { content: ""; position: absolute; z-index: -1; top: 100%; left: 0; right: 0; height: 100vh; background: var(--color-6); }
+  #hero .hero__glow { position: absolute; z-index: -1; inset: 0; background: radial-gradient(60% 70% at 78% 55%, color-mix(in srgb, var(--color-10) 45%, transparent), transparent 70%), radial-gradient(40% 40% at 12% 100%, color-mix(in srgb, var(--color-4) 16%, transparent), transparent 70%); pointer-events: none; }
+  #hero .hero__lines { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  #hero .hero__arc { fill: none; stroke: color-mix(in srgb, var(--color-2) 30%, transparent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  #hero .hero__flow { fill: none; stroke: var(--color-4); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.012 0.088; vector-effect: non-scaling-stroke; }
+  #hero .hero__inner { position: relative; z-index: 2; flex: 1; display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 2rem 3rem; align-items: center; padding-top: clamp(7.5rem, 16vh, 10rem); padding-bottom: clamp(3rem, 8vh, 5rem); }
+  #hero .hero__copy { display: grid; gap: 2rem; align-content: center; }
+  #hero .hero__title { max-width: 7.2em; font-size: clamp(3rem, 6.4vw, 6.25rem); }
+  #hero .hero__title em { font-style: normal; color: var(--color-4); }
+  #hero .hero__lead { max-width: 30rem; color: var(--color-7); }
+  #hero .hero__proof { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+  #hero .hero__proof li { display: inline-flex; align-items: center; gap: 0.4375rem; }
+  #hero .hero__proof svg { width: 1rem; height: 1rem; flex: none; fill: none; stroke: var(--color-4); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #hero .hero__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; }
+  @media (prefers-reduced-motion: no-preference) {
+    #hero .hero__copy { animation: hero-rise 1s cubic-bezier(0.16, 0.84, 0.3, 1) backwards; }
+    #hero .hero__flow { animation: hero-flow 9s linear infinite; }
+    #hero.is-paused .hero__flow { animation-play-state: paused; }
+  }
+  @keyframes hero-rise { from { translate: 0 1.75rem; } }
+  @keyframes hero-flow { to { stroke-dashoffset: -0.5; } }
+  @media (max-width: 63.99rem) {
+    #hero .hero__inner { grid-template-columns: minmax(0, 1fr); padding-top: 6.5rem; }
+    .scene { width: min(100%, 26rem); }
+    .scene__chip--a { left: 0; }
+    .scene__chip--b { right: 0; }
+    #hero .hero__title { font-size: clamp(2.6rem, 11vw, 4.5rem); }
+  }
+
+  /* --- scan-scène (de "film": telefoon scant QR, paspoort opent) ------------------- */
+  .scene { position: relative; width: 100%; max-width: 32rem; aspect-ratio: 32 / 36; margin-inline: auto; font-size: clamp(0.8rem, 1.05vw, 1rem); }
+  .scene__label { position: absolute; left: 0; bottom: 6%; width: 52%; display: grid; gap: 0.7em; padding: 1.1em; border-radius: 1.25em; background: var(--color-2); color: var(--color-1); box-shadow: var(--shadow-1); rotate: -4deg; }
+  .scene__label-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5em; font-size: 0.72em; font-weight: 600; color: var(--color-5); }
+  .scene__label-top svg { width: 1.6em; height: 1.6em; }
+  .scene__label-name { font-size: 1.05em; font-weight: 600; letter-spacing: -0.01em; }
+  .scene__qr { width: 100%; aspect-ratio: 1; padding: 0.4em; border-radius: 0.6em; background: #fff; }
+  .scene__qr svg { width: 100%; height: 100%; }
+  .scene__label-note { font-size: 0.68em; color: var(--color-5); }
+  .scene__chip { position: absolute; z-index: 3; font-size: 0.9em; }
+  .scene__chip--a { left: -4%; top: 6%; }
+  .scene__chip--b { right: -2%; bottom: 2%; }
+  .phone { position: absolute; z-index: 2; right: 0; top: 0; width: 56%; aspect-ratio: 9 / 18.5; padding: 0.55em; border-radius: 2.6em; background: #0b1220; box-shadow: 0 2.5rem 4rem -1.5rem rgba(0, 0, 0, 0.6), inset 0 0 0 0.12em color-mix(in srgb, #fff 18%, transparent); }
+  .phone__screen { position: relative; height: 100%; overflow: hidden; border-radius: 2.1em; background: var(--color-2); color: var(--color-1); }
+  .phone__notch { position: absolute; z-index: 5; top: 0.55em; left: 50%; width: 32%; height: 1.15em; translate: -50% 0; border-radius: var(--radius-3); background: #0b1220; }
+  .cam { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; background: radial-gradient(circle at 50% 45%, #2a3446, #0d1422 75%); }
+  .cam__qr { width: 62%; aspect-ratio: 1; padding: 0.45em; border-radius: 0.5em; background: #fff; filter: blur(0.6px); opacity: 0.92; }
+  .cam__qr svg { width: 100%; height: 100%; }
+  .cam__frame { position: absolute; width: 74%; aspect-ratio: 1; }
+  .cam__frame i { position: absolute; width: 22%; height: 22%; border: 0.22em solid var(--color-4); }
+  .cam__frame i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-radius: 0.6em 0 0 0; }
+  .cam__frame i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-radius: 0 0.6em 0 0; }
+  .cam__frame i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-radius: 0 0 0 0.6em; }
+  .cam__frame i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-radius: 0 0 0.6em 0; }
+  .cam__line { position: absolute; left: 13%; right: 13%; top: 13%; height: 0.18em; border-radius: 1em; background: var(--color-4); box-shadow: 0 0 1.2em 0.3em color-mix(in srgb, var(--color-4) 60%, transparent); }
+  .cam__hint { position: absolute; bottom: 9%; left: 50%; translate: -50% 0; padding: 0.4em 0.8em; border-radius: var(--radius-3); background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 0.68em; font-weight: 600; white-space: nowrap; }
+  .cam__flash { position: absolute; z-index: 3; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  /* Paspoortweergave op de telefoon (zoals de echte paspoortpagina van VeriPasso). */
+  .pass { position: absolute; z-index: 1; inset: 0; overflow: hidden; }
+  .pass__scroll { display: grid; gap: 0.7em; padding: 2.1em 0.85em 1em; }
+  .pass__url { display: flex; align-items: center; gap: 0.35em; justify-self: center; padding: 0.3em 0.7em; border-radius: var(--radius-3); background: var(--color-3); font-size: 0.6em; font-weight: 600; color: var(--color-5); }
+  .pass__url svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+  .pass__hero { display: grid; gap: 0.45em; padding: 0.9em; border-radius: 1em; background: var(--color-6); color: var(--color-2); }
+  .pass__issuer { display: flex; align-items: center; gap: 0.4em; font-size: 0.62em; color: var(--color-7); }
+  .pass__issuer svg { width: 1.4em; height: 1.4em; }
+  .pass__name { font-size: 1.02em; font-weight: 600; letter-spacing: -0.01em; }
+  .pass__badge { display: inline-flex; align-items: center; gap: 0.35em; justify-self: start; padding: 0.25em 0.6em; border-radius: var(--radius-3); background: var(--color-4); color: var(--color-1); font-size: 0.6em; font-weight: 700; }
+  .pass__badge svg { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .pass__card { display: grid; gap: 0.45em; padding: 0.75em 0.8em; border-radius: 0.9em; background: #fff; box-shadow: 0 0.2em 0.8em -0.4em rgba(6, 22, 42, 0.3); }
+  .pass__h { font-size: 0.7em; font-weight: 700; }
+  .pass__row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.2em 0.5em; font-size: 0.62em; }
+  .pass__row b { font-weight: 600; }
+  .pass__bar { grid-column: 1 / -1; height: 0.45em; border-radius: var(--radius-3); background: var(--color-3); overflow: hidden; }
+  .pass__bar i { display: block; height: 100%; border-radius: inherit; background: var(--color-4); transform-origin: 0 50%; }
+  .pass__tags { display: flex; flex-wrap: wrap; gap: 0.3em; }
+  .pass__tags span { padding: 0.25em 0.55em; border-radius: var(--radius-3); background: var(--color-3); font-size: 0.58em; font-weight: 600; }
+  .pass__doc { display: flex; align-items: center; gap: 0.5em; font-size: 0.62em; }
+  .pass__doc svg { width: 1.5em; height: 1.5em; flex: none; fill: none; stroke: var(--color-10); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .pass__code { padding: 0.75em; border-radius: 0.9em; background: var(--color-1); color: var(--color-7); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 0.56em; line-height: 1.5; white-space: pre; overflow: hidden; }
+  .pass__code b { color: var(--color-4); font-weight: 600; }
+  .pass__safe { display: flex; align-items: center; justify-content: center; gap: 0.4em; padding: 0.55em; border-radius: 0.9em; background: color-mix(in srgb, var(--color-4) 22%, #fff); font-size: 0.62em; font-weight: 700; }
+  .pass__safe svg { width: 1.2em; height: 1.2em; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  /* Zonder animatie (of bij verminderde beweging): het paspoort staat open. */
+  .scene .cam { display: none; }
+  .scene.is-live .cam { display: grid; }
+  @media (max-width: 63.99rem) { .scene { max-width: 26rem; } }
+
+  /* --- waarom: twee kanten ------------------------------------------------------- */
+  #waarom { position: relative; isolation: isolate; overflow-x: clip; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+  #waarom > :not(.m-band) { position: relative; z-index: 1; }
+  #waarom .waarom__lead { color: var(--color-5); max-width: 30rem; }
+  #waarom .waarom__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: clamp(3rem, 6vw, 5rem); }
+  #waarom .waarom__card { display: grid; gap: 0.875rem; align-content: start; padding: clamp(1.5rem, 3vw, 2.25rem); border-radius: var(--radius-2); background: var(--color-3); }
+  #waarom .waarom__card:nth-child(2) { background: var(--color-1); color: var(--color-2); }
+  #waarom .waarom__card:nth-child(3) { background: var(--color-4); }
+  #waarom .waarom__num { font-size: clamp(3rem, 5vw, 4.5rem); font-weight: 600; line-height: 0.9; letter-spacing: -0.04em; }
+  #waarom .waarom__card .m-text-8 { max-width: 24rem; }
+  @media (max-width: 63.99rem) { #waarom .waarom__grid { grid-template-columns: minmax(0, 1fr); } }
+
+  /* --- paspoort: lijst naast een vaste telefoon ---------------------------------- */
+  #paspoort { position: relative; isolation: isolate; color: var(--color-2); padding-block: var(--space-2) calc(var(--space-2) + 1rem); }
+  #paspoort > :not(.m-band) { position: relative; z-index: 1; }
+  #paspoort .pp__lead { color: var(--color-7); max-width: 30rem; }
+  #paspoort .pp__grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 4rem; margin-top: clamp(3rem, 6vw, 5rem); }
+  #paspoort .pp__item { display: flex; flex-direction: column; justify-content: center; gap: 0.625rem; min-height: 46vh; padding-left: 1.5rem; border-left: 0.125rem solid color-mix(in srgb, var(--color-2) 18%, transparent); }
+  #paspoort .pp__item .m-text-8 { max-width: 28rem; color: var(--color-7); }
+  #paspoort .pp__step { color: var(--color-4); }
+  #paspoort .pp__aside { position: relative; }
+  #paspoort .pp__sticky { position: sticky; top: calc(50vh - 18rem); display: flex; justify-content: center; }
+  #paspoort .phone { position: relative; right: auto; top: auto; width: 17.5rem; font-size: 1rem; }
+  #paspoort .pass { position: absolute; }
+  @media (max-width: 47.99rem) {
+    #paspoort .pp__grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    #paspoort .pp__aside, #paspoort .pp__list { grid-area: 1 / 1; }
+    #paspoort .pp__aside { z-index: 2; display: flex; flex-direction: column; justify-content: flex-end; pointer-events: none; }
+    #paspoort .pp__sticky { top: auto; bottom: 0.5rem; }
+    #paspoort .phone { width: 11.5rem; font-size: 0.66rem; }
+    #paspoort .pp__list { padding-bottom: 26rem; }
+    #paspoort .pp__item { min-height: 40vh; justify-content: flex-start; padding-top: 1.5rem; }
+  }
+
+  /* --- toegang: wie ziet wat ------------------------------------------------------ */
+  #toegang { position: relative; isolation: isolate; padding-block: var(--space-2); }
+  #toegang > :not(.m-band) { position: relative; z-index: 1; }
+  #toegang .tg__lead { color: var(--color-5); max-width: 30rem; }
+  #toegang .tg__stage { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 2rem 4rem; margin-top: clamp(3rem, 6vw, 5rem); padding: clamp(1.5rem, 3.5vw, 3rem); border-radius: var(--radius-2); background: var(--color-1); color: var(--color-2); }
+  #toegang .tg__intro { display: grid; gap: 1.5rem; align-content: start; }
+  #toegang .tg__intro .m-text-8 { color: var(--color-9); }
+  #toegang .tg__seg { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); padding: 0.25rem; border-radius: var(--radius-3); background: color-mix(in srgb, var(--color-2) 10%, transparent); }
+  #toegang .tg__seg button { position: relative; z-index: 1; padding: 0.625rem 0.5rem; border: 0; border-radius: var(--radius-3); background: transparent; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: color 0.3s; }
+  #toegang .tg__seg button[aria-pressed="true"] { color: var(--color-1); }
+  #toegang .tg__pill { position: absolute; top: 0.25rem; bottom: 0.25rem; left: 0.25rem; width: calc((100% - 0.5rem) / 3); border-radius: var(--radius-3); background: var(--color-4); transition: translate 0.45s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  #toegang .tg__who { color: var(--color-9); min-height: 3em; }
+  #toegang .tg__list { display: grid; align-content: start; border-top: 0.0625rem solid color-mix(in srgb, var(--color-2) 14%, transparent); }
+  #toegang .tg__row { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto; align-items: center; gap: 0.25rem 1rem; padding-block: 1rem; border-bottom: 0.0625rem solid color-mix(in srgb, var(--color-2) 14%, transparent); transition: opacity 0.35s; }
+  #toegang .tg__row .m-text-7 { grid-column: 2; color: var(--color-9); }
+  #toegang .tg__icon { grid-row: 1 / span 2; display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 50%; background: color-mix(in srgb, var(--color-2) 10%, transparent); transition: background 0.35s, color 0.35s; }
+  #toegang .tg__icon svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  #toegang .tg__icon .tg__no { display: none; }
+  #toegang .tg__tag { grid-column: 3; grid-row: 1 / span 2; padding: 0.3rem 0.7rem; border-radius: var(--radius-3); background: color-mix(in srgb, var(--color-2) 10%, transparent); font-size: 0.75rem; font-weight: 600; }
+  #toegang .tg__row.is-hidden { opacity: 0.38; }
+  #toegang .tg__row:not(.is-hidden) .tg__icon { background: var(--color-4); color: var(--color-1); }
+  #toegang .tg__row.is-hidden .tg__yes { display: none; }
+  #toegang .tg__row.is-hidden .tg__no { display: block; }
+  @media (max-width: 63.99rem) { #toegang .tg__stage { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 30rem) { #toegang .tg__tag { display: none; } #toegang .tg__row { grid-template-columns: 2.25rem minmax(0, 1fr); } }
+
+  /* --- zekerheid: donkere band met kaarten --------------------------------------- */
+  #zeker { position: relative; isolation: isolate; color: var(--color-2); padding-block: var(--space-2); }
+  #zeker > :not(.m-band) { position: relative; z-index: 1; }
+  #zeker .zk__lead { color: var(--color-9); max-width: 30rem; }
+  #zeker .zk__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: clamp(3rem, 6vw, 5rem); }
+  #zeker .zk__card { display: grid; gap: 0.75rem; align-content: start; min-height: 15rem; padding: clamp(1.5rem, 2.6vw, 2rem); border-radius: var(--radius-2); background: var(--color-8); }
+  #zeker .zk__card .m-text-8 { color: var(--color-9); }
+  #zeker .zk__icon { display: grid; place-items: center; width: 3rem; height: 3rem; margin-bottom: 0.75rem; border-radius: 50%; background: var(--color-4); color: var(--color-1); }
+  #zeker .zk__icon svg { width: 1.375rem; height: 1.375rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  @media (max-width: 63.99rem) { #zeker .zk__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 47.99rem) { #zeker .zk__grid { grid-template-columns: minmax(0, 1fr); } #zeker .zk__card { min-height: 0; } }
+
+  /* --- stappen ------------------------------------------------------------------- */
+  #stappen { position: relative; isolation: isolate; padding-block: var(--space-2); }
+  #stappen > :not(.m-band) { position: relative; z-index: 1; }
+  #stappen .st__lead { color: var(--color-5); max-width: 28rem; }
+  #stappen .st__steps { display: grid; gap: 1.25rem; margin-top: clamp(3rem, 6vw, 5rem); }
+  #stappen .st__card { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 5fr); gap: 1.5rem 3rem; align-items: center; min-height: clamp(18rem, 46vh, 26rem); padding: clamp(1.5rem, 4vw, 3.5rem); border-radius: var(--radius-2); transform-origin: 50% 0%; }
+  #stappen .st__card:nth-child(1) { background: var(--color-3); }
+  #stappen .st__card:nth-child(2) { background: var(--color-4); }
+  #stappen .st__card:nth-child(3) { background: var(--color-1); color: var(--color-2); }
+  #stappen .st__num { font-size: clamp(5rem, 11vw, 9.5rem); font-weight: 600; line-height: 0.8; letter-spacing: -0.05em; }
+  #stappen .st__copy { display: grid; gap: 0.75rem; max-width: 26rem; }
+  #stappen .st__ui { display: grid; gap: 0.625rem; padding: 1.25rem; border-radius: var(--radius-4); background: color-mix(in srgb, currentColor 7%, transparent); }
+  #stappen .st__check { display: flex; align-items: center; gap: 0.625rem; }
+  #stappen .st__check svg { width: 1.375rem; height: 1.375rem; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #stappen .st__meter { height: 0.625rem; border-radius: var(--radius-3); background: color-mix(in srgb, currentColor 14%, transparent); overflow: hidden; }
+  #stappen .st__meter i { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--color-1); }
+  #stappen .st__option { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.75rem 1rem; border-radius: 0.875rem; border: 0.0625rem solid color-mix(in srgb, currentColor 25%, transparent); }
+  #stappen .st__option--on { background: var(--color-4); color: var(--color-1); border-color: var(--color-4); }
+  @media (max-width: 63.99rem) { #stappen .st__card { grid-template-columns: auto minmax(0, 1fr); } #stappen .st__ui { grid-column: 1 / -1; } }
+  @media (max-width: 47.99rem) { #stappen .st__card { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; min-height: 0; } #stappen .st__num { font-size: 4.5rem; } }
+  @media (prefers-reduced-motion: no-preference) {
+    #stappen.is-stacked .st__card { position: sticky; top: calc(var(--page-nav-h, 5.5rem) + var(--i) * 1.25rem); }
+  }
+
+  /* --- vragen -------------------------------------------------------------------- */
+  #vragen { position: relative; isolation: isolate; padding-block: var(--space-2); }
+  #vragen > :not(.m-band) { position: relative; z-index: 1; }
+  #vragen .faq__inner { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 2.5rem 4rem; align-items: start; }
+  #vragen .faq__head { display: grid; gap: 1.5rem; }
+  #vragen .faq__head .m-text-8 { max-width: 22rem; color: var(--color-5); }
+  #vragen .faq__list { border-top: 0.0625rem solid color-mix(in srgb, var(--color-1) 16%, transparent); }
+  #vragen .faq__item { border-bottom: 0.0625rem solid color-mix(in srgb, var(--color-1) 16%, transparent); }
+  #vragen .faq__item summary { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; padding-block: 1.375rem; cursor: pointer; list-style: none; }
+  #vragen .faq__item summary::-webkit-details-marker { display: none; }
+  #vragen .faq__icon { position: relative; flex: none; width: 2.25rem; height: 2.25rem; border-radius: 50%; background: var(--color-3); }
+  #vragen .faq__icon::before, #vragen .faq__icon::after { content: ""; position: absolute; top: 50%; left: 50%; width: 0.875rem; height: 0.125rem; margin: -0.0625rem 0 0 -0.4375rem; border-radius: 0.125rem; background: var(--color-1); transition: rotate 0.35s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  #vragen .faq__icon::after { rotate: 90deg; }
+  #vragen .faq__item[open] .faq__icon { background: var(--color-4); }
+  #vragen .faq__item[open] .faq__icon::after { rotate: 0deg; }
+  #vragen .faq__item p { max-width: 38rem; padding-bottom: 1.5rem; color: var(--color-5); }
+  @media (hover: hover) { #vragen .faq__item summary:hover .faq__icon { background: var(--color-4); } }
+  @media (max-width: 47.99rem) { #vragen .faq__inner { grid-template-columns: minmax(0, 1fr); } }
+
+  /* --- start (oproep) ----------------------------------------------------------- */
+  #start { position: relative; isolation: isolate; color: var(--color-2); padding-block: clamp(3.5rem, 7vw, 6rem); }
+  #start > :not(.m-band) { position: relative; z-index: 1; }
+  #start .start__window { position: relative; overflow: hidden; display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); align-items: center; gap: 2rem; min-height: min(80vh, 44rem); padding: clamp(1.75rem, 4.5vw, 4rem); border-radius: var(--radius-2); background: radial-gradient(70% 90% at 85% 50%, color-mix(in srgb, var(--color-10) 55%, transparent), transparent 70%), var(--color-6); }
+  #start .start__copy { display: grid; gap: 1.5rem; justify-items: start; max-width: 36rem; }
+  #start .start__copy .m-text-4 { color: var(--color-7); max-width: 28rem; }
+  #start .start__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; }
+  #start .start__mark { width: min(100%, 22rem); justify-self: center; filter: drop-shadow(0 2rem 3rem rgba(0, 0, 0, 0.35)); }
+  @media (max-width: 47.99rem) { #start .start__window { grid-template-columns: minmax(0, 1fr); } #start .start__mark { width: 10rem; justify-self: start; order: -1; } }
+
+  /* --- contact -------------------------------------------------------------------- */
+  #contact { position: relative; isolation: isolate; padding-block: var(--space-2) calc(var(--space-2) + 1rem); }
+  #contact > :not(.m-band) { position: relative; z-index: 1; }
+  #contact .contact__inner { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 3rem 5rem; align-items: start; }
+  #contact .contact__info { display: grid; gap: 1.75rem; }
+  #contact .contact__info > .m-text-4 { max-width: 30rem; color: var(--color-5); }
+  #contact .contact__ways { display: grid; gap: 1rem; }
+  #contact .contact__way { display: grid; gap: 0.375rem; padding: 1.5rem; border-radius: var(--radius-2); background: var(--color-2); text-decoration: none; transition: background 0.3s; }
+  #contact .contact__way .m-text-6 { color: var(--color-5); }
+  @media (hover: hover) { #contact .contact__way:hover { background: var(--color-4); } }
+  @media (max-width: 63.99rem) { #contact .contact__inner { grid-template-columns: minmax(0, 1fr); } }
+
+  /* --- footer --------------------------------------------------------------------- */
+  #footer { position: relative; isolation: isolate; color: var(--color-2); padding-top: var(--space-2); background: var(--color-1); }
+  #footer .footer__top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 3rem; }
+  #footer .footer__pitch { display: grid; gap: 1.5rem; justify-items: start; max-width: 26rem; }
+  #footer .footer__pitch .m-text-4 { color: var(--color-9); }
+  #footer .footer__cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+  #footer .footer__col { display: grid; gap: 0.875rem; align-content: start; }
+  #footer .footer__col h2 { color: var(--color-9); }
+  #footer .footer__col ul { display: grid; gap: 0.625rem; }
+  #footer .footer__brand { display: flex; align-items: flex-end; gap: clamp(1rem, 3vw, 3rem); margin-top: clamp(4rem, 9vw, 8rem); overflow: clip; }
+  #footer .footer__logo { flex: none; width: clamp(4.5rem, 14vw, 12rem); height: auto; margin-bottom: 0.08em; }
+  #footer .footer__word { font-family: var(--font-1); font-weight: 600; letter-spacing: -0.05em; font-size: min(24rem, (100vw - 2 * var(--space-1) - clamp(4.5rem, 14vw, 12rem) - clamp(1rem, 3vw, 3rem)) / 4.6); line-height: 0.8; padding-bottom: 0.06em; white-space: nowrap; }
+  #footer .footer__legal { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem 2rem; margin-top: clamp(2rem, 4vw, 3rem); padding-block: 1.5rem 2rem; border-top: 0.0625rem solid color-mix(in srgb, var(--color-2) 14%, transparent); }
+  #footer .footer__legal ul { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+  @media (max-width: 47.99rem) { #footer .footer__top { grid-template-columns: minmax(0, 1fr); } #footer .footer__cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+}
+</style>
+</head>
+<body class="m-text">
+<a class="skip-link m-text-6" href="#main">Naar de inhoud</a>
+
+<!-- navigatie: logo, sectielinks, inloggen en demo; menu op de telefoon -->
+<header class="nav on-dark" id="nav">
+  <nav class="nav__bar" aria-label="Hoofdmenu">
+    <a class="logo" href="#hero" aria-label="VeriPasso, terug naar boven">
+      <svg class="logo__mark" viewBox="0 0 280 280" aria-hidden="true"><path fill="#72E600" d="M34 42C20 52 18 72 27 91l78 145c8 15 29 16 38 1l24-42-68-132C85 36 55 27 34 42Z"/><path fill="#1476FF" d="M222 38c21-9 40 10 35 32l-31 142c-3 14-12 26-25 33l-59 31c-14 7-30-4-26-20l49-181c7-18 31-30 57-37Z"/><path fill="#FFFFFF" d="M174 91h47c7 0 12 5 12 12s-5 12-12 12h-47c-7 0-12-5-12-12s5-12 12-12Zm-10 45h48c7 0 12 5 12 12s-5 12-12 12h-48c-7 0-12-5-12-12s5-12 12-12Z"/></svg>
+      <span class="logo__word">VeriPasso</span>
+    </a>
+    <ul class="nav__links m-text-6">
+      <li><a class="m-link-2" href="#paspoort">Hoe het werkt</a></li>
+      <li><a class="m-link-2" href="#toegang">Wie ziet wat</a></li>
+      <li><a class="m-link-2" href="#zeker">Zekerheid</a></li>
+      <li><a class="m-link-2" href="#vragen">Vragen</a></li>
+      <li><a class="m-link-2" href="#contact">Contact</a></li>
+    </ul>
+    <a class="m-link-2 m-text-6 nav__login" href="https://app.veripasso.com/login">Inloggen</a>
+    <a class="m-btn-3 nav__cta" href="#start"><span class="m-btn__label">Demo aanvragen</span></a>
+    <button class="m-icon-btn nav__toggle" type="button" aria-expanded="false" aria-controls="menu" aria-label="Menu openen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16M4 16h16"/></svg></button>
+  </nav>
+  <div class="menu" id="menu" hidden role="dialog" aria-modal="true" aria-label="Menu">
+    <button class="m-icon-btn menu__close" type="button" aria-label="Menu sluiten"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <ul class="menu__links m-text-5">
+      <li><a class="m-link-2" href="#paspoort">Hoe het werkt</a></li>
+      <li><a class="m-link-2" href="#toegang">Wie ziet wat</a></li>
+      <li><a class="m-link-2" href="#zeker">Zekerheid</a></li>
+      <li><a class="m-link-2" href="#vragen">Vragen</a></li>
+      <li><a class="m-link-2" href="#contact">Contact</a></li>
+    </ul>
+    <div class="menu__actions">
+      <a class="m-btn" href="#start"><span class="m-btn__label">Demo aanvragen</span></a>
+      <a class="m-btn-2" href="https://app.veripasso.com/login"><span class="m-btn__label">Inloggen</span></a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+<!-- hero: kop, uitleg en de scan-scène (telefoon scant de QR-code, het paspoort opent) -->
+<section class="hero on-dark" id="hero" aria-labelledby="hero-title">
+  <div class="hero__glow" aria-hidden="true"></div>
+  <svg class="hero__lines" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 100">
+    <ellipse class="hero__arc" cx="70" cy="140" rx="70" ry="75" pathLength="1"/>
+    <ellipse class="hero__flow" cx="70" cy="140" rx="70" ry="75" pathLength="1"/>
+  </svg>
+  <div class="hero__inner l-wrap">
+    <div class="hero__copy">
+      <h1 class="m-text-2 hero__title" id="hero-title">Elk product zijn eigen <em>paspoort.</em></h1>
+      <p class="m-text-4 hero__lead">VeriPasso maakt digitale productpaspoorten volgens de Europese regels. Scan de QR-code op een product en het paspoort opent direct: materialen, duurzaamheid en documenten, zonder app.</p>
+      <ul class="hero__proof m-text-6">
+        <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>Geen app nodig</li>
+        <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>QR-code verandert nooit</li>
+        <li><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>Gegevens in de EU</li>
+      </ul>
+      <div class="hero__actions">
+        <a class="m-btn" href="#start"><span class="m-btn__label">Demo aanvragen</span></a>
+        <a class="m-link m-text-6" href="#paspoort">Zie hoe het werkt</a>
+      </div>
+    </div>
+
+    <div class="scene" id="scene" role="img" aria-label="Animatie: een telefoon scant de QR-code op een productlabel en opent het digitale productpaspoort met duurzaamheid en documenten.">
+      <div class="scene__label">
+        <div class="scene__label-top"><span>Digitaal productpaspoort</span><svg viewBox="0 0 280 280" aria-hidden="true"><path fill="#72E600" d="M34 42C20 52 18 72 27 91l78 145c8 15 29 16 38 1l24-42-68-132C85 36 55 27 34 42Z"/><path fill="#1476FF" d="M222 38c21-9 40 10 35 32l-31 142c-3 14-12 26-25 33l-59 31c-14 7-30-4-26-20l49-181c7-18 31-30 57-37Z"/></svg></div>
+        <p class="scene__label-name">Bureaustoel Nova</p>
+        <div class="scene__qr"><svg viewBox="0 0 25 25" shape-rendering="crispEdges" aria-hidden="true"><path fill="#06162a" d="M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM8 0h1v1h-1zM9 0h1v1h-1zM10 0h1v1h-1zM12 0h1v1h-1zM13 0h1v1h-1zM14 0h1v1h-1zM15 0h1v1h-1zM16 0h1v1h-1zM18 0h1v1h-1zM19 0h1v1h-1zM20 0h1v1h-1zM21 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM24 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM10 1h1v1h-1zM11 1h1v1h-1zM12 1h1v1h-1zM18 1h1v1h-1zM24 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM8 2h1v1h-1zM9 2h1v1h-1zM11 2h1v1h-1zM13 2h1v1h-1zM14 2h1v1h-1zM15 2h1v1h-1zM18 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM10 3h1v1h-1zM11 3h1v1h-1zM14 3h1v1h-1zM18 3h1v1h-1zM20 3h1v1h-1zM21 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM9 4h1v1h-1zM10 4h1v1h-1zM12 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM18 4h1v1h-1zM20 4h1v1h-1zM21 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM15 5h1v1h-1zM18 5h1v1h-1zM24 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM19 6h1v1h-1zM20 6h1v1h-1zM21 6h1v1h-1zM22 6h1v1h-1zM23 6h1v1h-1zM24 6h1v1h-1zM9 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM16 7h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM9 8h1v1h-1zM11 8h1v1h-1zM14 8h1v1h-1zM15 8h1v1h-1zM17 8h1v1h-1zM19 8h1v1h-1zM20 8h1v1h-1zM21 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM0 9h1v1h-1zM2 9h1v1h-1zM3 9h1v1h-1zM4 9h1v1h-1zM9 9h1v1h-1zM13 9h1v1h-1zM14 9h1v1h-1zM16 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM22 9h1v1h-1zM24 9h1v1h-1zM1 10h1v1h-1zM2 10h1v1h-1zM3 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM9 10h1v1h-1zM12 10h1v1h-1zM15 10h1v1h-1zM16 10h1v1h-1zM21 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM0 11h1v1h-1zM2 11h1v1h-1zM3 11h1v1h-1zM4 11h1v1h-1zM5 11h1v1h-1zM8 11h1v1h-1zM12 11h1v1h-1zM14 11h1v1h-1zM15 11h1v1h-1zM16 11h1v1h-1zM20 11h1v1h-1zM21 11h1v1h-1zM23 11h1v1h-1zM24 11h1v1h-1zM1 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM10 12h1v1h-1zM11 12h1v1h-1zM12 12h1v1h-1zM14 12h1v1h-1zM16 12h1v1h-1zM17 12h1v1h-1zM20 12h1v1h-1zM24 12h1v1h-1zM3 13h1v1h-1zM5 13h1v1h-1zM8 13h1v1h-1zM10 13h1v1h-1zM12 13h1v1h-1zM13 13h1v1h-1zM14 13h1v1h-1zM16 13h1v1h-1zM17 13h1v1h-1zM18 13h1v1h-1zM20 13h1v1h-1zM22 13h1v1h-1zM24 13h1v1h-1zM2 14h1v1h-1zM3 14h1v1h-1zM4 14h1v1h-1zM6 14h1v1h-1zM7 14h1v1h-1zM8 14h1v1h-1zM9 14h1v1h-1zM11 14h1v1h-1zM12 14h1v1h-1zM14 14h1v1h-1zM15 14h1v1h-1zM18 14h1v1h-1zM20 14h1v1h-1zM23 14h1v1h-1zM24 14h1v1h-1zM1 15h1v1h-1zM2 15h1v1h-1zM3 15h1v1h-1zM5 15h1v1h-1zM7 15h1v1h-1zM10 15h1v1h-1zM12 15h1v1h-1zM14 15h1v1h-1zM15 15h1v1h-1zM16 15h1v1h-1zM17 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM0 16h1v1h-1zM3 16h1v1h-1zM4 16h1v1h-1zM5 16h1v1h-1zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h1v1h-1zM13 16h1v1h-1zM14 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM17 16h1v1h-1zM18 16h1v1h-1zM19 16h1v1h-1zM20 16h1v1h-1zM21 16h1v1h-1zM23 16h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM11 17h1v1h-1zM12 17h1v1h-1zM13 17h1v1h-1zM14 17h1v1h-1zM15 17h1v1h-1zM16 17h1v1h-1zM20 17h1v1h-1zM23 17h1v1h-1zM0 18h1v1h-1zM1 18h1v1h-1zM2 18h1v1h-1zM3 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM6 18h1v1h-1zM8 18h1v1h-1zM10 18h1v1h-1zM12 18h1v1h-1zM14 18h1v1h-1zM16 18h1v1h-1zM18 18h1v1h-1zM20 18h1v1h-1zM21 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM8 19h1v1h-1zM9 19h1v1h-1zM10 19h1v1h-1zM11 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM20 19h1v1h-1zM23 19h1v1h-1zM24 19h1v1h-1zM0 20h1v1h-1zM2 20h1v1h-1zM3 20h1v1h-1zM4 20h1v1h-1zM6 20h1v1h-1zM8 20h1v1h-1zM10 20h1v1h-1zM12 20h1v1h-1zM14 20h1v1h-1zM15 20h1v1h-1zM16 20h1v1h-1zM17 20h1v1h-1zM18 20h1v1h-1zM19 20h1v1h-1zM20 20h1v1h-1zM21 20h1v1h-1zM23 20h1v1h-1zM24 20h1v1h-1zM0 21h1v1h-1zM2 21h1v1h-1zM3 21h1v1h-1zM4 21h1v1h-1zM6 21h1v1h-1zM8 21h1v1h-1zM10 21h1v1h-1zM13 21h1v1h-1zM14 21h1v1h-1zM17 21h1v1h-1zM19 21h1v1h-1zM21 21h1v1h-1zM22 21h1v1h-1zM23 21h1v1h-1zM24 21h1v1h-1zM0 22h1v1h-1zM2 22h1v1h-1zM3 22h1v1h-1zM4 22h1v1h-1zM6 22h1v1h-1zM8 22h1v1h-1zM12 22h1v1h-1zM16 22h1v1h-1zM18 22h1v1h-1zM20 22h1v1h-1zM21 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM9 23h1v1h-1zM10 23h1v1h-1zM12 23h1v1h-1zM13 23h1v1h-1zM14 23h1v1h-1zM18 23h1v1h-1zM19 23h1v1h-1zM21 23h1v1h-1zM24 23h1v1h-1zM0 24h1v1h-1zM1 24h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM5 24h1v1h-1zM6 24h1v1h-1zM10 24h1v1h-1zM11 24h1v1h-1zM12 24h1v1h-1zM14 24h1v1h-1zM15 24h1v1h-1zM18 24h1v1h-1zM19 24h1v1h-1zM21 24h1v1h-1zM22 24h1v1h-1zM23 24h1v1h-1zM24 24h1v1h-1z"/></svg></div>
+        <p class="scene__label-note">Voorbeeldproduct · scan met je camera</p>
+      </div>
+
+      <div class="phone scene__phone" aria-hidden="true">
+        <div class="phone__screen">
+          <div class="phone__notch"></div>
+          <div class="cam">
+            <div class="cam__qr"><svg viewBox="0 0 25 25" shape-rendering="crispEdges"><path fill="#06162a" d="M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM8 0h1v1h-1zM9 0h1v1h-1zM10 0h1v1h-1zM12 0h1v1h-1zM13 0h1v1h-1zM14 0h1v1h-1zM15 0h1v1h-1zM16 0h1v1h-1zM18 0h1v1h-1zM19 0h1v1h-1zM20 0h1v1h-1zM21 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM24 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM10 1h1v1h-1zM11 1h1v1h-1zM12 1h1v1h-1zM18 1h1v1h-1zM24 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM8 2h1v1h-1zM9 2h1v1h-1zM11 2h1v1h-1zM13 2h1v1h-1zM14 2h1v1h-1zM15 2h1v1h-1zM18 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM22 2h1v1h-1zM24 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM10 3h1v1h-1zM11 3h1v1h-1zM14 3h1v1h-1zM18 3h1v1h-1zM20 3h1v1h-1zM21 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM9 4h1v1h-1zM10 4h1v1h-1zM12 4h1v1h-1zM13 4h1v1h-1zM14 4h1v1h-1zM15 4h1v1h-1zM16 4h1v1h-1zM18 4h1v1h-1zM20 4h1v1h-1zM21 4h1v1h-1zM22 4h1v1h-1zM24 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM9 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM15 5h1v1h-1zM18 5h1v1h-1zM24 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM19 6h1v1h-1zM20 6h1v1h-1zM21 6h1v1h-1zM22 6h1v1h-1zM23 6h1v1h-1zM24 6h1v1h-1zM9 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM13 7h1v1h-1zM14 7h1v1h-1zM16 7h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM7 8h1v1h-1zM9 8h1v1h-1zM11 8h1v1h-1zM14 8h1v1h-1zM15 8h1v1h-1zM17 8h1v1h-1zM19 8h1v1h-1zM20 8h1v1h-1zM21 8h1v1h-1zM22 8h1v1h-1zM24 8h1v1h-1zM0 9h1v1h-1zM2 9h1v1h-1zM3 9h1v1h-1zM4 9h1v1h-1zM9 9h1v1h-1zM13 9h1v1h-1zM14 9h1v1h-1zM16 9h1v1h-1zM17 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM22 9h1v1h-1zM24 9h1v1h-1zM1 10h1v1h-1zM2 10h1v1h-1zM3 10h1v1h-1zM5 10h1v1h-1zM6 10h1v1h-1zM7 10h1v1h-1zM8 10h1v1h-1zM9 10h1v1h-1zM12 10h1v1h-1zM15 10h1v1h-1zM16 10h1v1h-1zM21 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM0 11h1v1h-1zM2 11h1v1h-1zM3 11h1v1h-1zM4 11h1v1h-1zM5 11h1v1h-1zM8 11h1v1h-1zM12 11h1v1h-1zM14 11h1v1h-1zM15 11h1v1h-1zM16 11h1v1h-1zM20 11h1v1h-1zM21 11h1v1h-1zM23 11h1v1h-1zM24 11h1v1h-1zM1 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM10 12h1v1h-1zM11 12h1v1h-1zM12 12h1v1h-1zM14 12h1v1h-1zM16 12h1v1h-1zM17 12h1v1h-1zM20 12h1v1h-1zM24 12h1v1h-1zM3 13h1v1h-1zM5 13h1v1h-1zM8 13h1v1h-1zM10 13h1v1h-1zM12 13h1v1h-1zM13 13h1v1h-1zM14 13h1v1h-1zM16 13h1v1h-1zM17 13h1v1h-1zM18 13h1v1h-1zM20 13h1v1h-1zM22 13h1v1h-1zM24 13h1v1h-1zM2 14h1v1h-1zM3 14h1v1h-1zM4 14h1v1h-1zM6 14h1v1h-1zM7 14h1v1h-1zM8 14h1v1h-1zM9 14h1v1h-1zM11 14h1v1h-1zM12 14h1v1h-1zM14 14h1v1h-1zM15 14h1v1h-1zM18 14h1v1h-1zM20 14h1v1h-1zM23 14h1v1h-1zM24 14h1v1h-1zM1 15h1v1h-1zM2 15h1v1h-1zM3 15h1v1h-1zM5 15h1v1h-1zM7 15h1v1h-1zM10 15h1v1h-1zM12 15h1v1h-1zM14 15h1v1h-1zM15 15h1v1h-1zM16 15h1v1h-1zM17 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM0 16h1v1h-1zM3 16h1v1h-1zM4 16h1v1h-1zM5 16h1v1h-1zM6 16h1v1h-1zM9 16h1v1h-1zM12 16h1v1h-1zM13 16h1v1h-1zM14 16h1v1h-1zM15 16h1v1h-1zM16 16h1v1h-1zM17 16h1v1h-1zM18 16h1v1h-1zM19 16h1v1h-1zM20 16h1v1h-1zM21 16h1v1h-1zM23 16h1v1h-1zM9 17h1v1h-1zM10 17h1v1h-1zM11 17h1v1h-1zM12 17h1v1h-1zM13 17h1v1h-1zM14 17h1v1h-1zM15 17h1v1h-1zM16 17h1v1h-1zM20 17h1v1h-1zM23 17h1v1h-1zM0 18h1v1h-1zM1 18h1v1h-1zM2 18h1v1h-1zM3 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM6 18h1v1h-1zM8 18h1v1h-1zM10 18h1v1h-1zM12 18h1v1h-1zM14 18h1v1h-1zM16 18h1v1h-1zM18 18h1v1h-1zM20 18h1v1h-1zM21 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM8 19h1v1h-1zM9 19h1v1h-1zM10 19h1v1h-1zM11 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM14 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM20 19h1v1h-1zM23 19h1v1h-1zM24 19h1v1h-1zM0 20h1v1h-1zM2 20h1v1h-1zM3 20h1v1h-1zM4 20h1v1h-1zM6 20h1v1h-1zM8 20h1v1h-1zM10 20h1v1h-1zM12 20h1v1h-1zM14 20h1v1h-1zM15 20h1v1h-1zM16 20h1v1h-1zM17 20h1v1h-1zM18 20h1v1h-1zM19 20h1v1h-1zM20 20h1v1h-1zM21 20h1v1h-1zM23 20h1v1h-1zM24 20h1v1h-1zM0 21h1v1h-1zM2 21h1v1h-1zM3 21h1v1h-1zM4 21h1v1h-1zM6 21h1v1h-1zM8 21h1v1h-1zM10 21h1v1h-1zM13 21h1v1h-1zM14 21h1v1h-1zM17 21h1v1h-1zM19 21h1v1h-1zM21 21h1v1h-1zM22 21h1v1h-1zM23 21h1v1h-1zM24 21h1v1h-1zM0 22h1v1h-1zM2 22h1v1h-1zM3 22h1v1h-1zM4 22h1v1h-1zM6 22h1v1h-1zM8 22h1v1h-1zM12 22h1v1h-1zM16 22h1v1h-1zM18 22h1v1h-1zM20 22h1v1h-1zM21 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM9 23h1v1h-1zM10 23h1v1h-1zM12 23h1v1h-1zM13 23h1v1h-1zM14 23h1v1h-1zM18 23h1v1h-1zM19 23h1v1h-1zM21 23h1v1h-1zM24 23h1v1h-1zM0 24h1v1h-1zM1 24h1v1h-1zM2 24h1v1h-1zM3 24h1v1h-1zM4 24h1v1h-1zM5 24h1v1h-1zM6 24h1v1h-1zM10 24h1v1h-1zM11 24h1v1h-1zM12 24h1v1h-1zM14 24h1v1h-1zM15 24h1v1h-1zM18 24h1v1h-1zM19 24h1v1h-1zM21 24h1v1h-1zM22 24h1v1h-1zM23 24h1v1h-1zM24 24h1v1h-1z"/></svg></div>
+            <div class="cam__frame"><i></i><i></i><i></i><i></i></div>
+            <div class="cam__line"></div>
+            <span class="cam__hint">QR-code gevonden</span>
+          </div>
+          <div class="cam__flash"></div>
+          <div class="pass">
+            <div class="pass__scroll">
+              <span class="pass__url"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>qr.veripasso.com/p/7BA8…</span>
+              <div class="pass__hero">
+                <span class="pass__issuer"><svg viewBox="0 0 280 280"><path fill="#72E600" d="M34 42C20 52 18 72 27 91l78 145c8 15 29 16 38 1l24-42-68-132C85 36 55 27 34 42Z"/><path fill="#1476FF" d="M222 38c21-9 40 10 35 32l-31 142c-3 14-12 26-25 33l-59 31c-14 7-30-4-26-20l49-181c7-18 31-30 57-37Z"/></svg>Voorbeeldfabrikant B.V.</span>
+                <span class="pass__name">Bureaustoel Nova</span>
+                <span class="pass__badge"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Gepubliceerd paspoort</span>
+              </div>
+              <div class="pass__card">
+                <span class="pass__h">Duurzaamheid</span>
+                <div class="pass__row"><span>Gerecycled materiaal</span><b>62%</b><span class="pass__bar"><i style="width:62%"></i></span></div>
+                <div class="pass__row"><span>Verwachte levensduur</span><b>12 jaar</b><span class="pass__bar"><i style="width:80%"></i></span></div>
+              </div>
+              <div class="pass__card">
+                <span class="pass__h">Materialen</span>
+                <div class="pass__tags"><span>Staal</span><span>Gerecycled PET</span><span>Aluminium</span></div>
+              </div>
+              <div class="pass__card">
+                <span class="pass__h">Documenten</span>
+                <span class="pass__doc"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Handleiding (PDF)</span>
+                <span class="pass__doc"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>CE-verklaring (PDF)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="m-chip scene__chip scene__chip--a" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></svg>Scan met de camera</p>
+      <p class="m-chip m-chip--accent scene__chip scene__chip--b" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Paspoort open, geen app</p>
+    </div>
+  </div>
+</section>
+
+<!-- waarom: wat een paspoort is en voor wie -->
+<section id="waarom" aria-labelledby="waarom-title">
+  <div class="m-band m-band--paper" data-motion="band" aria-hidden="true"></div>
+  <div class="l-wrap">
+    <div class="l-head">
+      <h2 class="m-text-3" id="waarom-title" data-motion="caption">Productinformatie die met het product meereist.</h2>
+      <p class="m-text-4 waarom__lead" data-motion="read">De Europese Ecodesignverordening (ESPR) en de Batterijverordening maken het digitale productpaspoort stap voor stap verplicht. VeriPasso zet je productgegevens om in een paspoort dat iedereen kan openen, en dat blijft kloppen zolang het product bestaat.</p>
+    </div>
+    <div class="waarom__grid">
+      <article class="waarom__card">
+        <p class="waarom__num">01</p>
+        <h3 class="m-text-5">Voor jouw klanten</h3>
+        <p class="m-text-8">Wie de QR-code scant, ziet materialen, duurzaamheid, onderdelen en documenten. Op elke telefoon, zonder account en zonder app.</p>
+      </article>
+      <article class="waarom__card">
+        <p class="waarom__num">02</p>
+        <h3 class="m-text-5">Voor reparateurs en toezicht</h3>
+        <p class="m-text-8">Reparateurs, recyclers en autoriteiten krijgen met een eigen toegangstoken precies de documenten die voor hen bedoeld zijn.</p>
+      </article>
+      <article class="waarom__card">
+        <p class="waarom__num">03</p>
+        <h3 class="m-text-5">Voor jouw bedrijf</h3>
+        <p class="m-text-8">Eén plek voor productgegevens, documenten en QR-codes. Elke wijziging wordt een vaste versie, zodat je altijd kunt laten zien wat er wanneer op het paspoort stond.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- paspoort: stappen links, telefoon rechts die het paspoort opbouwt per stap -->
+<section class="on-dark" id="paspoort" aria-labelledby="paspoort-title">
+  <div class="m-band m-band--navy" data-motion="band" aria-hidden="true"></div>
+  <div class="l-wrap">
+    <div class="l-head">
+      <h2 class="m-text-3" id="paspoort-title" data-motion="caption">Scan, en het paspoort is er.</h2>
+      <p class="m-text-4 pp__lead">Elke QR-code verwijst naar een vaste link op qr.veripasso.com. Dezelfde link werkt voor mensen en voor systemen.</p>
+    </div>
+    <div class="pp__grid">
+      <ol class="pp__list">
+        <li class="pp__item"><p class="m-text-6 pp__step">Stap 1</p><h3 class="m-text-5">De camera opent de link</h3><p class="m-text-8">Iedere smartphone leest de QR-code met de gewone camera. Het paspoort opent in de browser, ook zonder internetaccount of app.</p></li>
+        <li class="pp__item"><p class="m-text-6 pp__step">Stap 2</p><h3 class="m-text-5">Productgegevens en duurzaamheid</h3><p class="m-text-8">Naam, fabrikant, herkomst, gerecycled materiaal, levensduur en wat er in het product zit. In meerdere talen.</p></li>
+        <li class="pp__item"><p class="m-text-6 pp__step">Stap 3</p><h3 class="m-text-5">Documenten bij de hand</h3><p class="m-text-8">Handleidingen, certificaten en verklaringen staan op het paspoort. Per document bepaal je wie het mag zien.</p></li>
+        <li class="pp__item"><p class="m-text-6 pp__step">Stap 4</p><h3 class="m-text-5">Machineleesbaar op dezelfde link</h3><p class="m-text-8">Vraagt een systeem om JSON, JSON-LD of XML, dan krijgt het het paspoort in dat formaat. Met GS1 Digital Link en een API voor koppelingen.</p></li>
+        <li class="pp__item"><p class="m-text-6 pp__step">Stap 5</p><h3 class="m-text-5">Altijd bereikbaar</h3><p class="m-text-8">Ligt de server even plat, dan toont VeriPasso een noodkopie van het paspoort. De QR-code op het product blijft gewoon werken.</p></li>
+      </ol>
+      <div class="pp__aside" aria-hidden="true">
+        <div class="pp__sticky">
+          <div class="phone pp__phone">
+            <div class="phone__screen">
+              <div class="phone__notch"></div>
+              <div class="pass">
+                <div class="pass__scroll">
+                  <span class="pass__url" data-step="1"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>qr.veripasso.com/p/7BA8…</span>
+                  <div class="pass__hero" data-step="1">
+                    <span class="pass__issuer">Voorbeeldfabrikant B.V.</span>
+                    <span class="pass__name">Bureaustoel Nova</span>
+                    <span class="pass__badge"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Gepubliceerd paspoort</span>
+                  </div>
+                  <div class="pass__card" data-step="2">
+                    <span class="pass__h">Duurzaamheid</span>
+                    <div class="pass__row"><span>Gerecycled materiaal</span><b>62%</b><span class="pass__bar"><i style="width:62%"></i></span></div>
+                    <div class="pass__row"><span>Verwachte levensduur</span><b>12 jaar</b><span class="pass__bar"><i style="width:80%"></i></span></div>
+                    <div class="pass__tags"><span>Staal</span><span>Gerecycled PET</span><span>Aluminium</span></div>
+                  </div>
+                  <div class="pass__card" data-step="3">
+                    <span class="pass__h">Documenten</span>
+                    <span class="pass__doc"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Handleiding (PDF)</span>
+                    <span class="pass__doc"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>CE-verklaring (PDF)</span>
+                  </div>
+                  <div class="pass__code" data-step="4">{
+  <b>"digitalProductPassportId"</b>: "urn:uuid:7ba8…",
+  <b>"granularity"</b>: "model",
+  <b>"dppStatus"</b>: "Active"
+}</div>
+                  <div class="pass__safe" data-step="5"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Noodkopie actief · altijd bereikbaar</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- toegang: wie ziet wat (consument, professional, autoriteit) -->
+<section id="toegang" aria-labelledby="toegang-title">
+  <div class="m-band m-band--card" data-motion="band" aria-hidden="true"></div>
+  <div class="l-wrap">
+    <div class="l-head">
+      <h2 class="m-text-3" id="toegang-title" data-motion="caption">Iedereen ziet wat voor hem bedoeld is.</h2>
+      <p class="m-text-4 tg__lead">Consumenten zien de openbare gegevens. Reparateurs, recyclers en autoriteiten krijgen van jou een toegangstoken en zien daarmee meer. Interne stukken blijven intern.</p>
+    </div>
+    <div class="tg__stage on-dark" id="tg">
+      <div class="tg__intro">
+        <div class="tg__seg" role="group" aria-label="Kies wie er kijkt">
+          <span class="tg__pill" aria-hidden="true"></span>
+          <button type="button" data-level="0" aria-pressed="true">Consument</button>
+          <button type="button" data-level="1" aria-pressed="false">Professional</button>
+          <button type="button" data-level="2" aria-pressed="false">Autoriteit</button>
+        </div>
+        <p class="m-text-8 tg__who" aria-live="polite">Iedereen die de QR-code scant. Geen account nodig.</p>
+      </div>
+      <ul class="tg__list">
+        <li class="tg__row" data-min="0"><span class="tg__icon"><svg class="tg__yes" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><svg class="tg__no" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></span><span class="m-text-6">Productinformatie en duurzaamheid</span><span class="m-text-7">Naam, materialen, gerecycled aandeel, levensduur</span><span class="tg__tag">Iedereen</span></li>
+        <li class="tg__row" data-min="0"><span class="tg__icon"><svg class="tg__yes" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><svg class="tg__no" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></span><span class="m-text-6">Handleiding en CE-verklaring</span><span class="m-text-7">Documenten die je openbaar maakt</span><span class="tg__tag">Iedereen</span></li>
+        <li class="tg__row is-hidden" data-min="1"><span class="tg__icon"><svg class="tg__yes" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><svg class="tg__no" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></span><span class="m-text-6">Reparatie- en demontagehandleiding</span><span class="m-text-7">Voor reparateurs en recyclers</span><span class="tg__tag">Professional</span></li>
+        <li class="tg__row is-hidden" data-min="2"><span class="tg__icon"><svg class="tg__yes" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><svg class="tg__no" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></span><span class="m-text-6">Testrapporten</span><span class="m-text-7">Voor markttoezicht en aangemelde instanties</span><span class="tg__tag">Autoriteit</span></li>
+        <li class="tg__row is-hidden" data-min="9"><span class="tg__icon"><svg class="tg__yes" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg><svg class="tg__no" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></span><span class="m-text-6">Interne documenten</span><span class="m-text-7">Blijven altijd binnen je eigen bedrijf</span><span class="tg__tag">Intern</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- zekerheid: versies, back-ups, EU, beveiliging -->
+<section class="on-dark" id="zeker" aria-labelledby="zeker-title">
+  <div class="m-band m-band--ink" data-motion="band" aria-hidden="true"></div>
+  <div class="l-wrap">
+    <div class="l-head">
+      <h2 class="m-text-3" id="zeker-title" data-motion="caption">Gebouwd om er te blijven.</h2>
+      <p class="m-text-4 zk__lead">Een paspoort hoort het product zijn hele leven te volgen. Daarom is VeriPasso gebouwd op vaste links, vaste versies en back-ups.</p>
+    </div>
+    <ul class="zk__grid">
+      <li class="zk__card"><span class="zk__icon"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></span><h3 class="m-text-5">Elke versie bewaard</h3><p class="m-text-8">Elke wijziging wordt een vaste versie met een digitale vingerafdruk. Oude versies blijven op te vragen, ook als JSON en XML.</p></li>
+      <li class="zk__card"><span class="zk__icon"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span><h3 class="m-text-5">QR-code blijft werken</h3><p class="m-text-8">De link op het product verandert nooit. Bij een storing toont VeriPasso een noodkopie van het paspoort.</p></li>
+      <li class="zk__card"><span class="zk__icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span><h3 class="m-text-5">Versleutelde back-ups</h3><p class="m-text-8">Elke nacht een versleutelde back-up op drie plekken. Volledig herstel is getest.</p></li>
+      <li class="zk__card"><span class="zk__icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span><h3 class="m-text-5">Gegevens in de EU</h3><p class="m-text-8">Servers in Duitsland, back-ups in Finland, bestanden in Europese opslag.</p></li>
+      <li class="zk__card"><span class="zk__icon"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><h3 class="m-text-5">Veilig per bedrijf</h3><p class="m-text-8">Elk bedrijf is afgeschermd van andere bedrijven. Rollen per medewerker en inloggen met tweestapsverificatie.</p></li>
+      <li class="zk__card"><span class="zk__icon"><svg viewBox="0 0 24 24"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3M14 5l-4 14"/></svg></span><h3 class="m-text-5">Koppelen met je systemen</h3><p class="m-text-8">Een API voor ERP en PIM, met eigen sleutels per bedrijf. Paspoorten lezen, aanmaken en bijwerken.</p></li>
+    </ul>
+  </div>
+</section>
+
+<!-- stappen: drie kaarten die op elkaar schuiven -->
+<section id="stappen" aria-labelledby="stappen-title">
+  <div class="m-band m-band--paper" data-motion="band" aria-hidden="true"></div>
+  <div class="l-wrap">
+    <div class="l-head">
+      <h2 class="m-text-3" id="stappen-title" data-motion="caption">Drie stappen, dan staat je paspoort online.</h2>
+      <p class="m-text-4 st__lead">Je hebt geen technische kennis nodig. Alles gaat in de browser.</p>
+    </div>
+    <ol class="st__steps">
+      <li class="st__card" style="--i:0">
+        <p class="st__num" aria-hidden="true">1</p>
+        <div class="st__copy"><h3 class="m-text-5">Vul je product in</h3><p class="m-text-8">Naam, materialen, duurzaamheid, onderdelen en documenten. VeriPasso laat per product zien wat er nog ontbreekt.</p></div>
+        <div class="st__ui" aria-hidden="true">
+          <span class="st__check m-text-6"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Basisinformatie</span>
+          <span class="st__check m-text-6"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Duurzaamheid</span>
+          <span class="st__check m-text-6"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Documenten</span>
+        </div>
+      </li>
+      <li class="st__card" style="--i:1">
+        <p class="st__num" aria-hidden="true">2</p>
+        <div class="st__copy"><h3 class="m-text-5">Publiceer het paspoort</h3><p class="m-text-8">Met één klik staat het paspoort online. Een gepubliceerd paspoort blijft altijd bereikbaar.</p></div>
+        <div class="st__ui" aria-hidden="true">
+          <span class="m-text-6">Compleetheid 100%</span>
+          <span class="st__meter"><i></i></span>
+          <span class="st__option st__option--on m-text-6">Publiceren <span aria-hidden="true">→</span></span>
+        </div>
+      </li>
+      <li class="st__card" style="--i:2">
+        <p class="st__num" aria-hidden="true">3</p>
+        <div class="st__copy"><h3 class="m-text-5">Zet de QR-code op het product</h3><p class="m-text-8">Download de code als SVG of PNG, of als Data Matrix voor kleine onderdelen, en druk hem op het product of de verpakking.</p></div>
+        <div class="st__ui" aria-hidden="true">
+          <span class="st__option st__option--on m-text-6">QR-code · SVG <span>↓</span></span>
+          <span class="st__option m-text-6">QR-code · PNG <span>↓</span></span>
+          <span class="st__option m-text-6">Data Matrix <span>↓</span></span>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- vragen -->
+<section id="vragen" aria-labelledby="vragen-title">
+  <div class="m-band m-band--card" data-motion="band" aria-hidden="true"></div>
+  <div class="l-wrap faq__inner">
+    <div class="faq__head">
+      <h2 class="m-text-3" id="vragen-title" data-motion="caption">Vragen, eerlijk beantwoord.</h2>
+      <p class="m-text-8">Staat je vraag er niet bij? <a class="m-link" href="#contact">Neem contact op</a>.</p>
+    </div>
+    <div class="faq__list">
+      <details class="faq__item"><summary class="m-text-5">Wat is een digitaal productpaspoort?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">Een digitale verzameling gegevens over een product: wat erin zit, hoe duurzaam het is, hoe je het repareert en welke documenten erbij horen. De EU maakt het via de Ecodesignverordening (ESPR) per productgroep verplicht; batterijen zijn de eerste, vanaf februari 2027.</p></details>
+      <details class="faq__item"><summary class="m-text-5">Moeten mijn klanten een app installeren?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">Nee. De gewone camera van een telefoon leest de QR-code en het paspoort opent in de browser. Er is geen account nodig en VeriPasso zet geen cookies op de paspoortpagina.</p></details>
+      <details class="faq__item"><summary class="m-text-5">Wat gebeurt er met de QR-code als ik iets wijzig?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">De QR-code blijft precies hetzelfde. Het paspoort toont de nieuwe gegevens en de vorige versie wordt bewaard, met datum en een digitale vingerafdruk.</p></details>
+      <details class="faq__item"><summary class="m-text-5">Wat als VeriPasso even niet bereikbaar is?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">Dan toont VeriPasso een noodkopie van elk gepubliceerd paspoort. Daarnaast is er elke nacht een versleutelde back-up op drie plekken, en is volledig herstel getest.</p></details>
+      <details class="faq__item"><summary class="m-text-5">Waar staan mijn gegevens?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">In de EU: de applicatie en database in Duitsland, back-ups in Finland, foto's en documenten in Europese opslag.</p></details>
+      <details class="faq__item"><summary class="m-text-5">Kan ik VeriPasso koppelen aan mijn eigen systemen?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">Ja. Met een API-sleutel lees, maak en wijzig je paspoorten vanuit bijvoorbeeld je ERP of PIM. Elk paspoort is ook op te vragen als JSON, JSON-LD of XML.</p></details>
+      <details class="faq__item"><summary class="m-text-5">Moet ik mijn paspoorten bij de EU aanmelden?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">Voor sommige productgroepen wel, eerst voor batterijen. Dat doet je bedrijf zelf in het EU-register. VeriPasso geeft je de gegevens om over te nemen en een checklist voor de stappen.</p></details>
+      <details class="faq__item"><summary class="m-text-5">Wat kost VeriPasso?<span class="faq__icon" aria-hidden="true"></span></summary><p class="m-text-8">Dat hangt af van het aantal producten en gebruikers. Vraag een demo aan, dan maken we een voorstel op maat.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- start: oproep om een demo aan te vragen -->
+<section class="on-dark" id="start" aria-labelledby="start-title">
+  <div class="m-band m-band--card" aria-hidden="true"></div>
+  <div class="l-wrap">
+    <div class="start__window">
+      <div class="start__copy">
+        <h2 class="m-text-3" id="start-title" data-motion="caption">Klaar voor het digitale productpaspoort?</h2>
+        <p class="m-text-4">Zie in een korte demo hoe VeriPasso je productgegevens omzet in een paspoort met een vaste QR-code.</p>
+        <div class="start__actions">
+          <a class="m-btn" href="mailto:rb085@icloud.com?subject=Demo%20VeriPasso%20aanvragen"><span class="m-btn__label">Demo aanvragen</span></a>
+          <a class="m-link m-text-6" href="https://app.veripasso.com/login">Al klant? Inloggen</a>
+        </div>
+      </div>
+      <svg class="start__mark" viewBox="0 0 280 280" aria-hidden="true"><path fill="#72E600" d="M34 42C20 52 18 72 27 91l78 145c8 15 29 16 38 1l24-42-68-132C85 36 55 27 34 42Z"/><path fill="#1476FF" d="M222 38c21-9 40 10 35 32l-31 142c-3 14-12 26-25 33l-59 31c-14 7-30-4-26-20l49-181c7-18 31-30 57-37Z"/><path fill="#FFFFFF" d="M174 91h47c7 0 12 5 12 12s-5 12-12 12h-47c-7 0-12-5-12-12s5-12 12-12Zm-10 45h48c7 0 12 5 12 12s-5 12-12 12h-48c-7 0-12-5-12-12s5-12 12-12Z"/></svg>
+    </div>
+  </div>
+</section>
+
+<!-- contact -->
+<section id="contact" aria-labelledby="contact-title">
+  <div class="m-band m-band--card" aria-hidden="true"></div>
+  <div class="l-wrap contact__inner">
+    <div class="contact__info">
+      <h2 class="m-text-3" id="contact-title" data-motion="caption">Praat met een mens.</h2>
+      <p class="m-text-4">Vragen over het digitale productpaspoort, een demo of je productgroep? We denken graag mee.</p>
+    </div>
+    <div class="contact__ways">
+      <a class="contact__way" href="mailto:rb085@icloud.com"><span class="m-text-6">E-mail</span><span class="m-text-5">rb085@icloud.com</span></a>
+      <a class="contact__way" href="tel:+31641227451"><span class="m-text-6">Telefoon</span><span class="m-text-5">+31 6 41227451</span></a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="on-dark" id="footer" aria-labelledby="footer-title">
+  <div class="l-wrap">
+    <div class="footer__top">
+      <div class="footer__pitch">
+        <h2 class="m-text-5" id="footer-title">Digitale productpaspoorten met een QR-code die altijd werkt.</h2>
+        <p class="m-text-4">Productgegevens, documenten en QR-codes op één plek, volgens de Europese regels.</p>
+        <a class="m-btn" href="#start"><span class="m-btn__label">Demo aanvragen</span></a>
+      </div>
+      <div class="footer__cols">
+        <div class="footer__col"><h2 class="m-text-6">Product</h2><ul class="m-text-8"><li><a class="m-link-2" href="#paspoort">Hoe het werkt</a></li><li><a class="m-link-2" href="#toegang">Wie ziet wat</a></li><li><a class="m-link-2" href="#zeker">Zekerheid</a></li><li><a class="m-link-2" href="#vragen">Vragen</a></li></ul></div>
+        <div class="footer__col"><h2 class="m-text-6">Klanten</h2><ul class="m-text-8"><li><a class="m-link-2" href="https://app.veripasso.com/login">Inloggen</a></li><li><a class="m-link-2" href="#stappen">Zo start je</a></li><li><a class="m-link-2" href="#start">Demo aanvragen</a></li></ul></div>
+        <div class="footer__col"><h2 class="m-text-6">Contact</h2><ul class="m-text-8"><li><a class="m-link-2" href="mailto:rb085@icloud.com">rb085@icloud.com</a></li><li><a class="m-link-2" href="tel:+31641227451">+31 6 41227451</a></li><li><a class="m-link-2" href="https://robertdev.nl" rel="noopener">Robertdev.nl</a></li></ul></div>
+      </div>
+    </div>
+    <div class="footer__brand" aria-hidden="true">
+      <svg class="footer__logo" viewBox="0 0 280 280"><path fill="#72E600" d="M34 42C20 52 18 72 27 91l78 145c8 15 29 16 38 1l24-42-68-132C85 36 55 27 34 42Z"/><path fill="#1476FF" d="M222 38c21-9 40 10 35 32l-31 142c-3 14-12 26-25 33l-59 31c-14 7-30-4-26-20l49-181c7-18 31-30 57-37Z"/><path fill="#FFFFFF" d="M174 91h47c7 0 12 5 12 12s-5 12-12 12h-47c-7 0-12-5-12-12s5-12 12-12Zm-10 45h48c7 0 12 5 12 12s-5 12-12 12h-48c-7 0-12-5-12-12s5-12 12-12Z"/></svg>
+      <span class="footer__word">VeriPasso</span>
+    </div>
+    <div class="footer__legal m-text-7">
+      <p>© 2026 VeriPasso, een platform van Robertdev.nl</p>
+      <ul><li><a class="m-link-2" href="https://8b.com/templates/linea/" rel="noopener">Design: 8B</a></li></ul>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.3.27/dist/lenis.min.js"></script>
+<script>
+// Navigatie: hoogte meten (voor de gestapelde kaarten) en het telefoonmenu.
+(() => {
+  const root = document.getElementById('nav');
+  const bar = root.querySelector('.nav__bar');
+  const toggle = root.querySelector('.nav__toggle');
+  const menu = root.querySelector('.menu');
+  const close = root.querySelector('.menu__close');
+  const measure = () => document.documentElement.style.setProperty('--page-nav-h', `${Math.ceil(bar.getBoundingClientRect().bottom + 12)}px`);
+  measure();
+  addEventListener('resize', measure);
+  const open = () => { menu.hidden = false; toggle.setAttribute('aria-expanded', 'true'); window.lenis?.stop(); close.focus(); };
+  const shut = (focusToggle = true) => { menu.hidden = true; toggle.setAttribute('aria-expanded', 'false'); window.lenis?.start(); if (focusToggle) toggle.focus(); };
+  toggle.addEventListener('click', open);
+  close.addEventListener('click', () => shut());
+  menu.addEventListener('click', event => { if (event.target.closest('a')) shut(false); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !menu.hidden) shut(); });
+})();
+
+// Wie ziet wat: werkt ook zonder GSAP en bij verminderde beweging (dan zonder automatisch wisselen).
+(() => {
+  const stage = document.getElementById('tg');
+  const buttons = [...stage.querySelectorAll('.tg__seg button')];
+  const pill = stage.querySelector('.tg__pill');
+  const rows = [...stage.querySelectorAll('.tg__row')];
+  const who = stage.querySelector('.tg__who');
+  const texts = [
+    'Iedereen die de QR-code scant. Geen account nodig.',
+    'Reparateurs en recyclers met een toegangstoken van jouw bedrijf.',
+    'Markttoezicht, aangemelde instanties en de Europese Commissie, met een toegangstoken.'
+  ];
+  let level = 0, timer = null;
+  const show = next => {
+    level = next;
+    buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === level)));
+    pill.style.translate = `${level * 100}% 0`;
+    rows.forEach(row => row.classList.toggle('is-hidden', Number(row.dataset.min) > level));
+    who.textContent = texts[level];
+  };
+  buttons.forEach((b, i) => b.addEventListener('click', () => { clearInterval(timer); timer = null; show(i); }));
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!calm && 'IntersectionObserver' in window) {
+    let stopped = false;
+    buttons.forEach(b => b.addEventListener('click', () => { stopped = true; }));
+    new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !timer && !stopped) timer = setInterval(() => show((level + 1) % 3), 2600);
+      if (!entry.isIntersecting && timer) { clearInterval(timer); timer = null; }
+    }, { threshold: 0.4 }).observe(stage);
+  }
+  show(0);
+})();
+
+// Hero-lijnen pauzeren buiten beeld.
+(() => {
+  const hero = document.getElementById('hero');
+  if ('IntersectionObserver' in window) new IntersectionObserver(([entry]) => hero.classList.toggle('is-paused', !entry.isIntersecting)).observe(hero);
+})();
+</script>
+<script>
+// Beweging (alleen als GSAP geladen is en er geen verminderde beweging gevraagd wordt).
+(() => {
+  if (!window.gsap || !window.ScrollTrigger) return;
+  gsap.registerPlugin(ScrollTrigger, ...(window.SplitText ? [SplitText] : []));
+  const mm = gsap.matchMedia();
+
+  mm.add('(prefers-reduced-motion: no-preference)', () => {
+    // Zacht scrollen.
+    if (window.Lenis) {
+      const bar = document.querySelector('#nav .nav__bar');
+      const lenis = window.lenis = new Lenis({ lerp: 0.085, anchors: { offset: -(bar ? Math.ceil(bar.getBoundingClientRect().bottom) : 0) } });
+      const tick = time => lenis.raf(time * 1000);
+      lenis.on('scroll', ScrollTrigger.update);
+      gsap.ticker.add(tick);
+      gsap.ticker.lagSmoothing(0);
+    }
+
+    // Koppen schuiven regel voor regel omhoog; inleidingen kleuren mee met het scrollen.
+    document.fonts.ready.then(() => {
+      document.querySelectorAll('[data-motion="caption"]').forEach(heading => {
+        if (!window.SplitText) return;
+        const split = SplitText.create(heading, { type: 'lines', mask: 'lines' });
+        const tl = gsap.timeline({ paused: true, onComplete: () => split.revert() })
+          .from(split.lines, { yPercent: 108, duration: 1, ease: 'expo.out', stagger: 0.09 });
+        ScrollTrigger.create({ trigger: heading, start: 'top 88%', once: true, onEnter: () => tl.play() });
+      });
+      document.querySelectorAll('[data-motion="read"]').forEach(element => {
+        if (!window.SplitText) return;
+        const split = SplitText.create(element, { type: 'words' });
+        const ink = getComputedStyle(element).color;
+        const faint = ink.replace(/^rgb\((.+)\)$/, 'rgba($1, 0.22)');
+        ScrollTrigger.create({ trigger: element, start: 'top 88%', end: 'bottom 60%', scrub: true,
+          animation: gsap.fromTo(split.words, { color: faint }, { color: ink, ease: 'none', stagger: 0.12, duration: 0.6 }) });
+      });
+      ScrollTrigger.refresh();
+    });
+
+    // Banden met ronde hoeken komen breed binnen (zoals in de template).
+    document.querySelectorAll('[data-motion="band"]').forEach(sheet => {
+      const radius = parseFloat((getComputedStyle(sheet).clipPath.match(/round\s+([\d.]+)px/) || [])[1]) || 56;
+      const side = innerWidth < 768 ? 2.5 : 4;
+      gsap.fromTo(sheet,
+        { clipPath: `inset(0% ${side}% 0% ${side}% round ${radius * 2.6}px ${radius * 2.6}px 0px 0px)` },
+        { clipPath: `inset(0% 0% 0% 0% round ${radius}px ${radius}px 0px 0px)`, ease: 'none',
+          scrollTrigger: { trigger: sheet.parentElement, start: 'top bottom', end: 'top 25%', scrub: true } });
+    });
+
+    // DE FILM: telefoon schuift naar het label, scant, flits, paspoort opent en scrolt.
+    const scene = document.getElementById('scene');
+    scene.classList.add('is-live');
+    const phone = scene.querySelector('.scene__phone');
+    const cam = scene.querySelector('.cam');
+    const line = scene.querySelector('.cam__line');
+    const hint = scene.querySelector('.cam__hint');
+    const frame = scene.querySelectorAll('.cam__frame i');
+    const flash = scene.querySelector('.cam__flash');
+    const pass = scene.querySelector('.pass');
+    const scroll = scene.querySelector('.pass__scroll');
+    const cards = scene.querySelectorAll('.pass__hero, .pass__card');
+    const bars = scene.querySelectorAll('.pass__bar i');
+    const chips = scene.querySelectorAll('.scene__chip');
+    gsap.set(pass, { yPercent: 100 });
+    gsap.set(chips, { autoAlpha: 0, y: 12 });
+    const film = gsap.timeline({ repeat: -1, repeatDelay: 0.6, defaults: { ease: 'power2.inOut' } })
+      .set(cam, { autoAlpha: 1 })
+      .set(hint, { autoAlpha: 0 })
+      .set(line, { top: '13%' })
+      .fromTo(phone, { x: '14%', y: '10%', rotation: 9 }, { x: '-22%', y: '6%', rotation: -3, duration: 1.3 })
+      .to(chips[0], { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, '-=0.6')
+      .to(line, { top: '85%', duration: 0.75, ease: 'sine.inOut', repeat: 1, yoyo: true })
+      .to(frame, { scale: 0.9, duration: 0.25, stagger: 0.03, yoyo: true, repeat: 1, ease: 'power1.inOut' }, '-=0.4')
+      .to(hint, { autoAlpha: 1, duration: 0.25 }, '<')
+      .to(flash, { opacity: 0.9, duration: 0.08, ease: 'none' })
+      .set(cam, { autoAlpha: 0 })
+      .to(flash, { opacity: 0, duration: 0.35, ease: 'power1.out' })
+      .to(pass, { yPercent: 0, duration: 0.6, ease: 'expo.out' }, '<')
+      .to(chips[0], { autoAlpha: 0, y: -8, duration: 0.3 }, '<')
+      .from(cards, { y: 18, autoAlpha: 0, duration: 0.45, stagger: 0.14, ease: 'power2.out' }, '-=0.2')
+      .from(bars, { scaleX: 0, duration: 0.7, stagger: 0.1, ease: 'power2.out' }, '-=0.4')
+      .to(chips[1], { autoAlpha: 1, y: 0, duration: 0.4, ease: 'power2.out' }, '-=0.3')
+      .to(phone, { x: '4%', y: '3%', rotation: 3, duration: 1.1 }, '<')
+      .to(scroll, { y: () => -Math.max(0, scroll.scrollHeight - pass.clientHeight + 12), duration: 1.6, ease: 'sine.inOut' }, '+=0.6')
+      .to({}, { duration: 1.4 })
+      .to(chips[1], { autoAlpha: 0, y: 8, duration: 0.3 })
+      .to(pass, { yPercent: 100, duration: 0.5, ease: 'power2.in' }, '<')
+      .set(scroll, { y: 0 })
+      .to(phone, { x: '14%', y: '10%', rotation: 9, duration: 0.8 }, '<');
+    ScrollTrigger.create({ trigger: scene, start: 'top bottom', end: 'bottom top', onToggle: self => (self.isActive ? film.play() : film.pause()) });
+
+    // Paspoort-sectie: per stap verschijnt een onderdeel op de telefoon.
+    const pp = document.getElementById('paspoort');
+    const items = [...pp.querySelectorAll('.pp__item')];
+    const steps = items.map((_, i) => [...pp.querySelectorAll(`.pp__phone [data-step="${i + 1}"]`)]);
+    const ppLine = innerWidth >= 768 ? '58%' : '52%';
+    const tl = gsap.timeline({ defaults: { ease: 'none' }, scrollTrigger: { trigger: items[0], start: `top ${ppLine}`, endTrigger: items[items.length - 1], end: `bottom ${ppLine}`, scrub: true } });
+    items.forEach((item, i) => {
+      if (i > 0) tl.fromTo(item, { opacity: 0.32 }, { opacity: 1, duration: 0.25 }, i - 0.1);
+      if (i < items.length - 1) tl.to(item, { opacity: 0.32, duration: 0.25 }, i + 0.9);
+      if (steps[i].length) tl.from(steps[i], { opacity: 0, y: 14, scale: 0.94, transformOrigin: '50% 100%', duration: 0.3, stagger: 0.18, ease: 'power2.out' }, i + 0.05);
+    });
+    tl.to(items.slice(0, -1), { opacity: 1, duration: 0.3 }, items.length - 0.1);
+
+    // Stappen: kaarten schuiven op elkaar en de onderste krimpt een beetje.
+    const st = document.getElementById('stappen');
+    st.classList.add('is-stacked');
+    const cardsSt = [...st.querySelectorAll('.st__card')];
+    cardsSt.slice(0, -1).forEach((card, i) => {
+      gsap.to(card, { scale: 0.94, ease: 'none', scrollTrigger: { trigger: cardsSt[i + 1], start: 'top bottom', end: 'top top+=120', scrub: true } });
+    });
+    gsap.from(st.querySelector('.st__meter i'), { scaleX: 0, transformOrigin: '0 50%', ease: 'power2.out', duration: 1.2, scrollTrigger: { trigger: cardsSt[1], start: 'top 70%' } });
+
+    // Footer: het woordmerk komt omhoog.
+    gsap.from('#footer .footer__brand > *', { yPercent: 60, opacity: 0, duration: 1.1, ease: 'expo.out', stagger: 0.08, scrollTrigger: { trigger: '#footer .footer__brand', start: 'top 92%' } });
+
+    return () => {
+      scene.classList.remove('is-live');
+      st.classList.remove('is-stacked');
+      if (window.lenis) { window.lenis.destroy(); window.lenis = null; }
+    };
+  });
+})();
+</script>
+</body>
+</html>
