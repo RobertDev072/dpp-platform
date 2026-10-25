@@ -106,9 +106,10 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   versioning aan als tweede slot).
 - **QR**: formaat `{QR_BASE_URL}/p/{PUBLIC_ID}` met `QR_BASE_URL=https://qr.veripasso.com`.
   De GUID staat in **hoofdletters** (zo staat hij op de gedrukte codes); opzoeken werkt
-  hoofdletterongevoelig. Een QR identificeert een **productmodel**, een **batch** of een
-  **exemplaar** (serienummer); elk heeft een eigen permanente id (tabblad "Batches &
-  exemplaren"). Vrije ruimte 4 modules (ISO/IEC 18004); ook **Data Matrix** (ISO/IEC 16022) en
+  hoofdletterongevoelig. In de app heeft een product **één QR-code** (het model). Batch- en
+  exemplaarpaspoorten (eigen permanente id per productieronde of serienummer) bestaan technisch
+  nog en bestaande codes blijven werken, maar het tabblad is op 2026-10-25 uit de app gehaald
+  (te ingewikkeld); aanmaken kan alleen nog via de API. Vrije ruimte 4 modules (ISO/IEC 18004); ook **Data Matrix** (ISO/IEC 16022) en
   **GS1 Digital Link** (`qr.veripasso.com/01/{GTIN}/10/{lot}/21/{serie}`, met resolver).
   `qr.veripasso.com` nooit weghalen of laten verlopen.
 - **Persistentie**: gepubliceerde paspoorten blijven publiek, ook na archiveren (met
@@ -142,7 +143,7 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   toegangstokens (`vpa_…`) die het bedrijf uitgeeft; per document *Zichtbaar voor*. Antwoorden
   met een token worden nooit gedeeld gecachet. Zie docs/dpp-datamodel.md.
 - **EU DPP-register**: de klant registreert zelf (EU Login + QSeal). VeriPasso levert de
-  registratiegegevens (UPI per exemplaar, model-/batch-ID; CSV-werklijst per 100), controleert ze vooraf en
+  registratiegegevens (UPI en modelnummer; CSV-werklijst), controleert ze vooraf en
   legt de uitkomst vast (URI, correlation ID, status, foutcode, paspoortversie). Productgroep per
   product (registerkaart alleen actief bij batterijen); verificatiedatums van het bedrijf met een
   melding 60 dagen voor het verlopen. Zie docs/eu-register-en-backup.md en de

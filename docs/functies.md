@@ -42,7 +42,7 @@ Elk bedrijf is volledig afgeschermd van andere bedrijven (op de server gecontrol
 ### Producten
 - Lijst met zoeken, filters, sorteren, bulkacties (publiceren, archiveren), export naar Excel en
   QR-codes van meerdere producten tegelijk (ZIP).
-- Per product zes tabbladen:
+- Per product vijf tabbladen:
   1. **Basisinformatie**: naam, categorie, merk, **productgroep** (Batterij, Textiel, … of *Nog
      niet bekend*), omschrijving, SKU, GTIN, model, fabrikant, land, productielocatie, taal,
      toepasselijke wetgeving, vertalingen.
@@ -52,10 +52,12 @@ Elk bedrijf is volledig afgeschermd van andere bedrijven (op de server gecontrol
   4. **Documenten**: uploaden of linken; per document *Zichtbaar voor*: iedereen,
      professionals, alleen autoriteiten of alleen intern (standaard *alleen intern*);
      geldigheidsdatum en versie.
-  5. **Batches & exemplaren**: extra QR-codes per productieronde (batch) of per stuk
-     (exemplaar met serienummer); uitleg "Wanneer gebruik ik wat?", bevestiging vóór aanmaken,
-     download van alle QR-codes als ZIP en een overzicht voor de drukker (CSV).
-  6. **QR-code**: QR-code of Data Matrix downloaden (SVG/PNG), en de kaart **EU-register**.
+  5. **QR-code**: QR-code of Data Matrix downloaden (SVG/PNG), en de kaart **EU-register**.
+- **Eén QR-code per product** (het model). De optie *Batches & exemplaren* (extra codes per
+  productieronde of per stuk) is op 2026-10-25 uit de app gehaald om het eenvoudig te houden.
+  Bestaande batch- en exemplaarcodes blijven werken (een gepubliceerd paspoort blijft altijd
+  bereikbaar); de techniek erachter is er nog, dus de optie kan later terug (bijv. voor
+  batterijen, die de EU vanaf februari 2027 per exemplaar wil).
 - **Compleetheid**: per product een percentage met wat nog ontbreekt.
 - **Publiceren**: vanaf dan is het paspoort openbaar. Een gepubliceerd paspoort kan niet meer
   terug naar concept en blijft altijd bereikbaar, ook na archiveren of als het abonnement stopt.

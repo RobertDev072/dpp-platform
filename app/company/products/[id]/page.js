@@ -19,7 +19,6 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import NumberField from "@/components/products/NumberField";
 import DocumentsTab from "@/components/products/DocumentsTab";
-import InstancesTab from "@/components/products/InstancesTab";
 import RegistryCard from "@/components/products/RegistryCard";
 import { PRODUCT_GROUPS } from "@/lib/productGroups";
 
@@ -45,12 +44,12 @@ const TABS = [
   { key: "sustainability", label: "Duurzaamheid" },
   { key: "compliance", label: "Compliance" },
   { key: "documents", label: "Documenten" },
-  { key: "instances", label: "Batches & exemplaren" },
   { key: "qr", label: "QR-code" }
 ];
 const TAB_KEYS = TABS.map((t) => t.key);
 // Oude links (?tab=overview) blijven werken.
-const TAB_ALIASES = { overview: "basis" };
+// Batches & exemplaren is uit de app gehaald (te ingewikkeld); oude links gaan naar Basis.
+const TAB_ALIASES = { overview: "basis", instances: "basis" };
 
 function percentageValidator(value) {
   if (value === "" || value == null) return null;
@@ -266,7 +265,6 @@ function ProductEditor() {
           {tab === "sustainability" && <SustainabilityTab productId={id} onSaved={loadProduct} />}
           {tab === "compliance" && <ComplianceTab productId={id} onSaved={loadProduct} onOpenDocuments={() => goTo("documents")} />}
           {tab === "documents" && <DocumentsTab productId={id} onChanged={loadProduct} />}
-          {tab === "instances" && <InstancesTab product={product} />}
           {tab === "qr" && (
             <div className="space-y-4">
               <QrTab product={product} onChanged={loadProduct} />

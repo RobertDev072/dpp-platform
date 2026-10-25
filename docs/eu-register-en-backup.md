@@ -59,13 +59,13 @@ de vroegste datum verschijnt een melding bij het belletje (`lib/euVerification.j
 VeriPasso verstuurt bewust geen e-mail (productbesluit oktober 2026).
 
 **In VeriPasso** (product → tabblad QR-code → kaart *EU DPP-register*):
-- UPI, model-ID en granulariteit om over te nemen. **UPI per exemplaar:** elk exemplaar heeft
-  een eigen paspoort en een eigen UPI met het serienummer (`…/01/{GTIN}[/10/{lot}]/21/{serie}`);
-  de UPI zonder serienummer is die van het model (alleen model-informatie). Batterijen worden
-  per exemplaar geregistreerd.
-- *Overzicht voor handmatige invoer*: een CSV-werklijst per model, batch of exemplaar, in delen
-  van max. 100 (`GET /api/products/{id}/registration/records?granularity=item|batch|model`).
-  **Niet uploadbaar** in het register: dat accepteert alleen JSON of XML volgens zijn sjabloon.
+- Webadres (UPI) en modelnummer van het product om over te nemen, plus een CSV-werklijst
+  (niet uploadbaar in het register: dat accepteert alleen JSON of XML volgens zijn sjabloon).
+- **Exemplaren (2026-10-25):** het tabblad *Batches & exemplaren* is uit de app gehaald. Batterijen
+  moeten vanaf februari 2027 per exemplaar geregistreerd worden; de techniek bestaat nog (eigen
+  UPI per exemplaar `…/01/{GTIN}[/10/{lot}]/21/{serie}`, CSV per exemplaar via
+  `GET /api/products/{id}/registration/records?granularity=item`, in delen van max. 100), dus de
+  optie kan terug zodra een batterijklant hem nodig heeft.
 - Vooraf controleren volgens de eisen uit de handleiding: alleen https, geen afwijkende poort,
   unieke UPI's, toegestane bestandsnaam; *UPI vooraf controleren* opent de UPI (hooguit één
   doorverwijzing, nooit naar http, eindigt op 200). De handleiding noemt geen exact maximum aan

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { fetchBlob, saveBlob } from "@/lib/download";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
@@ -24,7 +23,6 @@ const CHECKLIST_URL = "/docs/veripasso-checklist-eu-register.pdf";
 
 const HELP = {
   upi: "Het vaste webadres van dit paspoort. Het verandert nooit. Dit adres vul je in het EU-register in (bij de EU heet het UPI).",
-  itemUpi: "Elk exemplaar heeft een eigen webadres met het serienummer erin. Batterijen meld je per exemplaar aan.",
   model: "Het type- of modelnummer van je product. Mag je meesturen, hoeft niet.",
   uri: "Het nummer dat de EU geeft als je aanmelding gelukt is. Bewaar dit goed: het is je bewijs.",
   correlation: "Het nummer van je aanvraag bij de EU. Handig als je contact opneemt met de EU-helpdesk.",
@@ -78,19 +76,6 @@ export default function RegistryCard({ product }) {
     }
   }
 
-  async function download(granularity) {
-    try {
-      const { blob, filename } = await fetchBlob(`/api/products/${product.id}/registration/records?granularity=${granularity}`, {
-        method: "GET",
-        fallbackName: `overzicht-${granularity}.csv`
-      });
-      saveBlob(blob, filename);
-    } catch (err) {
-      const issues = err.details?.issues;
-      toast.error(issues?.length ? `${err.message}: ${issues[0].message} (${issues[0].upi})` : err.message);
-    }
-  }
-
   async function save(event) {
     event.preventDefault();
     if (!outcome.status) {
@@ -122,8 +107,6 @@ export default function RegistryCard({ product }) {
   const [variant, label] = STATUS[reg?.status || "none"] || STATUS.none;
   const published = Boolean(product.published_at);
   const record = reg?.record;
-  const hasItems = (reg?.itemCount || 0) > 0;
-  const hasBatches = (reg?.batchCount || 0) > 0;
   const input = "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm";
   const group = productGroup(reg?.productGroup ?? product.product_group);
   const started = reg?.status && !["none", "queued"].includes(reg.status);
@@ -232,33 +215,13 @@ export default function RegistryCard({ product }) {
               <p className="text-slate-400">Publiceer het paspoort eerst; dan verschijnt hier het webadres.</p>
             ) : (
               <>
-                {hasItems ? (
-                  <>
-                    <p>
-                      Dit product heeft {reg.itemCount} exemplaren. Batterijen meld je <strong>per exemplaar</strong> aan, elk met een
-                      eigen webadres met het serienummer erin.
-                      <InfoTip text={HELP.itemUpi} />
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" size="sm" variant="accent" onClick={() => download("item")}>
-                        Overzicht exemplaren
-                      </Button>
-                      {hasBatches && (
-                        <Button type="button" size="sm" variant="outline" onClick={() => download("batch")}>
-                          Overzicht batches
-                        </Button>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <p>Kopieer het webadres van dit paspoort en plak het in het EU-register.</p>
-                )}
+                <p>Kopieer het webadres van dit paspoort en plak het in het EU-register.</p>
 
                 {record && (
                   <dl className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
                     <dt className="text-slate-500">
-                      {hasItems ? "Webadres van het model" : "Webadres paspoort"}
-                      <InfoTip text={hasItems ? `${HELP.upi} Dit adres geldt alleen voor de model-informatie.` : HELP.upi} />
+                      Webadres paspoort
+                      <InfoTip text={HELP.upi} />
                     </dt>
                     <dd className="flex min-w-0 items-center gap-2">
                       <code className="truncate text-xs text-slate-800">{record.upi}</code>
@@ -279,18 +242,6 @@ export default function RegistryCard({ product }) {
                       <li key={issue.code}>{issue.message}</li>
                     ))}
                   </ul>
-                )}
-
-                {hasItems && (
-                  <p className="text-xs text-slate-400">
-                    Het overzicht is een lijst om over te nemen (maximaal 100 per bestand). Je kunt het <strong>niet uploaden</strong> in
-                    het EU-register: dat accepteert alleen een eigen JSON- of XML-bestand.
-                  </p>
-                )}
-                {!hasItems && (
-                  <button type="button" onClick={() => download("model")} className="text-xs text-blue-600 hover:underline">
-                    Gegevens als lijst downloaden (CSV, niet om te uploaden)
-                  </button>
                 )}
 
                 <div>

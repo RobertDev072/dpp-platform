@@ -7,7 +7,6 @@ staat erbij als "→ Claude". Afvinken door `[ ]` te vervangen door `[x]`.
 
 - [ ] **Nieuwe schermen in de browser nalopen** (zijn getest met automatische tests, nog niet
       met de hand bekeken):
-      - Product → **Batches & exemplaren**: uitleg bovenaan, bevestigingsvenster, ZIP-download.
       - Product → **QR-code** → kaart **EU-register** (zet bij één testproduct de productgroep op
         *Batterij* om de stappen te zien).
       - Product → **Documenten** → keuzelijst *Zichtbaar voor*.
