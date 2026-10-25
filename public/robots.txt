@@ -1,0 +1,13 @@
+# VeriPasso. Website en openbare productpaspoorten mogen worden geïndexeerd;
+# de applicatie (inloggen, beheer) en de API niet.
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /login
+Disallow: /activate
+Disallow: /wachtwoord-vergeten
+Disallow: /admin
+Disallow: /company
+Disallow: /partner
+
+Sitemap: https://www.veripasso.com/sitemap.xml

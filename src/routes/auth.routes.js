@@ -35,6 +35,18 @@ const TEMP_EXPIRED_MESSAGE =
 // aanvaller via timing niet aftasten welke e-mailadressen bestaan.
 const FAILED_LOGIN_MIN_MS = 1200;
 
+// Meldingen bij inloggen. Bewust één melding voor "onbekend e-mailadres" en "verkeerd
+// wachtwoord": anders kan iemand van buitenaf aftasten welke adressen een account hebben.
+// Een geblokkeerd account wordt alleen genoemd als het wachtwoord klopt (dan is het geen lek).
+const INVALID_CREDENTIALS = "E-mailadres of wachtwoord klopt niet.";
+const ACCOUNT_INACTIVE =
+  "Je account is geblokkeerd of niet meer actief. Neem contact op met de beheerder van je bedrijf.";
+const invalidCredentials = () => new HttpError(401, INVALID_CREDENTIALS, undefined, "INVALID_CREDENTIALS");
+const accountInactive = () => new HttpError(403, ACCOUNT_INACTIVE, undefined, "ACCOUNT_INACTIVE");
+// Verwijderd of gearchiveerd = bestaat voor de gebruiker niet meer: zelfde melding als een
+// onbekend adres. Alleen geblokkeerd/opgeschort krijgt (bij het juiste wachtwoord) uitleg.
+const inactiveError = (user) => (["blocked", "suspended"].includes(user.status) ? accountInactive() : invalidCredentials());
+
 async function padFailedLogin(startedAt) {
   const remaining = FAILED_LOGIN_MIN_MS - (Date.now() - startedAt);
   if (remaining > 0) {
@@ -59,19 +71,25 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
     const { email, password } = req.body;
     const user = await getUserByEmail(email);
 
-    if (!user || user.status !== "active") {
+    if (!user) {
       // Draai alsnog een bcrypt-vergelijking tegen een dummy-hash: voorkomt dat de
       // afwezigheid van deze stap zelf al een (grof) timing-enumeratielek wordt.
       await verifyPassword(password, DUMMY_HASH);
       await padFailedLogin(startedAt);
-      next(new HttpError(401, "Ongeldige inloggegevens"));
+      next(invalidCredentials());
       return;
     }
 
     const outcome = await checkPassword(user, password);
     if (outcome !== "ok") {
       await padFailedLogin(startedAt);
-      next(new HttpError(401, "Ongeldige inloggegevens"));
+      next(invalidCredentials());
+      return;
+    }
+
+    if (user.status !== "active") {
+      await padFailedLogin(startedAt);
+      next(inactiveError(user));
       return;
     }
 
@@ -131,16 +149,22 @@ router.post(
       const { email, currentPassword, newPassword } = req.body;
       const user = await getUserByEmail(email);
 
-      if (!user || user.status !== "active") {
+      if (!user) {
         await verifyPassword(currentPassword, DUMMY_HASH);
         await padFailedLogin(startedAt);
-        next(new HttpError(401, "Ongeldige inloggegevens"));
+        next(invalidCredentials());
         return;
       }
 
       if ((await checkPassword(user, currentPassword)) !== "ok") {
         await padFailedLogin(startedAt);
-        next(new HttpError(401, "Ongeldige inloggegevens"));
+        next(invalidCredentials());
+        return;
+      }
+
+      if (user.status !== "active") {
+        await padFailedLogin(startedAt);
+        next(inactiveError(user));
         return;
       }
 

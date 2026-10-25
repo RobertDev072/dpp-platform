@@ -3,8 +3,9 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 
 export const metadata = {
-  title: "DPP Platform",
-  description: "Digital Product Passport platform voor beheer van producten, bedrijven en licenties."
+  title: { default: "VeriPasso", template: "%s | VeriPasso" },
+  description: "VeriPasso: digitale productpaspoorten (DPP) met een vaste QR-code, volgens de Europese regels.",
+  applicationName: "VeriPasso"
 };
 
 export default function RootLayout({ children }) {
