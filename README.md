@@ -108,8 +108,8 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
   De GUID staat in **hoofdletters** (zo staat hij op de gedrukte codes); opzoeken werkt
   hoofdletterongevoelig. In de app heeft een product **één QR-code** (het model). Batch- en
   exemplaarpaspoorten (eigen permanente id per productieronde of serienummer) bestaan technisch
-  nog en bestaande codes blijven werken, maar het tabblad is op 2026-10-25 uit de app gehaald
-  (te ingewikkeld); aanmaken kan alleen nog via de API. Vrije ruimte 4 modules (ISO/IEC 18004); ook **Data Matrix** (ISO/IEC 16022) en
+  nog, maar het tabblad is op 2026-10-25 uit de app gehaald (te ingewikkeld) en de testdata is
+  verwijderd; aanmaken kan alleen nog via de API. Vrije ruimte 4 modules (ISO/IEC 18004); ook **Data Matrix** (ISO/IEC 16022) en
   **GS1 Digital Link** (`qr.veripasso.com/01/{GTIN}/10/{lot}/21/{serie}`, met resolver).
   `qr.veripasso.com` nooit weghalen of laten verlopen.
 - **Persistentie**: gepubliceerde paspoorten blijven publiek, ook na archiveren (met

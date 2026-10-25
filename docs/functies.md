@@ -55,9 +55,10 @@ Elk bedrijf is volledig afgeschermd van andere bedrijven (op de server gecontrol
   5. **QR-code**: QR-code of Data Matrix downloaden (SVG/PNG), en de kaart **EU-register**.
 - **Eén QR-code per product** (het model). De optie *Batches & exemplaren* (extra codes per
   productieronde of per stuk) is op 2026-10-25 uit de app gehaald om het eenvoudig te houden.
-  Bestaande batch- en exemplaarcodes blijven werken (een gepubliceerd paspoort blijft altijd
-  bereikbaar); de techniek erachter is er nog, dus de optie kan later terug (bijv. voor
-  batterijen, die de EU vanaf februari 2027 per exemplaar wil).
+  De bestaande batches en exemplaren waren testdata en zijn verwijderd (reservekopie op de
+  server: `/root/backup-batches-exemplaren-2026-10-25.sql`). De techniek erachter bestaat nog,
+  dus de optie kan later terug (bijv. voor batterijen, die de EU vanaf februari 2027 per
+  exemplaar wil).
 - **Compleetheid**: per product een percentage met wat nog ontbreekt.
 - **Publiceren**: vanaf dan is het paspoort openbaar. Een gepubliceerd paspoort kan niet meer
   terug naar concept en blijft altijd bereikbaar, ook na archiveren of als het abonnement stopt.
