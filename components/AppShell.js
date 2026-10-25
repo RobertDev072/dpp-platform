@@ -9,6 +9,7 @@ import { homeHrefForRole } from "@/lib/nav";
 import { VeriPassoWordmark } from "@/components/landing/VeriPassoLogo";
 import GlobalSearch from "@/components/shell/GlobalSearch";
 import NotificationCenter from "@/components/shell/NotificationCenter";
+import MfaSettings from "@/components/MfaSettings";
 
 // Kleine, met de hand getekende 20px stroke-iconen (geen icon-library).
 const NAV_ICONS = {
@@ -279,6 +280,42 @@ export default function AppShell({ menu, children }) {
     return (
       <div className="flex min-h-screen items-center justify-center text-slate-500">
         Laden...
+      </div>
+    );
+  }
+
+  // Beheerder zonder tweestapsverificatie: eerst instellen (de server weigert de rest).
+  if (user.mfaSetupRequired) {
+    return (
+      <div className="min-h-screen bg-[#f5f8fc] px-4 py-10">
+        <div className="mx-auto max-w-xl space-y-6">
+          <VeriPassoWordmark background="light" className="h-8 w-auto" />
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-[#06162A]">Beveilig eerst je account</h1>
+            <p className="text-slate-600">
+              Voor beheerders is tweestapsverificatie verplicht. Zo kan niemand met alleen je wachtwoord bij de gegevens van
+              je bedrijf. Het kost twee minuten: scan de QR-code met een authenticator-app op je telefoon en vul de code in.
+            </p>
+            <p className="text-sm text-slate-500">
+              Tip: vink bij het inloggen &quot;Onthoud deze computer 30 dagen&quot; aan, dan vragen we op je eigen computer
+              maar eens per maand een code.
+            </p>
+          </div>
+          <MfaSettings role={user.role} onEnabled={() => setUser((prev) => ({ ...prev, mfaEnabled: true }))} />
+          {user.mfaEnabled ? (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center justify-center rounded-full bg-[#72E600] px-5 py-3 text-sm font-semibold text-[#06162A] hover:bg-[#66d000]"
+            >
+              Herstelcodes bewaard, verder naar VeriPasso
+            </button>
+          ) : (
+            <button type="button" onClick={handleLogout} className="text-sm font-medium text-slate-600 hover:underline">
+              Uitloggen
+            </button>
+          )}
+        </div>
       </div>
     );
   }

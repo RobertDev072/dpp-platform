@@ -72,6 +72,10 @@ export default function LoginPage() {
   const [mfaRequiredForChange, setMfaRequiredForChange] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
+  // "Onthoud deze computer 30 dagen": standaard aan (op een gedeelde computer uitzetten).
+  const [rememberDevice, setRememberDevice] = useState(true);
+  // Lokveld tegen bots (onzichtbaar; mensen laten het leeg).
+  const [website, setWebsite] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState(null);
@@ -99,7 +103,7 @@ export default function LoginPage() {
     if (invalid) return fail(invalid, invalid.field);
     setSubmitting(true);
     try {
-      const result = await api.post("/api/auth/login", { email: email.trim(), password });
+      const result = await api.post("/api/auth/login", { email: email.trim(), password, ...(website ? { website } : {}) });
       if (result.mustChangePassword) {
         // Tijdelijk wachtwoord geverifieerd: eerst een eigen wachtwoord instellen
         // (met MFA ook de code uit de app).
@@ -128,7 +132,7 @@ export default function LoginPage() {
     if (!mfaCode.trim()) return fail({ title: useRecoveryCode ? "Vul je herstelcode in." : "Vul de code uit je app in.", hint: null });
     setSubmitting(true);
     try {
-      const result = await api.post("/api/auth/mfa/verify", { ticket: mfaTicket, ...secondFactorBody() });
+      const result = await api.post("/api/auth/mfa/verify", { ticket: mfaTicket, ...secondFactorBody(), rememberDevice });
       goToApp(result);
     } catch (err) {
       if (err.code === "MFA_TICKET_INVALID") {
@@ -236,6 +240,18 @@ export default function LoginPage() {
                 <p className="mt-2 text-slate-600">Tweestapsverificatie staat aan voor dit account. Vul de code in die je authenticator-app nu toont.</p>
               </div>
               {codeField(true)}
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3.5 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={rememberDevice}
+                  onChange={(event) => setRememberDevice(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-[#1476FF]"
+                />
+                <span>
+                  <span className="font-medium text-slate-900">Onthoud deze computer 30 dagen</span>
+                  <span className="block text-slate-500">Dan vragen we hier alleen je wachtwoord. Niet aanvinken op een gedeelde computer.</span>
+                </span>
+              </label>
               <Alert message={error} />
               <button type="submit" disabled={submitting} className={BUTTON}>
                 {submitting && <Spinner />}
@@ -296,6 +312,13 @@ export default function LoginPage() {
                     {showPassword ? "Verbergen" : "Tonen"}
                   </button>
                 </div>
+              </div>
+
+              <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+                <label>
+                  Website (laat leeg)
+                  <input type="text" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(event) => setWebsite(event.target.value)} />
+                </label>
               </div>
 
               <Alert message={error} />

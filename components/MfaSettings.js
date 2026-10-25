@@ -9,7 +9,8 @@ import { useToast } from "@/components/ui/Toast";
 // Tweestapsverificatie (TOTP) beheren vanuit het eigen profiel:
 // koppelen (QR-code scannen + eerste code bevestigen), herstelcodes één keer tonen,
 // en uitschakelen (wachtwoord + code). Sterk aanbevolen voor beheerders.
-export default function MfaSettings({ role }) {
+// onEnabled: aangeroepen nadat MFA is aangezet (de verplichte instelpagina gaat dan verder).
+export default function MfaSettings({ role, onEnabled }) {
   const toast = useToast();
   const [status, setStatus] = useState(null);
   const [setup, setSetup] = useState(null);
@@ -58,6 +59,7 @@ export default function MfaSettings({ role }) {
       setCode("");
       toast.success("Tweestapsverificatie staat aan");
       await load();
+      onEnabled?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -75,6 +77,20 @@ export default function MfaSettings({ role }) {
       setPassword("");
       setCode("");
       toast.success("Tweestapsverificatie staat uit");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function forgetDevices() {
+    setError("");
+    setBusy(true);
+    try {
+      await api.delete("/api/auth/trusted-devices");
+      toast.success("Alle computers vergeten: bij de volgende keer inloggen vragen we overal weer de code");
       await load();
     } catch (err) {
       setError(err.message);
@@ -123,7 +139,7 @@ export default function MfaSettings({ role }) {
           <p>
             Beveilig je account met een code uit een authenticator-app (bijv. Microsoft Authenticator, Google
             Authenticator of 1Password) naast je wachtwoord.
-            {recommended && " Voor beheerders sterk aanbevolen."}
+            {status.required ? " Voor beheerders is dit verplicht." : recommended && " Voor beheerders sterk aanbevolen."}
           </p>
           <button
             type="button"
@@ -175,9 +191,25 @@ export default function MfaSettings({ role }) {
             Bij het inloggen vragen we naast je wachtwoord een code uit je authenticator-app. Nog{" "}
             {status.recoveryCodesRemaining} herstelcode(s) beschikbaar.
           </p>
-          <button type="button" onClick={() => setDisabling(true)} className="text-sm font-medium text-red-700 hover:underline">
-            Tweestapsverificatie uitschakelen
-          </button>
+          <p>
+            {status.trustedDevices > 0
+              ? `Op ${status.trustedDevices} ${status.trustedDevices === 1 ? "computer" : "computers"} is "Onthoud deze computer" aan: daar vragen we 30 dagen geen code.`
+              : 'Tip: vink bij het inloggen "Onthoud deze computer 30 dagen" aan, dan hoef je op je eigen computer niet elke keer een code in te voeren.'}
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {status.trustedDevices > 0 && (
+              <button type="button" onClick={forgetDevices} disabled={busy} className="text-sm font-medium text-slate-700 hover:underline">
+                Alle computers vergeten
+              </button>
+            )}
+            {status.required ? (
+              <span className="text-xs text-slate-500">Uitschakelen kan niet: verplicht voor beheerders.</span>
+            ) : (
+              <button type="button" onClick={() => setDisabling(true)} className="text-sm font-medium text-red-700 hover:underline">
+                Tweestapsverificatie uitschakelen
+              </button>
+            )}
+          </div>
         </div>
       )}
 

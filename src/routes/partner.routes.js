@@ -244,6 +244,7 @@ router.post(
       // dat ook meteen te zijn.
       try {
         await destroySessionsForUser(target.id);
+        await require("../services/trustedDevices.service").forgetAll(target.id);
       } catch (error) {
         console.error("Sessies intrekken na partner-reset mislukt:", error.message);
       }

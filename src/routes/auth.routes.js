@@ -19,8 +19,10 @@ const {
   clearSessionCookie,
   requireAuth,
   denyIfImpersonating,
-  destroySessionsForUser
+  destroySessionsForUser,
+  mfaRequiredFor
 } = require("../middleware/auth");
+const trustedDevices = require("../services/trustedDevices.service");
 const { logAudit } = require("../utils/auditLog");
 const { HttpError } = require("../middleware/errorHandler");
 const { loginIpLimiter, loginEmailLimiter, mfaLimiter } = require("../middleware/rateLimit");
@@ -69,6 +71,13 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
   const startedAt = Date.now();
   try {
     const { email, password } = req.body;
+    if (req.body.website) {
+      // Lokveld ingevuld: vrijwel zeker een bot. Zelfde antwoord en wachttijd als een
+      // mislukte poging, zodat de bot niet leert dat hij herkend is.
+      await padFailedLogin(startedAt);
+      next(invalidCredentials());
+      return;
+    }
     const user = await getUserByEmail(email);
 
     if (!user) {
@@ -107,7 +116,7 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
       return;
     }
 
-    if (user.mfa_enabled_at) {
+    if (user.mfa_enabled_at && !(await trustedDevices.isTrusted(req, user.id))) {
       // Tweede stap: nog geen sessie, alleen een kortlevend ondertekend ticket.
       res.json({ mfaRequired: true, mfaTicket: mfa.createTicket(user.id) });
       return;
@@ -121,7 +130,8 @@ router.post("/login", loginIpLimiter, loginEmailLimiter, validateBody(loginSchem
       userId: user.id,
       action: "login",
       entityType: "User",
-      entityId: user.id
+      entityId: user.id,
+      metadata: user.mfa_enabled_at ? { mfa: "trusted_device" } : undefined
     });
 
     res.json({
@@ -189,6 +199,7 @@ router.post(
       // Eigen wachtwoord: het tijdelijke vervalt direct, oude sessies ook.
       await usersRepo.setOwnPassword(user.id, await hashPassword(newPassword));
       await destroySessionsForUser(user.id).catch(() => {});
+      await trustedDevices.forgetAll(user.id).catch(() => {});
 
       const { token, expiresAt } = await createSession(user.id);
       setSessionCookie(res, token, expiresAt);
@@ -251,13 +262,14 @@ router.post("/mfa/verify", mfaLimiter, validateBody(mfaVerifySchema), async (req
 
     const { token, expiresAt } = await createSession(user.id);
     setSessionCookie(res, token, expiresAt);
+    if (req.body.rememberDevice) await trustedDevices.trust(res, user.id, req.get("user-agent"));
     await logAudit({
       companyId: user.company_id,
       userId: user.id,
       action: "login",
       entityType: "User",
       entityId: user.id,
-      metadata: { mfa: method }
+      metadata: { mfa: method, rememberDevice: Boolean(req.body.rememberDevice) }
     });
     res.json({ id: user.id, email: user.email, role: user.role, companyId: user.company_id });
   } catch (error) {
@@ -271,7 +283,9 @@ router.get("/mfa", requireAuth, async (req, res, next) => {
     res.json({
       enabled: Boolean(state?.mfa_enabled_at),
       enabledAt: state?.mfa_enabled_at || null,
-      recoveryCodesRemaining: state?.mfa_recovery_hashes ? JSON.parse(state.mfa_recovery_hashes).length : 0
+      recoveryCodesRemaining: state?.mfa_recovery_hashes ? JSON.parse(state.mfa_recovery_hashes).length : 0,
+      required: mfaRequiredFor(req.user.role),
+      trustedDevices: await trustedDevices.count(req.user.id)
     });
   } catch (error) {
     next(error);
@@ -318,14 +332,30 @@ router.post("/mfa/enable", requireAuth, denyIfImpersonating, mfaLimiter, validat
 
 router.post("/mfa/disable", requireAuth, denyIfImpersonating, mfaLimiter, validateBody(mfaDisableSchema), async (req, res, next) => {
   try {
+    if (mfaRequiredFor(req.user.role)) {
+      throw new HttpError(403, "Voor beheerders is tweestapsverificatie verplicht en kan niet uit.", undefined, "MFA_REQUIRED");
+    }
     const state = await usersRepo.getMfaState(req.user.id);
     if (!state?.mfa_enabled_at) throw new HttpError(409, "Tweestapsverificatie staat niet aan");
     const passwordOk = Boolean(state.password_hash) && (await verifyPassword(req.body.password, state.password_hash));
     const method = passwordOk ? await verifySecondFactor(state, req.body) : null;
     if (!method) throw new HttpError(401, "Wachtwoord of code klopt niet", undefined, "MFA_INVALID");
     await usersRepo.disableMfa(req.user.id);
+    await trustedDevices.forgetAll(req.user.id);
     await logAudit({ companyId: req.user.companyId, userId: req.user.id, action: "mfa_disable", entityType: "User", entityId: req.user.id });
     res.json({ enabled: false });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// "Alle computers vergeten": op elk apparaat wordt de code weer gevraagd.
+router.delete("/trusted-devices", requireAuth, denyIfImpersonating, async (req, res, next) => {
+  try {
+    await trustedDevices.forgetAll(req.user.id);
+    res.clearCookie(trustedDevices.COOKIE_NAME, { path: "/api/auth" });
+    await logAudit({ companyId: req.user.companyId, userId: req.user.id, action: "trusted_devices_forget", entityType: "User", entityId: req.user.id });
+    res.json({ trustedDevices: 0 });
   } catch (error) {
     next(error);
   }

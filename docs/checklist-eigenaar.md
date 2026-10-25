@@ -70,6 +70,11 @@ deelafbeelding. Wat alleen jij kunt doen:
 
 ## 🟡 Techniek (→ Claude, op jouw teken)
 
+- [ ] **Cloudflare-bescherming voor www en app**: in Cloudflare DNS het oranje wolkje aanzetten voor
+      `veripasso.com`, `www` en `app` (nu "DNS only", dus het server-IP is zichtbaar). Geeft gratis
+      DDoS-bescherming, webfirewall en Bot Fight Mode. Samen doen (SSL-modus "Full (strict)").
+- [ ] **Professionele pentest** vóór de eerste betalende klant.
+
 - [ ] Betrouwbare **storingsmeldingen vanuit Cloudflare** (Telegram; ntfy heeft een dagquotum).
 - [ ] Eén keer de **echte omschakeling oefenen** (nieuwe server + DNS, en terug).
 - [ ] **Hersteltest** elk kwartaal (volgende: januari 2027).

@@ -47,10 +47,30 @@ const nextConfig = {
   // Standaard beveiligingsheaders op elke response. HSTS ook hier (naast een eventuele CDN),
   // zodat de policy niet afhangt van één laag.
   async headers() {
+    // Content-Security-Policy: scripts alleen van VeriPasso zelf (en GSAP/Lenis van jsDelivr
+    // voor de landingspagina); verbindingen alleen naar VeriPasso en de bestandsopslag (R2,
+    // directe uploads). 'unsafe-inline' is nodig voor de inline scripts van Next.js en de
+    // landingspagina. Alleen in productie: de ontwikkelmodus van Next gebruikt eval.
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data: https://fonts.gstatic.com",
+      "connect-src 'self' https://*.r2.cloudflarestorage.com https://*.eu.r2.cloudflarestorage.com",
+      "media-src 'self' https:",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "upgrade-insecure-requests"
+    ].join("; ");
+    const cspHeaders = process.env.NODE_ENV === "production" ? [{ key: "Content-Security-Policy", value: csp }] : [];
     return [
       {
         source: "/:path*",
         headers: [
+          ...cspHeaders,
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },

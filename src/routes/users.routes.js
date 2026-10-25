@@ -280,6 +280,7 @@ router.post("/:id/reset-password", denyIfImpersonating, async (req, res, next) =
     await usersRepo.setTemporaryPassword(id, await hashPassword(tempPassword));
     // Het oude wachtwoord is waardeloos; lopende sessies horen dat ook meteen te zijn.
     await require("../middleware/auth").destroySessionsForUser(id).catch(() => {});
+    await require("../services/trustedDevices.service").forgetAll(id).catch(() => {});
 
     await logAudit({
       companyId: existing.company_id,
@@ -316,6 +317,7 @@ router.post("/:id/mfa/reset", denyIfImpersonating, async (req, res, next) => {
     }
     await usersRepo.disableMfa(id);
     await require("../middleware/auth").destroySessionsForUser(id);
+    await require("../services/trustedDevices.service").forgetAll(id);
     await logAudit({
       companyId: existing.company_id,
       userId: req.user.id,

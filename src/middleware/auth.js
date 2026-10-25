@@ -98,11 +98,29 @@ async function getUserForToken(token) {
     avatarUrl: row.avatar_url || null,
     authProvider: row.has_local_password ? "local" : "none",
     mfaEnabled: Boolean(row.mfa_enabled),
+    // Beheerders moeten tweestapsverificatie hebben; tijdens "inloggen als" niet (de
+    // Platform Owner die impersoneert heeft zelf MFA).
+    mfaSetupRequired: mfaRequiredFor(row.role) && !row.mfa_enabled && !row.impersonator_user_id,
     impersonator: row.impersonator_user_id
       ? { id: row.impersonator_user_id, email: row.impersonator_email }
       : null
   };
 }
+
+// Tweestapsverificatie verplicht voor beheerders. Standaard aan in productie; met
+// MFA_ENFORCE_ADMINS=true/false expliciet aan of uit (tests, lokale ontwikkeling).
+const MFA_REQUIRED_ROLES = ["platform_owner", "partner_admin", "company_admin"];
+function mfaEnforced() {
+  const flag = process.env.MFA_ENFORCE_ADMINS;
+  if (flag === "true") return true;
+  if (flag === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+function mfaRequiredFor(role) {
+  return mfaEnforced() && MFA_REQUIRED_ROLES.includes(role);
+}
+// Zolang MFA nog ingesteld moet worden, mag een beheerder alleen dit (en uitloggen).
+const MFA_SETUP_ALLOWED = ["/api/auth/me", "/api/auth/mfa", "/api/auth/mfa/setup", "/api/auth/mfa/enable", "/api/auth/logout"];
 
 function setSessionCookie(res, token, expiresAt) {
   res.cookie(SESSION_COOKIE_NAME, token, {
@@ -136,6 +154,10 @@ async function requireAuth(req, res, next) {
 
     req.user = user;
     req.sessionToken = token;
+    if (user.mfaSetupRequired && !MFA_SETUP_ALLOWED.includes((req.originalUrl || "").split("?")[0])) {
+      next(new HttpError(403, "Stel eerst tweestapsverificatie in. Dat is verplicht voor beheerders.", undefined, "MFA_SETUP_REQUIRED"));
+      return;
+    }
     next();
   } catch (error) {
     next(error);
@@ -181,5 +203,7 @@ module.exports = {
   requireAuth,
   requireRole,
   requirePlatformOwner,
-  denyIfImpersonating
+  denyIfImpersonating,
+  mfaRequiredFor,
+  MFA_REQUIRED_ROLES
 };

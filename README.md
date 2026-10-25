@@ -73,8 +73,13 @@ blijven werken (ook verplicht vanuit DPP-persistentie, zie §3).
 - **Login** volledig server-side: e-mail + wachtwoord tegen een bcrypt-hash in
   `dbo.users`; een geslaagde login geeft een eigen sessie (httpOnly-cookie,
   `SameSite=Lax`, alleen de sha256-hash van het token in `dbo.sessions`).
-- **Tweestapsverificatie (TOTP)**, optioneel per account, sterk aanbevolen voor
-  beheerders. Instellen via het eigen profiel (QR-code + eerste code + 10 eenmalige
+- **Tweestapsverificatie (TOTP)**, **verplicht voor beheerders** (Platform Owner, Partner Admin,
+  Bedrijfsbeheerder; in productie, uit te zetten met `MFA_ENFORCE_ADMINS=false`): zonder MFA kan
+  een beheerder na inloggen alleen MFA instellen (403 `MFA_SETUP_REQUIRED`) en niet uitzetten.
+  Optioneel voor medewerkers. **"Onthoud deze computer 30 dagen"**: eigen cookie (`vp_trusted`,
+  httpOnly, SameSite=Strict, alleen `/api/auth`, alleen SHA-256 in `dbo.trusteddevices`) slaat de
+  code over, nooit het wachtwoord; vervalt bij wachtwoordwijziging/-reset, MFA-reset en via
+  "Alle computers vergeten" in het profiel. Instellen via het eigen profiel (QR-code + eerste code + 10 eenmalige
   herstelcodes). Na het wachtwoord geeft de API alleen een kortlevend ondertekend
   ticket; pas met een geldige code ontstaat een sessie. Codes zijn eenmalig
   (replaybescherming), geheimen staan AES-256-GCM-versleuteld in de database.
@@ -318,7 +323,8 @@ Afvinklijst voor de eigenaar (wat jij nog moet doen of beslissen):
 - [ ] Hersteltest elk kwartaal (volgende: 2027-01).
 - [ ] Toegankelijkheidsaudit van de publieke paspoortpagina (WCAG 2.1 AA / EN 301 549).
 - [ ] NFC/RFID-export, IEC 61406-kader, meertaligheid voor alle tekstvelden.
-- [ ] Content-Security-Policy, aparte database-rol met minimale rechten, loadtest.
+- [x] Content-Security-Policy (productie), lokveld tegen bots op inloggen, X11-forwarding uit (2026-10-25).
+- [ ] Aparte database-rol met minimale rechten, loadtest, professionele pentest vóór de eerste betalende klant.
 - [ ] Oud AWS-account opruimen (CDK-code onder tag `aws-laatste-versie`).
 - [ ] E-mailverzending voor uitnodigingen/wachtwoordherstel (eerst overleg).
 

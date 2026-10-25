@@ -2,7 +2,9 @@ const { z } = require("zod");
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  // Lokveld tegen bots: onzichtbaar voor mensen, dus altijd leeg bij een echte gebruiker.
+  website: z.string().max(200).optional()
 });
 
 // Tweede stap bij inloggen: TOTP-code óf een eenmalige herstelcode.
@@ -10,7 +12,8 @@ const mfaVerifySchema = z
   .object({
     ticket: z.string().min(1).max(500),
     code: z.string().max(20).optional(),
-    recoveryCode: z.string().max(20).optional()
+    recoveryCode: z.string().max(20).optional(),
+    rememberDevice: z.boolean().optional()
   })
   .refine((d) => Boolean(d.code) !== Boolean(d.recoveryCode), { message: "Vul een code of een herstelcode in" });
 
