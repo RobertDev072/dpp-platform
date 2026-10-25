@@ -20,4 +20,6 @@ node prepare.js
 node render.mjs preview 9.5,17.8,23.5   # controle
 node render.mjs frames                  # 1080 beelden, 30 fps
 node render.mjs encode                  # → VeriPasso-social-1080x1350.mp4
+SCALE=2 node render.mjs frames          # 4K: 2160×2700 (zelfde 4:5-formaat)
+SCALE=2 node render.mjs encode          # → VeriPasso-social-2160x2700.mp4 (45 Mbps)
 ```

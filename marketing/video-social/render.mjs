@@ -16,6 +16,8 @@ const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const [mode = "preview", arg = ""] = process.argv.slice(2);
 const timing = JSON.parse(fs.readFileSync(path.join(DIR, "timing.json"), "utf8"));
 const VW = timing.width || 1920, VH = timing.height || 1080;
+// SCALE=2 rendert scherp op dubbele resolutie (1080×1350 → 2160×2700, "4K").
+const SCALE = Number(process.env.SCALE || 1);
 const TOTAL = Math.round(timing.END * FPS);
 
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".png": "image/png", ".jpg": "image/jpeg", ".wav": "audio/wav", ".json": "application/json", ".md": "text/plain; charset=utf-8", ".mp4": "video/mp4" };
@@ -63,7 +65,7 @@ async function cdp() {
   const send = (method, params = {}) => new Promise((resolve, reject) => { const n = ++id; waiting.set(n, { resolve, reject }); ws.send(JSON.stringify({ id: n, method, params })); });
   const evaluate = async (expression) => { const r = await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text); return r.result.value; };
   const close = () => { try { ws.close(); } catch {} chrome.kill(); };
-  await send("Emulation.setDeviceMetricsOverride", { width: VW, height: VH, deviceScaleFactor: 1, mobile: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: VW, height: VH, deviceScaleFactor: SCALE, mobile: false });
   return { send, evaluate, close };
 }
 
@@ -78,7 +80,7 @@ async function open(page, url, flag) {
 
 async function shot(page, t, file, format = "jpeg") {
   await page.evaluate(`window.seek(${t})`);
-  const { data } = await page.send("Page.captureScreenshot", format === "png" ? { format: "png" } : { format: "jpeg", quality: 92, optimizeForSpeed: true });
+  const { data } = await page.send("Page.captureScreenshot", format === "png" ? { format: "png" } : { format: "jpeg", quality: SCALE > 1 ? 96 : 92, optimizeForSpeed: SCALE === 1 });
   fs.writeFileSync(file, Buffer.from(data, "base64"));
 }
 
@@ -107,8 +109,11 @@ try {
     await new Promise((r) => setTimeout(r, 800));
     const info = await page.evaluate(`new Promise((ok) => { const v = document.createElement("video"); v.src = "/${arg}"; v.muted = false; v.onloadedmetadata = async () => { v.currentTime = 20; v.play().catch(() => {}); await new Promise((r) => setTimeout(r, 1500)); ok({ duur: v.duration, b: v.videoWidth, h: v.videoHeight, audioBytes: v.webkitAudioDecodedByteCount }); }; v.onerror = () => ok({ fout: v.error && v.error.code }); document.body.appendChild(v); })`);
     console.log("controle:", info);
+  } else if (mode === "probe") {
+    await open(page, `http://127.0.0.1:${PORT}/encode.html?frames=1&fps=${FPS}&w=${VW * SCALE}&h=${VH * SCALE}`, "encodeReady");
+    console.log("ondersteund:", await page.evaluate("window.probe()"));
   } else if (mode === "encode") {
-    await open(page, `http://127.0.0.1:${PORT}/encode.html?frames=${TOTAL}&fps=${FPS}&w=${VW}&h=${VH}`, "encodeReady");
+    await open(page, `http://127.0.0.1:${PORT}/encode.html?frames=${TOTAL}&fps=${FPS}&w=${VW * SCALE}&h=${VH * SCALE}`, "encodeReady");
     const result = await page.evaluate("window.runEncode()");
     console.log("codering:", result);
   }

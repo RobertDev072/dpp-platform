@@ -19,7 +19,7 @@ body { font-family: 'Host Grotesk', Arial, sans-serif; color: var(--paper); -web
 #b2 { width: 560px; height: 560px; background: #72e600; opacity: .18; left: -180px; top: 980px; }
 #b3 { width: 520px; height: 520px; background: #19c3ff; opacity: .22; left: -120px; top: -160px; }
 #grid { position: absolute; inset: -100px; background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px); background-size: 90px 90px; }
-#grain { position: absolute; inset: 0; opacity: .09; mix-blend-mode: overlay; pointer-events: none; z-index: 90; }
+#grain { position: absolute; inset: 0; width: 1080px; height: 1350px; opacity: .05; mix-blend-mode: overlay; pointer-events: none; z-index: 90; }
 #vignette { position: absolute; inset: 0; z-index: 89; pointer-events: none; background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55)); }
 #flash { position: absolute; inset: 0; z-index: 95; background: #fff; opacity: 0; pointer-events: none; }
 #fade { position: absolute; inset: 0; z-index: 99; background: #050f1f; pointer-events: none; }
@@ -299,14 +299,12 @@ const BEAT = 0.5;
 function rand(seed) { let x = Math.sin(seed * 12.9898) * 43758.5453; return x - Math.floor(x); }
 function drawGrain(frame) {
   const c = document.getElementById('grain'), g = c.getContext('2d');
-  const img = g.createImageData(270, 338);
+  const img = g.createImageData(1080, 1350);
   for (let i = 0; i < img.data.length; i += 4) {
     const v = rand(i * 0.37 + frame * 101.3) * 255;
     img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
   }
   g.putImageData(img, 0, 0);
-  g.imageSmoothingEnabled = false;
-  g.drawImage(c, 0, 0, 270, 338, 0, 0, 1080, 1350);
 }
 
 // QR-code als losse blokjes (voor het opbouw-effect).

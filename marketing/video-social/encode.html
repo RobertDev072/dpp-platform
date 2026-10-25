@@ -11,6 +11,10 @@ const params = new URLSearchParams(location.search);
 const FRAMES = Number(params.get("frames"));
 const FPS = Number(params.get("fps"));
 const W = Number(params.get("w")), H = Number(params.get("h")), RATE = 48000;
+// Boven 1080p: H.264 High-profiel level 5.1 en een hogere bitrate.
+const BIG = W * H > 1920 * 1088;
+const VCODEC = BIG ? "avc1.640033" : "avc1.640028";
+const VBITRATE = BIG ? 45_000_000 : 14_000_000;
 const log = (msg) => fetch("/log", { method: "POST", body: String(msg) });
 
 // Vaste toevalsgenerator: elke render klinkt precies hetzelfde.
@@ -293,7 +297,7 @@ window.runEncode = async () => {
   });
 
   const venc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => log("video-fout " + e) });
-  venc.configure({ codec: "avc1.640028", width: W, height: H, bitrate: 14_000_000, framerate: FPS, latencyMode: "quality", avc: { format: "avc" } });
+  venc.configure({ codec: VCODEC, width: W, height: H, bitrate: VBITRATE, framerate: FPS, latencyMode: "quality", avc: { format: "avc" } });
   const aenc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => log("audio-fout " + e) });
   aenc.configure({ codec: "mp4a.40.2", sampleRate: RATE, numberOfChannels: 2, bitrate: 192_000 });
 
@@ -323,6 +327,7 @@ window.runEncode = async () => {
   await fetch(`/save?name=VeriPasso-social-${W}x${H}.mp4`, { method: "POST", body: buffer });
   return { megabytes: +(buffer.byteLength / 1048576).toFixed(1), seconds: totalSec, peak: +peak.toFixed(2) };
 };
+window.probe = async () => (await VideoEncoder.isConfigSupported({ codec: VCODEC, width: W, height: H, bitrate: VBITRATE, framerate: FPS })).supported;
 window.encodeReady = true;
 </script>
 </body>
