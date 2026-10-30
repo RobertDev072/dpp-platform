@@ -14,7 +14,7 @@ De sleutel mag op de server **alleen** `update.sh` starten: geen shell, geen
 port-forwarding. Lekt hij ooit uit, dan kan iemand hooguit de nieuwste versie van `main`
 opnieuw uitrollen.
 
-**1. Op de server** (`ssh root@87.106.4.92`):
+**1. Op de server** (`ssh root@158.180.35.95`):
 
 ```sh
 ssh-keygen -t ed25519 -N "" -C github-deploy -f /root/github-deploy
@@ -28,7 +28,7 @@ cat /root/github-deploy        # privésleutel: kopiëren voor stap 2
 | Naam | Waarde |
 |---|---|
 | `DEPLOY_SSH_KEY` | de volledige inhoud van `/root/github-deploy` (inclusief de BEGIN/END-regels) |
-| `DEPLOY_KNOWN_HOSTS` | uitvoer van `ssh-keygen -F 87.106.4.92` op je eigen pc (de regel zonder `#`) |
+| `DEPLOY_KNOWN_HOSTS` | uitvoer van `ssh-keygen -F 158.180.35.95` op je eigen pc (de regel zonder `#`) |
 
 **3. Op de server**: de privésleutel weer weghalen.
 
