@@ -298,5 +298,45 @@
     "caption": "Benieuwd hoe het werkt?\n\nIn een korte demo laat ik zien hoe je in één dag je eerste digitale productpaspoort met een vaste QR-code publiceert.\n\nStuur me een bericht of vraag een demo aan op veripasso.com.",
     "link": "https://www.veripasso.com/#start",
     "hashtags": "#Demo #DPP #VeriPasso #SaaS"
+  },
+  {
+    "date": "2026-12-01",
+    "style": "countdown",
+    "kicker": "Batterijpaspoort",
+    "headline": "Nog 79 dagen",
+    "sub": "tot het batterijpaspoort op 18 februari 2027",
+    "caption": "Nog 79 dagen tot 18 februari 2027.\n\nVanaf die datum heeft elke EV-batterij, LMT-batterij (denk aan e-bikes) en industriële batterij boven 2 kWh een digitaal paspoort nodig, bereikbaar via een QR-code.\n\nIk spreek steeds meer fabrikanten en importeurs die nu pas beginnen met uitzoeken wat ze moeten aanleveren. Dat kan nog, maar de tijd tikt.\n\nWelke batterijen verkoop jij? Laat het me weten, dan denk ik graag mee.",
+    "link": "https://www.veripasso.com/blog/batterijpaspoort-2027",
+    "hashtags": "#Batterijpaspoort #DPP #BatteryPassport #Batterijverordening #ESPR"
+  },
+  {
+    "date": "2026-12-02",
+    "style": "tip",
+    "kicker": "Tip",
+    "headline": "Begin met je productgegevens",
+    "sub": "Verzamel eerst wat je al hebt, dan zie je wat ontbreekt",
+    "caption": "Mijn tip voor wie met een digitaal productpaspoort start: begin niet met de techniek, maar met je gegevens.\n\nMaak een lijst van wat je al weet over je product: materialen, herkomst, onderdelen, handleiding.\n\nDaarna zie je meteen wat nog ontbreekt en bij welke leverancier je moet zijn.\n\nIn VeriPasso zie je dat terug in de volledigheidsscore van je paspoort.\n\nWaar loop jij het meest tegenaan bij het verzamelen van gegevens?",
+    "link": "https://www.veripasso.com/dpp-check",
+    "hashtags": "#DPP #Productgegevens #Tips #ESPR #DigitalProductPassport"
+  },
+  {
+    "date": "2026-12-03",
+    "style": "feature",
+    "kicker": "Zo werkt VeriPasso",
+    "headline": "Wie ziet wat? Jij bepaalt het",
+    "sub": "Toegangsniveaus per gegeven in je paspoort",
+    "caption": "Niet elk gegeven in een productpaspoort is voor iedereen bedoeld.\n\nIn VeriPasso stel je per gegeven het toegangsniveau in. Zo zie je zelf wat voor iedereen zichtbaar is en wat alleen voor bijvoorbeeld toezichthouders of reparateurs.\n\nGeen app nodig: het paspoort opent gewoon via de QR-code.\n\nWelke gegevens wil jij liever afschermen?",
+    "link": "https://www.veripasso.com",
+    "hashtags": "#DPP #Toegangsniveaus #VeriPasso #QRcode #Datadeling"
+  },
+  {
+    "date": "2026-12-04",
+    "style": "myth",
+    "kicker": "Mythe of feit",
+    "headline": "\"Een DPP is gewoon een QR-code.\"",
+    "sub": "Feit: de QR-code is alleen de sleutel tot het paspoort",
+    "caption": "Mythe: een digitaal productpaspoort is gewoon een QR-code op je product.\n\nFeit: de QR-code is alleen de drager. Het echte paspoort zijn de gegevens erachter: materialen, herkomst, onderdelen, versies en wie wat mag zien.\n\nEen code zonder goede, actuele gegevens is dus niet genoeg.\n\nDaarom bouw ik VeriPasso rond de gegevens: met een vaste QR-code, versiebeheer en een volledigheidsscore.\n\nWelke mythe over het DPP hoor jij het vaakst?",
+    "link": "https://www.veripasso.com/blog/wat-is-een-digitaal-productpaspoort",
+    "hashtags": "#DPP #QRcode #Mythe #DigitalProductPassport #ESPR"
   }
 ]
