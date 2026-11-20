@@ -328,5 +328,15 @@
     "caption": "Niet elk gegeven in een productpaspoort is voor iedereen bedoeld.\n\nIn VeriPasso stel je per gegeven het toegangsniveau in. Zo zie je zelf wat voor iedereen zichtbaar is en wat alleen voor bijvoorbeeld toezichthouders of reparateurs.\n\nGeen app nodig: het paspoort opent gewoon via de QR-code.\n\nWelke gegevens wil jij liever afschermen?",
     "link": "https://www.veripasso.com",
     "hashtags": "#DPP #Toegangsniveaus #VeriPasso #QRcode #Datadeling"
+  },
+  {
+    "date": "2026-12-04",
+    "style": "myth",
+    "kicker": "Mythe of feit",
+    "headline": "\"Een DPP is gewoon een QR-code.\"",
+    "sub": "Feit: de QR-code is alleen de sleutel tot het paspoort",
+    "caption": "Mythe: een digitaal productpaspoort is gewoon een QR-code op je product.\n\nFeit: de QR-code is alleen de drager. Het echte paspoort zijn de gegevens erachter: materialen, herkomst, onderdelen, versies en wie wat mag zien.\n\nEen code zonder goede, actuele gegevens is dus niet genoeg.\n\nDaarom bouw ik VeriPasso rond de gegevens: met een vaste QR-code, versiebeheer en een volledigheidsscore.\n\nWelke mythe over het DPP hoor jij het vaakst?",
+    "link": "https://www.veripasso.com/blog/wat-is-een-digitaal-productpaspoort",
+    "hashtags": "#DPP #QRcode #Mythe #DigitalProductPassport #ESPR"
   }
 ]
