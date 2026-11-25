@@ -298,5 +298,55 @@
     "caption": "Benieuwd hoe het werkt?\n\nIn een korte demo laat ik zien hoe je in één dag je eerste digitale productpaspoort met een vaste QR-code publiceert.\n\nStuur me een bericht of vraag een demo aan op veripasso.com.",
     "link": "https://www.veripasso.com/#start",
     "hashtags": "#Demo #DPP #VeriPasso #SaaS"
+  },
+  {
+    "date": "2026-12-01",
+    "style": "countdown",
+    "kicker": "Batterijpaspoort",
+    "headline": "Nog 79 dagen",
+    "sub": "tot het batterijpaspoort verplicht wordt: 18 februari 2027",
+    "caption": "Het is december. Nog 79 dagen tot 18 februari 2027.\n\nVanaf die dag heeft elke EV-batterij, elke batterij voor licht vervoer (denk aan e-bikes) en elke industriële batterij boven 2 kWh een eigen digitaal paspoort nodig.\n\nLeveranciersgegevens opvragen duurt vaak het langst. Dus begin nu, niet in januari.\n\nMijn advies: bepaal eerst welke batterijen eronder vallen, dan pas het platform.\n\nWelke batterijen breng jij op de markt?",
+    "link": "https://www.veripasso.com/blog/batterijpaspoort-2027",
+    "hashtags": "#Batterijpaspoort #DPP #Batteries #Ecodesign #EVbatterij"
+  },
+  {
+    "date": "2026-12-02",
+    "style": "myth",
+    "kicker": "Mythe of feit",
+    "headline": "\"Elke batterij heeft een paspoort nodig.\"",
+    "sub": "Feit: niet voor telefoonbatterijen of startaccu's",
+    "caption": "Een veelgehoorde mythe: elke batterij krijgt een digitaal paspoort.\n\nDe feiten volgens de Batterijverordening (EU) 2023/1542:\n\nWel: EV-batterijen, batterijen voor licht vervoer en industriële batterijen boven 2 kWh.\nNiet: draagbare batterijen (zoals in een telefoon of afstandsbediening) en startaccu's. Daarvoor gelden andere regels, zoals etikettering.\n\nHet paspoort hoort bovendien bij elke afzonderlijke batterij, niet bij het model.\n\nWist je dit al?",
+    "link": "https://www.veripasso.com/blog/batterijpaspoort-2027",
+    "hashtags": "#Mythe #Batterijpaspoort #DPP #Batterijverordening"
+  },
+  {
+    "date": "2026-12-03",
+    "style": "feature",
+    "kicker": "Zo werkt VeriPasso",
+    "headline": "Eén QR-code, ook na een update",
+    "sub": "Vaste QR-code met versiebeheer per paspoort",
+    "caption": "Een QR-code op een product kun je niet zomaar vervangen.\n\nDaarom krijgt elk paspoort in VeriPasso een vaste QR-code. Wijzigt er iets aan je gegevens? Dan maak je een nieuwe versie, en de code op het product blijft gewoon werken.\n\nGeen app nodig voor wie scant: het paspoort opent in de browser.\n\nDat scheelt je opnieuw drukken, opnieuw plakken en gedoe met klanten.\n\nHoe regel jij nu wijzigingen in productinformatie?",
+    "link": "https://www.veripasso.com",
+    "hashtags": "#QRcode #Versiebeheer #DPP #VeriPasso #SaaS"
+  },
+  {
+    "date": "2026-12-04",
+    "style": "tip",
+    "kicker": "Tip van de week",
+    "headline": "Vraag je leveranciers nu om gegevens",
+    "sub": "Materialen, CO₂-voetafdruk, herkomst: het kost vaak maanden",
+    "caption": "Mijn tip als je met een digitaal productpaspoort aan de slag gaat: begin bij je leveranciers.\n\nMaterialen, herkomst, CO₂-voetafdruk: die gegevens heb je meestal niet zelf. Het opvragen kost vaak maanden, ook als de regels zelf al duidelijk zijn.\n\nMaak dus een lijstje van wat je nodig hebt en stuur het vandaag nog rond.\n\nWat is voor jou het lastigste gegeven om boven tafel te krijgen?",
+    "link": "https://www.veripasso.com/dpp-check",
+    "hashtags": "#Tip #DPP #Leveranciers #ESPR #Duurzaamheid"
+  },
+  {
+    "date": "2026-12-07",
+    "style": "timeline",
+    "kicker": "Hoe ver ben je?",
+    "headline": "Zo pak je je eerste paspoort aan",
+    "sub": "Check welke producten · Vraag gegevens op · Kies een platform · Test met een paar stuks",
+    "caption": "Je eerste digitale productpaspoort hoeft geen groot project te zijn, als je het in stappen doet.\n\n1. Bepaal welke producten eronder vallen (de gratis DPP-check helpt)\n2. Vraag gegevens op bij je leveranciers\n3. Kies een platform met vaste QR-code en versiebeheer\n4. Test met een paar producten\n\nIk help je er graag mee op weg.\n\nIn welke stap zit jij nu?",
+    "link": "https://www.veripasso.com/dpp-check",
+    "hashtags": "#DPP #Stappenplan #DPPcheck #Ondernemen #Compliance"
   }
 ]
