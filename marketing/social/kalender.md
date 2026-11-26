@@ -513,3 +513,116 @@ Stuur me een bericht of vraag een demo aan op veripasso.com.
 
 #Demo #DPP #VeriPasso #SaaS
 ```
+
+---
+
+## dinsdag 2026-12-01: Nog 79 dagen
+
+Afbeelding: `out/31-2026-12-01.png`  
+Link: https://www.veripasso.com/blog/batterijpaspoort-2027
+
+```
+December is begonnen. Nog 79 dagen tot het batterijpaspoort op 18 februari 2027.
+
+Het geldt voor EV-batterijen, batterijen voor licht vervoer (e-bikes, e-steps) en industriële batterijen boven 2 kWh.
+
+Ik spreek steeds vaker bedrijven die denken: dat komt wel. Maar het kost de meeste tijd om gegevens bij leveranciers op te vragen: materialen, CO₂-voetafdruk, herkomst.
+
+Mijn advies: stuur deze maand je eerste verzoeken uit.
+
+Welke gegevens heb jij al compleet en wat ontbreekt nog?
+
+#Batterijpaspoort #DPP #Countdown #Batteries #Ebike
+```
+
+---
+
+## woensdag 2026-12-02: "Ik wacht tot mijn groep aan de beurt is."
+
+Afbeelding: `out/32-2026-12-02.png`  
+Link: https://www.veripasso.com/blog/welke-producten-krijgen-een-dpp
+
+```
+Mythe of feit?
+
+"Mijn productgroep is pas over een paar jaar aan de beurt, dus ik wacht nog even."
+
+De regels komen inderdaad per productgroep. Maar zodra ze er zijn, wil je klaar zijn. Het opvragen van gegevens bij leveranciers kost vaak maanden, niet dagen.
+
+Bedrijven die hun productgegevens nu al centraal vastleggen, zijn straks sneller klaar en maken minder fouten.
+
+Geen haast, wel een goed moment om te beginnen. Met de gratis DPP-check zie je in een minuut waar jij staat.
+
+Herken je dit?
+
+#DPP #Mythe #ESPR #Ondernemen #Sustainability
+```
+
+---
+
+## donderdag 2026-12-03: Zie je registerstatus in één oogopslag
+
+Afbeelding: `out/33-2026-12-03.png`  
+Link: https://www.veripasso.com
+
+```
+Een paspoort maken is één ding. Overzicht houden is het andere.
+
+In VeriPasso zie je per paspoort de registerstatus: wat is al geregeld en wat moet nog?
+
+En per gegeven stel je het toegangsniveau in. Wat is openbaar voor consumenten, en wat alleen voor bijvoorbeeld reparateurs, recyclers of toezichthouders?
+
+Zo houd je grip, zonder spreadsheets en zonder een app te installeren.
+
+Welk overzicht mis jij nu het meest bij je productgegevens?
+
+#VeriPasso #DPP #Compliance #SaaS #Overzicht
+```
+
+---
+
+## vrijdag 2026-12-04: Een batterij, een eigen paspoort
+
+Afbeelding: `out/34-2026-12-04.png`  
+Link: https://www.veripasso.com/blog/batterijpaspoort-2027
+
+```
+Tip voor iedereen met batterijen in het assortiment.
+
+Het batterijpaspoort hoort bij elke afzonderlijke batterij, niet bij het model. Twee batterijen van hetzelfde type hebben dus elk een eigen paspoort met een eigen unieke code.
+
+Start daarom met drie vragen:
+
+1. Hoe nummer ik mijn batterijen uniek?
+2. Hoe komt de QR-code op de batterij?
+3. Waar bewaar ik de gegevens per stuk?
+
+Beantwoord je die nu, dan scheelt dat straks veel haastwerk.
+
+Hoeveel batterijen verkoop jij per jaar? Deel het gerust, dan denk ik mee.
+
+#Batterijpaspoort #DPP #Tip #Ebike #Batteries
+```
+
+---
+
+## maandag 2026-12-07: Valt jouw batterij eronder?
+
+Afbeelding: `out/35-2026-12-07.png`  
+Link: https://www.veripasso.com/dpp-check
+
+```
+Vanaf 18 februari 2027 hebben deze batterijen een digitaal paspoort nodig:
+
+🚗 EV-batterijen
+🚲 Batterijen voor licht vervoer, zoals e-bikes, e-steps en scooters
+🏭 Industriële batterijen boven 2 kWh, bijvoorbeeld thuisbatterijen
+
+Draagbare batterijen (denk aan een telefoon of afstandsbediening) en startaccu's vallen hier niet onder.
+
+Twijfel je over jouw product? Doe de gratis DPP-check, dan weet je het in een minuut.
+
+Valt jouw batterij in een van deze categorieën?
+
+#Batterijpaspoort #DPP #DPPcheck #Batteries #Ebike
+```
